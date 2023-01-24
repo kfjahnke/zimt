@@ -1,6 +1,6 @@
 # zimt - C++ template library to process n-dimensional arrays with multithreaded SIMD code
 
-zimt is the German word for cinnamon, and it sounds vaguely like SIMD. It should imply something spicy and yummy, and apart from the silly pun there is no deaper meaning.
+Zimt is the German word for cinnamon, and it sounds vaguely like SIMD. It should imply something spicy and yummy, and apart from the silly pun there is no deeper meaning.
 
 The code in this library is based on code from my library [vspline](https://bitbucket.org/kfj/vspline/ "git repository of the vspline library"). I found that the tools I developed there to process n-dimensional arrays with multithreaded SIMD code would be useful outside of a b-spline library's context, and that I might be better off letting go of the [vigra](http://ukoethe.github.io/vigra/ "The VIGRA Computer Vision Library") library, which I use in vspline for data handling and small aggregates.
 
