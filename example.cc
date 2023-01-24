@@ -55,7 +55,9 @@
 // Optimization with up to -Ofast should be fine. To avoid multithreading,
 // add -DZIMT_SINGLETHREAD. Note that per default zimt will multithread
 // with pthreads, which you may have to link in on some platforms. g++
-// should also work, but is tested less.
+// should also work, but is tested less. To get code specific to your
+// ISA, add -march=native. For some backends (especially highway),
+// additional ISA-specific flags improve performance.
 
 #define WIELDING_SEGMENT_SIZE 32
 
