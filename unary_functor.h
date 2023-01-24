@@ -6,7 +6,7 @@
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
-/*    https://bitbucket.org/kfj/zimt                                    */
+/*    https://github.com/kfjahnke/zimt                                  */
 /*                                                                      */
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
