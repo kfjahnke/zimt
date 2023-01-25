@@ -115,8 +115,7 @@
 #ifndef VSPLINE_UNARY_FUNCTOR_H
 #define VSPLINE_UNARY_FUNCTOR_H
 
-#include <functional>
-#include "xel.h"
+#include "common.h"
 
 namespace zimt {
 

@@ -141,7 +141,7 @@
 #ifndef VSPLINE_VECTOR_H
 #define VSPLINE_VECTOR_H
 
-// #include "common.h"
+#include "common.h"
 
 // we have several SIMD back-ends to provide SIMD code, which are all
 // activated by preprocessor #defines. 'Proper' SIMD code may be

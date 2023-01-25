@@ -62,16 +62,17 @@
 #define WIELDING_SEGMENT_SIZE 32
 
 #include <type_traits>
+#include <limits>
 #include <array>
 #include <functional>
 
-#include "common.h"
-#include "xel.h"
-#include "vector.h"
-#include "array.h"
-#include "unary_functor.h"
-#include "interleave.h"
-#include "wielding.h"
+// #include "common.h"
+// #include "xel.h"
+// #include "vector.h"
+// #include "array.h"
+// #include "unary_functor.h"
+// #include "interleave.h"
+// #include "wielding.h"
 #include "transform.h"
 
 typedef zimt::xel_t < float , 3 > f3_t ;

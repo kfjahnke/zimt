@@ -673,12 +673,12 @@ struct vc_simd_type
   }
 } ;
 
-template < typename T , std::size_t N >
-struct allocator_traits < vc_simd_type < T , N > >
-{
-  typedef Vc::Allocator < vc_simd_type < T , N > >
-    type ;
-} ;
+// template < typename T , std::size_t N >
+// struct allocator_traits < vc_simd_type < T , N > >
+// {
+//   typedef Vc::Allocator < vc_simd_type < T , N > >
+//     type ;
+// } ;
 
 } ;
 

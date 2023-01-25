@@ -52,8 +52,9 @@
 
 #include <atomic>
 #include <algorithm>
-#include "interleave.h"
 #include "array.h"
+#include "unary_functor.h"
+#include "interleave.h"
 #include "bill.h"
 
 namespace wielding

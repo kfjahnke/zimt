@@ -55,7 +55,11 @@
 #ifndef ZIMT_COMMON
 #define ZIMT_COMMON
 
+#include <type_traits>
+#include <limits>
+#include <functional>
 #include <assert.h>
+#include <cmath>
 #include "xel.h"
 
 namespace zimt
