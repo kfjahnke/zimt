@@ -138,8 +138,8 @@
     is available throughout zimt.
 */
 
-#ifndef VSPLINE_VECTOR_H
-#define VSPLINE_VECTOR_H
+#ifndef ZIMT_VECTOR_H
+#define ZIMT_VECTOR_H
 
 #include "common.h"
 
@@ -152,27 +152,13 @@
 // back to it's own 'goading' implementation, which codes SIMD
 // operations as small loops, hoping that they will be autovectorized.
 
-// when std::simd is used as backend, this directly implements
-// zimt::simd_type, which is possible because std::simd supports
-// all elementary types, so zimt::simd_type is not needed as
-// fallback for some elementary types.
+#include "simd_type.h"
 
 #if defined USE_STDSIMD
 
 #include "std_simd_type.h"
 
-// #define VSPLINE_SIMD_TYPE_H
-
-#else // defined USE_STDIMD
-
-// simd_type.h is needed as a fallback for those fundamentals
-// which can't be vectorized, and it's also used if no SIMD library
-// is available, in which case the operations are vectorized with
-// 'goading', relying on autovectorization of small loops.
-
-#include "simd_type.h"
-
-#if defined USE_VC
+#elif defined USE_VC
 
 #include "vc_simd_type.h"
 
@@ -182,19 +168,17 @@
 
 #endif
 
-#endif // else to defined USE_STDIMD
-
 namespace zimt
 {
-#ifndef VSPLINE_VECTOR_NBYTES
+#ifndef ZIMT_VECTOR_NBYTES
 
 #if defined USE_VC
 
-#define VSPLINE_VECTOR_NBYTES (2*sizeof(Vc::Vector<float>))
+#define ZIMT_VECTOR_NBYTES (2*sizeof(Vc::Vector<float>))
 
 #else
 
-#define VSPLINE_VECTOR_NBYTES 64
+#define ZIMT_VECTOR_NBYTES 64
 
 #endif
 
@@ -207,11 +191,27 @@ namespace zimt
 /// - 'default_size': the default vectorization width to use for T
 
 /// default simd_traits: without further specialization, T will be vectorized
-/// as a zimt::simd_type. This way, *all* types will be vectorized, there is
+/// as a COMMON_SIMD_TYPE. This way, *all* types will be vectorized, there is
 /// no fallback to scalar code for certain types. Scalar code will only be
 /// produced if the vectorization width is set to 1 in code taking this
 /// datum as a template argument. Note that the type which simd_traits produces
 /// for sz == 1 is T itself, not a simd_type of one element.
+
+#if defined USE_STDSIMD
+
+// if USE_STDSIMD is defined, we route all types T to std_simd_type,
+// because there won't be any specializations of simd_traits.
+
+#define COMMON_SIMD_TYPE std_simd_type
+
+#else
+
+// otherwise, we define the template using zimt::simd_type as the
+// fallback type and specialize where the backend can provide.
+
+#define COMMON_SIMD_TYPE simd_type
+
+#endif
 
 template < typename T >
 struct simd_traits
@@ -219,7 +219,7 @@ struct simd_traits
   template < size_t sz > using type =
     typename std::conditional < sz == 1 ,
                                 T ,
-                                zimt::simd_type < T , sz >
+                                COMMON_SIMD_TYPE < T , sz >
                               > :: type ;
                               
   static const size_t hsize = 0 ;
@@ -227,10 +227,12 @@ struct simd_traits
   // the default vector size picked here comes out as 16 for floats,
   // which is twice the vector size used by AVX2.
 
-  enum { default_size =   sizeof ( T ) > VSPLINE_VECTOR_NBYTES
+  enum { default_size =   sizeof ( T ) > ZIMT_VECTOR_NBYTES
                         ? 1
-                        : VSPLINE_VECTOR_NBYTES / sizeof ( T ) } ;
+                        : ZIMT_VECTOR_NBYTES / sizeof ( T ) } ;
 } ;
+
+#undef COMMON_SIMD_TYPE
 
 // next, for some SIMD backends, we specialize simd_traits for a given
 // set of fundamentals. fundamental T which we don't mark this way
@@ -254,9 +256,9 @@ template<> struct simd_traits<T> \
                T , \
                vc_simd_type < T , sz > \
              > :: type ; \
-  enum { default_size =   sizeof ( T ) > VSPLINE_VECTOR_NBYTES \
+  enum { default_size =   sizeof ( T ) > ZIMT_VECTOR_NBYTES \
                         ? 1 \
-                        : VSPLINE_VECTOR_NBYTES / sizeof ( T ) } ; \
+                        : ZIMT_VECTOR_NBYTES / sizeof ( T ) } ; \
 } ;
 
 VC_SIMD(float)
@@ -268,9 +270,7 @@ VC_SIMD(unsigned short)
 
 #undef VC_SIMD
 
-#endif // USE_VC
-
-#if defined USE_HWY
+#elif defined USE_HWY
 
 // with highway, we route pretty much all fundamentals to hwy_simd_type;
 // highway seems to have a wider 'feeding spectrum' of fundamentals.
@@ -292,9 +292,9 @@ template<> struct simd_traits<T> \
                  zimt::simd_type < T , sz > \
                > :: type \
              > :: type ; \
-  enum { default_size =   sizeof ( T ) > VSPLINE_VECTOR_NBYTES \
+  enum { default_size =   sizeof ( T ) > ZIMT_VECTOR_NBYTES \
                         ? 1 \
-                        : VSPLINE_VECTOR_NBYTES / sizeof ( T ) } ; \
+                        : ZIMT_VECTOR_NBYTES / sizeof ( T ) } ; \
 } ;
 
 HWY_SIMD(float)
@@ -310,7 +310,7 @@ HWY_SIMD(unsigned char)
 
 #undef HWY_SIMD
 
-#endif // USE_HWY
+#endif
 
 /// with the definition of 'simd_traits', we can proceed to implement
 /// 'vector_traits':
@@ -508,4 +508,4 @@ void assign_if ( T & target ,
 
 } ; // end of namespace zimt
 
-#endif // #ifndef VSPLINE_VECTOR_H
+#endif // #ifndef ZIMT_VECTOR_H

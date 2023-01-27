@@ -278,7 +278,7 @@ void test ( zimt::bill_t bill )
 
   for ( int k = 0 ; k < 1000 ; k++ )
   {
-    assert ( v3 [ mci [ k ] ] == amp ( mci [ k ] ) ) ;
+    assert ( v3 [ mci [ k ] ] == amp ( f3_t ( mci [ k ] ) ) ) ;
   }
 
   zimt::transform ( amp1 , v1 ) ;

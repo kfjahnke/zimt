@@ -59,7 +59,9 @@
 #include <iostream>
 #include <experimental/simd>
 
-namespace zimt
+#include "simd_type.h"
+
+namespace zimt_stdsimd
 {
 
 /// class template simd_type provides a fixed-size SIMD type.
@@ -712,5 +714,12 @@ struct simd_type
 } ;
 
 } ;
+
+namespace zimt
+{
+template < typename T , std::size_t N >
+using std_simd_type = zimt_stdsimd::simd_type < T , N > ;
+} ;
+
 
 #endif // #define VSPLINE_SIMD_TYPE_H

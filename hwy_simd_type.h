@@ -65,8 +65,7 @@
     (e.g. printing a simd_t to the console is not in any way
     time critical, nor can it benefit from SIMD code) - or
     because I haven't yet tackled writing 'proper' SIMD code for
-    the functionality in question - for example, type conversions
-    are still done with goading. This state of affairs also reflects
+    the functionality in question. This state of affairs also reflects
     my implementation strategy: I started out with the 'ordinary'
     zimt::simd_type and replaced more and more of the goading
     code by 'proper' SIMD code.
@@ -82,10 +81,7 @@
     the underlying POD C array, rather than optimizing it away.
 
     Nevertheless, this implementation seems to tend towards 'proper'
-    SIMD code rather than towards the goading implementation - first
-    tests showed the code took up to 30% longer than code done with
-    Vc on an AVX2 machine, whereas the goading code often takes twice
-    or thrice as long, so it seems to be a path worth persuing.
+    SIMD code rather than towards the goading implementation.
 */
 
 #ifndef VSPLINE_HWY_SIMD_TYPE_H
@@ -95,6 +91,8 @@
 #include <functional>
 #include <type_traits>
 #include <assert.h>
+
+#include "simd_type.h"
 
 #include <hwy/highway.h>
 #include <hwy/contrib/math/math-inl.h>

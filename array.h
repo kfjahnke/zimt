@@ -91,6 +91,12 @@ struct view_t
                        xel_t < long , dimension - 1 >
                       > :: type six_t ;
 
+  typedef typename
+    std::conditional < dimension == 1 ,
+                       xel_t < std::size_t , dimension > ,
+                       xel_t < std::size_t , dimension - 1 >
+                      > :: type sixsz_t ;
+
   // slice_t, the type for a slice, is a view_t with one dimension
   // less - unless 'this' view already is 1D, in which case it's
   // another 1D view_t. The logic is so that you can 'slice' a 1D
@@ -238,7 +244,7 @@ private:
   slice_t _slice ( std::size_t d , long k , std::false_type ) const
   {
     six_t sl_strides ;
-    six_t sl_shape ;
+    sixsz_t sl_shape ;
 
     for ( int i = 0 , j = 0 ; i < dimension ; i++ )
     {
@@ -555,6 +561,12 @@ struct mci_t
   mci_t ( index_type _shape )
   : shape ( _shape )
   { }
+
+  mci_t ( xel_t < std::size_t , D >  _shape )
+  {
+    for ( int i = 0 ; i < D ; i++ )
+      shape [ i ] = long ( _shape [ i ] ) ;
+  }
 
   index_type nth ( long i , std::true_type )
   {

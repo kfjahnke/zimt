@@ -78,17 +78,7 @@ class XEL
 {
 #include "xel_inner.h"
 
-// assignment from equally-sized container. Most containers use std::size_t
-// for the template argument defining the number of elements they hold,
-// but some (notably vigra::TinyVector) use int, which is probably a relic
-// from times when non-type template arguments were of a restricted type
-// set only. By providing a specialization for SIZE_TYPE int, we make
-// equally-sized vigra::TinyVectors permitted initializers.
-// the c'tor from an equally-sized container also uses the corresponding
-// operator= overload, so we use one macro for both.
-// we also need two different variants of vsize for g++; clang++ accepts
-// size_type vsize for both places where VSZ is used, but g++ requires
-// an integer.
+// assignment from equally-sized container.
 // Note that the rhs can use any elementary type which can be legally
 // assigned to value_type. This allows transport of information from
 // differently typed objects, but there are no further constraints on
@@ -96,24 +86,19 @@ class XEL
 // responsibility to make sure such assignments have the desired effect
 // and overload them if necessary.
 
-#define BUILD_FROM_CONTAINER(SIZE_TYPE,VSZ) \
-  template < typename U , template < typename , SIZE_TYPE > class V > \
-  XEL & operator= ( const V < U , VSZ > & rhs ) \
-  { \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
-      (*this) [ i ] = rhs [ i ] ; \
-    return *this ; \
-  } \
-  template < typename U , template < typename , SIZE_TYPE > class V > \
-  XEL ( const V < U , VSZ > & ini ) \
-  { \
-    *this = ini ; \
-  }
+template < typename U , template < typename , std::size_t > class V >
+XEL & operator= ( const V < U , vsize > & rhs )
+{
+  for ( size_type i = 0 ; i < vsize ; i++ )
+    (*this) [ i ] = rhs [ i ] ;
+  return *this ;
+}
 
-BUILD_FROM_CONTAINER(std::size_t,vsize)
-BUILD_FROM_CONTAINER(int,ivsize)
-
-#undef BUILD_FROM_CONTAINER
+template < typename U , template < typename , std::size_t > class V >
+XEL ( const V < U , vsize > & ini )
+{
+  *this = ini ;
+}
 
 // 'projection' to some other fixed-size aggregate via a templated
 // conversion operator: converts a xel_t to an object of class C

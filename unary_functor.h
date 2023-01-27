@@ -116,6 +116,7 @@
 #define VSPLINE_UNARY_FUNCTOR_H
 
 #include "common.h"
+#include "vector.h"
 
 namespace zimt {
 

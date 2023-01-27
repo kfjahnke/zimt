@@ -47,6 +47,10 @@
 
 #include "multithread.h"
 
+#ifndef WIELDING_SEGMENT_SIZE
+#define WIELDING_SEGMENT_SIZE 0
+#endif
+
 namespace zimt
 {
 
