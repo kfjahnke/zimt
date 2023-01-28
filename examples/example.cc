@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-// Here's some initial example code which walks through a few of the
+// Here's some example code which walks through a few of the
 // 'transform family' of functions, showing use of zimt at a high level
 // and also demonstrating that 'feeding' the functions can be done with
 // initializer lists and ATD, which makes it easy to interface with
@@ -56,26 +56,52 @@
 // add -DZIMT_SINGLETHREAD. Note that per default zimt will multithread
 // with pthreads, which you may have to link in on some platforms. g++
 // should also work, but is tested less. To get code specific to your
-// ISA, add -march=native. For some backends (especially highway),
-// additional ISA-specific flags improve performance.
+// ISA, add -march=native on intel/AMD, on other architectures, you can
+// use specific flags, e.g -mcpu=apple-m1 for apple's M1 processor.
+// For some backends (especially highway), additional ISA-specific flags
+// improve performance, e.g for AVX2 add -mavx2 -march=haswell -mpclmul
+// -maes. To use the std::simd backend, you'll need a std::simd
+// implementation which comes with newer versions of g++ - if that's
+// not an option, you can use M. Kretz' original implementation from
+// https://github.com/VcDevel/std-simd.
 
-#define WIELDING_SEGMENT_SIZE 32
+#include "../zimt.h"
 
-#include <type_traits>
-#include <limits>
-#include <array>
-#include <functional>
-
-// #include "common.h"
-// #include "xel.h"
-// #include "vector.h"
-// #include "array.h"
-// #include "unary_functor.h"
-// #include "interleave.h"
-// #include "wielding.h"
-#include "transform.h"
+// Type for typical xel datum consisting of three float values:
 
 typedef zimt::xel_t < float , 3 > f3_t ;
+
+// simple zimt functor, taking some type T as input and producing
+// f3_t as output. Because the operation can use the same code for
+// scalar and simdized operation, eval can be a template. Note
+// here that zimt uses 'eval' member functions in preference of
+// the more conventional operator() overloads. You can add
+// 'callability' to a zimt functor by inheriting from a mixin
+// with CRTP, see struct callable in unary_functor.h
+// The functor is typical for zimt functors: It's set up at
+// construction time and remains const threafter. The eval
+// member functions are marked const.
+
+template < typename T >
+struct amp13_t
+: public zimt::unary_functor < T , f3_t , 16 >
+{
+  const float factor ;
+
+  amp13_t ( const float & _factor )
+  : factor ( _factor )
+  { }
+
+  template < typename I , typename O >
+  void eval ( const I & in , O & out ) const
+  {
+    out = in * factor ;
+  }
+} ;
+
+// next we have examples of reduction functors, which serve to
+// accumulate - or concentrate - information held in arrays into
+// a single value, the 'reduction target'.
 
 // example for a sink functor using an atomic as reduction target.
 // When the sink functor goes out of scope, it adds it's partial
@@ -109,20 +135,26 @@ template < typename dtype > struct sum_up
   { sum = 0 ; }
 
   // finally, two eval overloads, one for scalar input and
-  // one for SIMD input.
+  // one for SIMD input. Note how the eval member functions
+  // declare but do not produce output. The functor will be
+  // used with 'apply' which in turn delegates to transform
+  // which expects the functor to have two arguments, but the
+  // optimzer will see that the second argument is not used
+  // and optimize it away, so having it here is merely a
+  // syntactic requirement.
 
-  void eval ( const in_type & v , in_type & dummy )
+  void eval ( const in_type & v , in_type & )
   { sum += v ; }
 
-  void eval ( const in_v & v , in_v & dummy )
+  void eval ( const in_v & v , in_v & )
   { sum += v.sum() ; }
 
   ~sum_up()
   { collector.fetch_add ( sum ) ; }
 } ;
 
-// if 'act' is always copied, reductions could be done with the
-// regular transform functions.
+// variation using a yield function, which writes to a
+// mutex-protected reduction target.
 
 template < typename T , std::size_t N > struct sum_up_fcpy
 : public zimt::unary_functor < zimt::xel_t < T , N > >
@@ -135,11 +167,12 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   using base_type::vsize ;
 
   // reference to a thread-safe function which will serve to
-  // deposit the 'personal score' to a pooled final result
+  // deposit the 'personal score' to a pooled final result when
+  // the functor is destructed
 
   std::function < void ( dtype ) > yield ;
 
-  dtype * p_score = nullptr ;
+  dtype score ;
 
   // this c'tor is used to create the initial sum_up_fcpy object
   // and fixes the yielding callback
@@ -147,8 +180,7 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   sum_up_fcpy ( std::function < void ( const dtype & ) > _yield )
   : yield ( _yield )
   {
-    p_score = new dtype ;
-    * p_score = 0 ;
+    score = dtype() ;
   }
 
   // sum_up_fcpy needs a copy c'tor to propagate the yield function
@@ -156,51 +188,42 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   sum_up_fcpy ( const sum_up_fcpy & other )
   : yield ( other.yield )
   {
-    p_score = new dtype ;
-    * p_score = 0 ;
+    score = dtype() ;
   }
 
-  // now, two operator() overloads, one for scalar input and
+  // now, two eval overloads, one for scalar input and
   // one for SIMD input. Note the summation: the second overload
   // receives xel_t of N SIMD vectors, so to get a meaningful
   // result with N channels, the SIMD vectors are summed up
   // horizontally and their sums are added to the channels of
   // 'score'.
+  // Note how these eval member functions are not const - they
+  // modify score, which is a member of the functor. If you try
+  // and 'chain' this functor, zimt will (as of this writing)
+  // complain and ask for a const functor. To satisfy this demand,
+  // you can go via a pointer and allocate the score with new in
+  // the c'tor, and delete it in the d'tor. Then the eval functions
+  // can be const, because the functor itself is no longer modified.
 
-  void eval ( const in_type & v , in_type & dummy ) const
+  void eval ( const in_type & v , in_type & )
   {
-    ( * p_score ) += v ;
+    score += v ;
   }
 
-  void eval ( const in_v & v , in_v & dummy ) const
+  void eval ( const in_v & v , in_v & )
   {
     for ( int ch = 0 ; ch < N ; ch++ )
-      (*p_score) [ ch ] += v [ ch ] . sum () ;
+      score [ ch ] += v [ ch ] . sum () ;
   }
 
   ~sum_up_fcpy()
   {
-    yield ( * p_score ) ;
-    delete p_score ;
+    yield ( score ) ;
   }
 } ;
 
-template < typename T >
-struct amp13_t
-: public zimt::unary_functor < T , f3_t , 16 >
-{
-  float factor ;
-
-  amp13_t ( float _factor )
-  : factor ( _factor )
-  { }
-
-  template < typename I , typename O >
-  void eval ( const I & in , O & out ) const
-  {
-    out = in * factor ;
-  }
-} ;
+// This function does the actual test, varying some parameters
+// via the 'bill' object which is varied in main().
 
 void test ( zimt::bill_t bill )
 {
@@ -212,14 +235,15 @@ void test ( zimt::bill_t bill )
 
   // we'll use this readymade functor to convert input values to
   // output values. It's a multiplication with separate factors for
-  // each channle.
-
-  // typedef zimt::xel_t < float , 1 > f1_t ;
+  // each channel.
 
   zimt::amplify_type < f3_t > amp ( { 2.0 , 3.0 , 4.0 } ) ;
   amp13_t < float > amp1 ( 2.5 ) ;
 
-  // set up zimt::views to the data
+  // set up zimt::views to the data, first two 1D views, then
+  // two 3D views. Note how we set up the views with initializer
+  // sequences, which is nicely type-neutral. You might as well
+  // use xel_t or other fixed-size aggregates like std::array
 
   zimt::view_t < 1 , f3_t >
     v1 { data , { 1000 } , { 1 } } ;
@@ -234,6 +258,8 @@ void test ( zimt::bill_t bill )
     v3b { data2 , { 1 , 50 , 500 } , { 50 , 10 , 2 } } ;
 
   // initialize the data to 1.0
+  // set_data expects f3_t, but f3_t does have a c'tor from float,
+  // so we can pass a float here
 
   v3.set_data ( 1.0f ) ;
   v3b.set_data ( 1.0f ) ;
@@ -247,7 +273,7 @@ void test ( zimt::bill_t bill )
   // that the zimt::view can be created 'on the fly', which is handy
   // when calling zimt from code which doesn't use zimt data types.
   // Note how we have to pass the dimensionality of the views, which
-  // can't be determined automatically when using initializer sequences
+  // can't be determined automatically when using initializer sequences.
 
   zimt::apply < 3 >
     ( amp , { data , { 1 , 50 , 500 } , { 50 , 10 , 2 } } , bill ) ;
@@ -255,7 +281,6 @@ void test ( zimt::bill_t bill )
   // set up an iterator over all nD coordinates 'in' the view
 
   zimt::mci_t < 3 > mci ( v3.shape ) ;
-  zimt::mci_t < 1 > mci1 ( v1.shape ) ;
 
   // and use it to check that the result is the same throughout
 
@@ -282,6 +307,8 @@ void test ( zimt::bill_t bill )
   }
 
   zimt::transform ( amp1 , v1 ) ;
+
+  zimt::mci_t < 1 > mci1 ( v1.shape ) ;
 
   for ( int k = 0 ; k < 1000 ; k++ )
   {
@@ -312,11 +339,16 @@ void test ( zimt::bill_t bill )
     assert ( data2 [ k ] == amp ( data [ k ] ) ) ;
   }
 
+  // let's try amp13_t
+
   zimt::array_t < 1 , f3_t > a1l ( 10000 ) ;
   amp13_t < long > amp13 ( 2.0 ) ;
   zimt::transform ( amp13 , a1l ) ;
 
-  zimt::transform ( amp13 , data , 2, 500 ) ;
+  // for 1D transforms, there's an overload taking a plain pointer
+  // and the stride and length
+
+  zimt::transform ( amp13 , data , 2 , 500 ) ;
 
   // next we try a reduction over an entire view, first using
   // an atomic as the final reduction target:
@@ -332,7 +364,7 @@ void test ( zimt::bill_t bill )
 
   sum_up < long > ci ( collector ) ;
 
-  // pass sink functor and array to 'reduce'
+  // pass sink functor and array to 'apply'
 
   zimt::apply ( ci , a3l , bill ) ;
 
@@ -345,9 +377,15 @@ void test ( zimt::bill_t bill )
   // The reduction code is multithreaded, and each thread 'scores'
   // to it's own copy of the 'reductor'. When the thread is done,
   // the reductor is destructed, and the d'tor calls 'yield' to
-  // add the 'individual score' to the total score.
+  // add the 'individual score' to the total score. copies of the
+  // 'reductor' which were never used to perform an 'eval' will
+  // also yield to 'collect', but their contribution will be zero.
 
-  // infrastructure to allow thread-safe access to 'collect'
+  // infrastructure to allow thread-safe access to 'collect'. If
+  // ZIMT_SINGLETHREAD is defined, the mutex protection becomes
+  // futile, and, in fact, impossible, because the code is modified
+  // so as to not make use of any threading-related code, so that
+  // it can compile without pthreads.
 
 #ifndef ZIMT_SINGLETHREAD
   std::mutex m ;
@@ -371,9 +409,7 @@ void test ( zimt::bill_t bill )
   sum_up_fcpy < float , 3 > clf ( yield ) ;
 
   // pass sink functor and array to 'apply' - sum_up_fcpy has built-in
-  // reduction code, the array won't be affected. The general transform
-  // code now uses per-thread copies of the functor, so there is no more
-  // zimt::reduce.
+  // reduction code, the array won't be affected.
 
   collect = 0 ;
 
@@ -383,7 +419,6 @@ void test ( zimt::bill_t bill )
 
   f3_t expected ( 2.0 * a3f3.shape.prod() ) ;
   assert ( collect == expected ) ;
-
 }
 
 int main ( int argc , char * argv[] )
@@ -392,7 +427,8 @@ int main ( int argc , char * argv[] )
 
   // for testing purposes, we try all sorts of combinations of
   // job count and segment size in the 'loading bill', to make
-  // sure that the code is robust.
+  // sure that the code is robust. The test succeeds if all of
+  // the assertions hold and the program termiates without ouput.
 
   for ( int times = 0 ; times < 1000 ; times++ )
   {

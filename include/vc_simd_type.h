@@ -272,7 +272,6 @@ struct vc_simd_type
     }
 
   BUILD_FROM_CONTAINER(std::size_t,vsize)
-  // BUILD_FROM_CONTAINER(int,ivsize)
 
   #undef BUILD_FROM_CONTAINER
 

@@ -47,6 +47,9 @@
 // So even with the move from the std::simd data type to the Vc type and
 // back - which, I assume, is optimized away - we can speed code using
 // atan2 up by a fair amount if we delegate to Vc's superior implementation.
+//
+// note that you can't use examples.sh for this file. compile like this:
+// g++ -Ofast -std=c++17 -march=native -ocherrypicking cherrypicking.cc -lVc
 
 #include <memory>
 #include <assert.h>
@@ -56,8 +59,10 @@
 // the backend headers - if we were to go through the usual motions
 // and #define USE_... already, we'd only have either header included.
 
-#include "std_simd_type.h"
-#include "vc_simd_type.h"
+#include "../include/common.h"
+
+#include "../include/std_simd_type.h"
+#include "../include/vc_simd_type.h"
 
 typedef zimt::std_simd_type < float , 16 > stdf16_t ;
 typedef zimt::vc_simd_type < float , 16 > vcf16_t ;
@@ -84,15 +89,10 @@ void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
   out = h_out ;
 }
 
-// use std::simd backend as standard for the remainder, and #define
-// WIELDING_SEGMENT_SIZE to get effective multithreading of the 1D
-// array - without that definition, the code would effectively become
-// single-threaded.
+// use std::simd backend as standard for the remainder.
 
 #define USE_STDSIMD
-#define WIELDING_SEGMENT_SIZE 1024
-
-#include "transform.h"
+#include "../zimt.h"
 
 // we build unary functors, the first uses f() , the second g():
 
@@ -140,6 +140,13 @@ struct atan_f2
 
 int main ( int argc , char * argv[] )
 {
+  if ( argc < 2 || ( argv[1][0] != '1' && argv[1][0] != '2' ) )
+  {
+    std::cerr << "pass '1' to use std::simd's atan2, or '2' to use Vc's"
+              << std::endl ;
+    exit ( 1 ) ;
+  }
+
   zimt::xel_t < long , 1 > shape = 1000000 ;
   zimt::array_t < 1 , zimt::xel_t < float , 2 > > in ( shape ) ;
   zimt::array_t < 1 , float > out ( shape ) ;

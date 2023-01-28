@@ -16,15 +16,41 @@ Next in line is a unary functor type which I call a 'bimodal functor', because i
 
 What brings it all together is a body of code which performs a concurrent iterations over arbitrary nD arrays of fundamentals or 'xel' data, picking out chunks of data, vectorizing them to SIMD-capable types and invoking the bimodal functors on them, storing back the results to the same or another array. These functions go by the name of 'transform-like' functions, because they are similar to std::transform. There's a variety of these functions, allowing processing of the data or their coordinates, and also reductions.
 
+Find the zimt headers in the folder 'include' - apart from the 'include-all'
+header zimt.h in the repository root. Examples are in the 'examples' folder,
+and there's a script examples.sh which will compile them with the different
+backends and clang++ and g++, assuming you have a std::simd implementation,
+Vc and highway installed.
+
 ## How does 'multi-back-end' work?
+
+zimt is designed to work with several 'back-ends' which 'map' the code
+in zimt to use different SIMD libraries for actual SIMD operations. This
+may sound confusing at first, but it's in fact very helpful: You only need
+to understand one API but you can use all the back-ends with it. Choosing
+one becomes a matter of simply passing a preprocessor #define. Coding an
+interface for a specific back-end can be a difficult and laborious task;
+e.g. the highway interface took several weeks of development time. But
+it's doable, and I'd welcome other SIMD libraries to join in and develop
+zimt as a common API and widen it's spectrum of backends.
+
+Nevertheless you can opt to use code specific to one or several back-ends
+if that suits your needs - you may have legacy code written for one
+back-end, or find that one is particularly suited for a specific purpose.
+The idea is that zimt should also make the back-ends interoperable, as
+demonstrated in 'cherrypicking.cpp'.
+
+To explain how this is done, we need a bit of background.
 
 ### horizontal vs. vertical vectorization
 
-zimt deals with fundamental and 'xel' data - and their 'simdized' form. To understand the concept of the simdized form, it's essential to understand that zimt uses a strategy of 'horizontal vectorization'. Let's look at an RGB pixel. 'Vertical vectorization' would look at the pixel itself as a datum which might be processed with SIMD - single instruction, multiple data. One might expect code facilities offering, e.g., arithmetic operations on entire pixels, rather than on their R, G or B component. But this type of vectorization doesn't play well with the hardware: vector units offer registers with a fixed set of N - say, eight or sixteen - fundamentals which can be processed as SIMD units. If we were to put in a single pixel, most of the register's 'lanes' would go empty. This leads to the concept of horizontal vectorization: Instead of processing single pixels, we process groups of N pixels, representing them by three registers. This is a conceptual shift and *decouples MD from structure semantics*. If we can rely of some mechanism to parcel N pixels into a 'simdized' pixel, we needn't even be aware of the precise number 'N', whereas the simdized pixel's components are now three SIMD vectors, the R, G and B vector of N values each.
+zimt deals with fundamental and 'xel' data - and their 'simdized' form. To understand the concept of the simdized form, it's essential to understand that zimt uses a strategy of 'horizontal vectorization'. Let's look at an RGB pixel. 'Vertical vectorization' would look at the pixel itself as a datum which might be processed with SIMD - single instruction, multiple data. One might expect code facilities offering, e.g., arithmetic operations on entire pixels, rather than on their R, G or B component. But this type of vectorization doesn't play well with the hardware: vector units offer registers with a fixed set of N - say, eight or sixteen - fundamentals which can be processed as SIMD units. If we were to put in a single pixel, most of the register's 'lanes' would go empty. And what about operations like white balancing which modify individual colour channels? This leads to the concept of horizontal vectorization: Instead of processing single pixels, we process groups of N pixels, representing them by three registers of N fundamentals each. This is a conceptual shift and *decouples 'MD' from structure semantics*. If we can rely on some mechanism to parcel N pixels into a 'simdized' pixel, we needn't even be aware of the precise number 'N', whereas the simdized pixel's components are now three SIMD vectors, the R, G and B vector of N values each.
 
 Another way to look at this is the conceptual difference between SoA and Aos: 'Structure of Arrays' and 'Array of Structures'. Think of N pixels in memory. This is an AoS: the 'structures' are the pixels, and there's an array of them. Now think of the 'simdized' form: you now have three vectors of N values, a structure (three registers with different meaning: R, G or B) of arrays (the individual registers with N semantically uniform values).
 
-How do raster data fit in? There are - broadly speaking - two ways of holding large bodies of 'xel' data in memory: the 'interleaved' form where each 'xel' occupies it's 'own' region of memory, and the 'per-channel' form where you have one chunk of memory for each of the xel's channels and pixels have to be put together by extracting values with equal offset from each chunk. An in-between mode is storage in successive segments in 'per-channel' form. All of these forms have advantages and disadvantages. The interleaved form's advantage is preservation of locality (each xel has precisely one address in memory), but the disadvantage is that you have to 'deinterleave' the data to a simdized form. interleaved data are also very common. The per-channel form allows for fast load and store operations, but you need several of them (one per channel) to widely separated regions of memory to assemble a simdized xel. The in-between mode of storing readily simdized data 'imbues' the stored data with the lane count, which is an issue when the data are meant to be portable. zimt focuses on interleaved data, while the other schemes are easy to handle with zimt, but not explicitly provided. To mitigate the effect of se/interleaving, zimt has specialized code for the purpose (see 'interleave.h') - and most of the time you can even be unaware of the de/interleaving operations because the 'transform family' of zimt functions does it automatically.
+How do raster data fit in? There are - broadly speaking - two ways of holding large bodies of 'xel' data in memory: the 'interleaved' form where each 'xel' occupies it's 'own' region of memory, and the 'per-channel' form where you have one chunk of memory for each of the xel's channels and pixels have to be put together by extracting values with equal offset from each chunk. An in-between mode is storage in successive segments in 'per-channel' form. All of these forms have advantages and disadvantages. The interleaved form's advantage is preservation of locality (each xel has precisely one address in memory), but the disadvantage is that you have to 'deinterleave' the data to a simdized form. interleaved data are also very common. The per-channel form allows for fast load and store operations, but you need several of them (one per channel) to widely separated regions of memory to assemble a simdized xel. The in-between mode of storing readily simdized data 'imbues' the stored data with the lane count, which is an issue when the data are meant to be portable. zimt focuses on interleaved data, while the other schemes are easy to handle with zimt, but not explicitly provided. To mitigate the effect of de/interleaving, zimt has specialized code for the purpose (see 'interleave.h') - and most of the time you can even be unaware of the de/interleaving operations because the 'transform family' of zimt functions does it automatically.
+
+zimt encourages you to build 'pipeline code' by functional composition, so that your entire operation ends up being represented by a single functor which you use with the transform family of functions to interfere with your raster data. If the raster data are interleaved, you have one deinterleave at the beginning of the pipeline, and one interleave at the end. With a sufficiently complex pipeline, the amount of time spent on de/interleaving becomes comparably small, but you have data which are compatible with many other applications. Using this scheme (pipeline functor + transform) requires explicit coding of the pipeline, which is more effort than, say, arithmetics defined on a per-array basis (like std::valarray), but for long pipelines it can be daunting to formulate the entire operation as an expression, luring you into producing intermediates. But memory access is typically the slowest component, so you want to avoid it if at all possible.
 
 ### zimt's simd_types: horizontal vectorization with fixed lane count
 
@@ -112,12 +138,12 @@ you get the 'package deal', and all SIMD code will be generated using the
 chosen back-end. But with zimt's multi-back-end approach, you can also use
 several of the back-ends at the same time, and use one back-end's strengths
 to compensate another back-end's weaknesses. I've included an example called
-'cherry-picking.cc' which does just that with a program using the std::simd
+'cherrypicking.cpp' which does just that with a program using the std::simd
 back-end, but slotting in a functor using Vc. I've picked code using atan2,
 which is inefficient in std::simd, but fast in Vc, and the performance
 differs significantly - the precise factor depending on the CPU. Note
-that this is true on intel/AMD platforms, for other architectures, Vc
-offers no efficient implementation of atan2.
+that this is true on intel/AMD platforms and the std::simd implementation coming with g++ at the time of this writing. For other architectures, Vc
+offers no efficient implementation of atan2, whereas the local std::simd implementation may.
 
 The upshot is that, with little programming effort, you can put together
 SIMD code from different libraries. Of course you might do that 'manually',

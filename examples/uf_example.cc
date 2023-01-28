@@ -39,7 +39,7 @@
 // example for the use of zimt:unary_functor with the code blocks
 // given in README.md
 
-#include "transform.h"
+#include "../zimt.h"
 
 typedef zimt::xel_t < float , 3 > pixel_t ;
 
