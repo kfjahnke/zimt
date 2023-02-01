@@ -59,8 +59,6 @@
 // the backend headers - if we were to go through the usual motions
 // and #define USE_... already, we'd only have either header included.
 
-#include "../include/common.h"
-
 #include "../include/std_simd_type.h"
 #include "../include/vc_simd_type.h"
 

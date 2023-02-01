@@ -60,10 +60,21 @@
 #include <functional>
 #include <assert.h>
 #include <cmath>
-#include "xel.h"
+// #include "xel.h"
 
 namespace zimt
 {
+  class simd_flag { } ;
+
+  enum backend { GOADING , VC , HWY , STDSIMD } ;
+
+  template < typename T , std::size_t N , backend B >
+  class simd_tag
+  : public simd_flag
+  { } ;
+
+  template < typename T , std::size_t > struct xel_t ;
+
   class UnsuitableTypeForExpandElements { } ;
 
   template < typename T >

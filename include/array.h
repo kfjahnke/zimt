@@ -42,10 +42,9 @@
 
     While the implementation is very close to vigra's MultiArray and
     MultiArrayView, the types here are - for now - stripped down to
-    the bare essentials. There are aso subtle differences in the
-    copying and assignment logic: in zimt, all copy c'tors and
-    assignment operators between views and arrays only ever copy
-    the member variables of the array/view object. To copy data
+    the bare essentials. There are also subtle differences in the
+    copying and assignment logic: in zimt, all copy c'tors only ever
+    copy the member variables of the array/view object. To copy data
     between memory referred to by different views, the explicit
     copy_data function has to be used.
 
@@ -54,6 +53,10 @@
     This allows array_t object to be copied and passed around freely,
     and when the last copy goes out of scope, the owned data are
     destructed.
+
+    This header also has two simple iterators, one random-access
+    iterator producing an nD index from a sequence number, and one
+    sequential operator, producing nD indexes rising from {n*0}
 */
 
 #include "xel.h"
@@ -77,13 +80,19 @@ struct view_t
   typedef xel_t < std::size_t , dimension > shape_type ;
   typedef xel_t < long , dimension > index_type ;
 
-  value_type * origin ;
-  index_type strides ;
-  shape_type shape ;
+  // we keep the members const. assignment between views and arrays
+  // is not allowed, only copy construction can initialize a view
+  // or array with the same members.
+
+  value_type * const origin ;
+  const index_type strides ;
+  const shape_type shape ;
 
   // helper type six_t is used to construct slice_t. It is a xel_t
   // of one dimension less than 'dimension' - or a xel_t with one
   // channel if dimension == 1. six_t stands for 'slice index type'.
+  // The second variant is for the shape and uses dtf::size_t
+  // instead of long
 
   typedef typename
     std::conditional < dimension == 1 ,
@@ -142,47 +151,18 @@ struct view_t
     shape ( _shape )
     { }
 
-  // This c'tor creates a view to the data referred to by a
-  // view-like object passed as argument. This object needs to
-  // provide functions 'data', 'shape' and 'stride'.
-  // data() must return a T*, and shape and strides must return
-  // fixed-size aggregates compatible with xel_t - not necessarily
-  // xel_t itself.
-  // This c'tor is modelled to cooperate with vigra::MultiArrayView.
+  // view_t's copy c'tor creates a new view with the same properties,
+  // referring to the same data.
 
-  // template < typename arg_t >
-  // view_t ( const arg_t & arg )
-  // : origin ( arg.data() ) ,
-  //   strides ( arg.stride() ) ,
-  //   shape ( arg.shape() )
-  // { }
-
-  // adapter c'tor. Typically this will be called with three lambdas
-  // yielding the required values when called with the argument holding
-  // the 'original' view.
-
-  template < typename arg_t ,
-             typename fd_t ,
-             typename fst_t ,
-             typename fsh_t >
-  view_t ( const arg_t & arg ,
-           fd_t _data ,
-           fst_t _strides ,
-           fsh_t _shape )
-  : origin ( _data ( arg ) ) ,
-    strides ( _strides ( arg ) ) ,
-    shape ( _shape ( arg ) )
+  view_t ( const view_t & rhs )
+  : origin ( rhs.origin ) ,
+    strides ( rhs.strides ) ,
+    shape ( rhs.shape )
   { }
 
-  // view_t's assignment operator creates a new view with the same
-  // properties, referring to the same data. The copy c'tor behaves
-  // in the same way. To copy data referred to one view to memory
-  // viewed by another view, use copy_data, and to initialize the
-  // data with a value_type, use set_data.
+  // copy assignment is forbidden.
 
-  view_t & operator= ( const view_t & rhs ) = default ;
-
-  view_t ( const view_t & rhs ) = default ;
+  view_t & operator= ( const view_t & rhs ) = delete ;
 
   // get the number of value_type the view refers to.
 
@@ -486,24 +466,16 @@ public:
 
   // copy c'tor. This does create a view to the same data, sharing the
   // same shared_ptr to the data. If you want a new array holding a
-  // copy of the data, use 'clone' below. Just to be clear:
+  // copy of the data, create a new array and use copy_data.
 
-  array_t ( const array_t & rhs ) = default ;
+  array_t ( const array_t & rhs )
+  : base_t ( rhs ) ,
+    base ( rhs.base )
+  { }
 
-  // copy assignment works the same way; 'this' array will behave just
-  // like the rhs, and previously 'held' data are released.
+  // copy assignment is forbidden.
 
-  array_t & operator= ( const array_t & rhs ) = default ;
-
-  // clone creates an array with the same shape, containing the same
-  // data. TODO: strides are not necessarily the same - is this an issue?
-
-  array_t clone()
-  {
-    array_t result ( shape ) ;
-    result.copy_data ( *this ) ;
-    return result ;
-  }
+  array_t & operator= ( const array_t & rhs ) = delete ;
 
   // array allocating fresh memory. The array is now in sole possesion
   // of the memory, and unless it's copied the memory is released when
@@ -546,29 +518,57 @@ public:
 
 } ;
 
+// coordinate iterators. For now, we don't implement 'proper'
+// c++ standard operators, but just two stripped-down ones.
+// zimt views are suitable for random access iteration, but it
+// would require extra coding effort to provide that.
+
 // stripped-down version of vigra::MultiCoordinateIterator which only
 // produces the nth nD index into an array of given shape. This class
-// is used in wielding.h
+// is used in wielding.h. use of the modulo and division make this
+// quite slow, so it's best not used for iterations over arrays.
+// in wielding.h it's only used to produce the start address for
+// each line, so it's not time-critical there.
+// Note that if the data are contiguous in memory, it can be much
+// more efficient to iterate over the data directly - or over a 1D
+// view of the data.
+// Why do we need this iterator? For multithreading. There, the worker
+// threads obtain 'joblet numbers' from an atomic and decode these
+// numbers to segments of data which need to be processed. And the
+// decoding is where this iterator is used.
 
-template  < std::size_t D , bool order = true >
+template  < std::size_t D >
 struct mci_t
+: public xel_t < long , D >
 {
   static const std::size_t dimension = D ;
 
   typedef xel_t < long , D > index_type ;
-  index_type shape ;
+  const index_type & shape ;
 
-  mci_t ( index_type _shape )
-  : shape ( _shape )
+  template < typename T >
+  mci_t ( xel_t < T , D >  _shape )
+  : index_type ( _shape ) ,
+    shape ( *this )
   { }
 
-  mci_t ( xel_t < std::size_t , D >  _shape )
-  {
-    for ( int i = 0 ; i < D ; i++ )
-      shape [ i ] = long ( _shape [ i ] ) ;
-  }
+  // accept any argument as long as can be converted to index_type
+  // TODO: this is very permissive - might be better to restrict to
+  // fixed-size containers of some integral type
 
-  index_type nth ( long i , std::true_type )
+  template < typename T >
+  mci_t ( T _shape )
+  : index_type ( _shape ) ,
+    shape ( *this )
+  { }
+
+  template < typename T >
+  mci_t ( const std::initializer_list < T > & rhs )
+  : index_type ( rhs ) ,
+    shape ( *this )
+  { }
+
+  index_type operator[] ( long i )
   {
     index_type result ;
 
@@ -579,26 +579,39 @@ struct mci_t
     }
     return result ;
   }
+} ;
 
-  index_type nth ( long i , std::false_type )
+// similar to mci_t, but this class is for walking through a sequence
+// of nD coordinates. It's not for random access. For now, forward
+// only. Here there are no division or modulo operations.
+
+template  < std::size_t D >
+struct mcs_t
+: public mci_t < D >
+{
+  typedef mci_t < D > base_t ;
+  using base_t::base_t ;
+  using base_t::dimension ;
+  using typename base_t::index_type ;
+  using base_t::shape ;
+
+  index_type current = 0L ;
+
+  // operator() yields the current value and updates 'current'.
+
+  index_type operator() ()
   {
-    index_type result ;
-    result [ dimension - 1 ] = dimension <= 1
-                               ? i
-                               : i % shape [ dimension - 1 ] ;
-    long blk = 1 ;
-    for ( std::size_t d = dimension - 1 ; d > 0 ; )
+    // a bit verbose, let the optimizer figure it out
+
+    auto result = current ;
+    for ( std::size_t d = 0 ; d < dimension ; d++ )
     {
-      blk *= shape [ d ] ;
-      --d ;
-      result [ d ] = ( i / blk ) % shape [ d ] ;
+      if ( ++ current [ d ] == shape [ d ] )
+        current [ d ] = 0 ;
+      else
+        break ;
     }
     return result ;
-  }
-
-  index_type operator[] ( long i )
-  {
-    return nth ( i , std::integral_constant < bool , order > () ) ;
   }
 } ;
 

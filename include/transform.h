@@ -130,6 +130,10 @@ namespace zimt {
 /// parameter 'bill' which serves to fine-tune the operation - see the
 /// documentation of struct bill_t.
 
+// TODO: the data might be tested for their layout im memory, and if
+// they are contiguous - or subdimensional slices are contiguous - the
+// view(s) might be reshaped to make processing more efficient.
+
 template < std::size_t dimension , typename act_t >
 void transform ( const act_t & _act ,
                  const view_t < dimension ,

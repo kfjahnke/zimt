@@ -107,6 +107,16 @@ const value_type & operator[] ( const size_type & i ) const
   return _store[i] ;
 }
 
+value_type * data()
+{
+  return _store ;
+}
+
+const value_type * data() const
+{
+  return _store ;
+}
+
 // assignment from a value_type. The assignment is coded as a loop,
 // but it should be obvious to the compiler's loop vectorizer that
 // the loop is a 'SIMD operation in disguise', so here we have the
@@ -134,12 +144,13 @@ XEL ( const XEL & ) = default ;
 
 // construction from a std::initializer_list
 
-XEL ( const std::initializer_list < value_type > & rhs )
+template < typename T >
+XEL ( const std::initializer_list < T > & rhs )
 {
   assert ( rhs.size() == vsize ) ; // TODO: prefer constexpr
   value_type * trg = _store ;
   for ( const auto & src : rhs )
-    *trg++ = src ;
+    *trg++ = value_type ( src ) ;
 }
 
 static const XEL iota()

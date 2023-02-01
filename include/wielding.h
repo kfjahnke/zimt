@@ -54,21 +54,21 @@
 #include <algorithm>
 #include "array.h"
 #include "unary_functor.h"
-#include "interleave.h"
 #include "bill.h"
 
 namespace wielding
 {
+typedef int ic_type ;
+
 /// vs_adapter wraps a zimt::unary_functor to produce a functor which is
 /// compatible with the wielding code. This is necessary, because zimt's
 /// unary_functors take 'naked' arguments if the data are 1D, while the
 /// wielding code always passes TinyVectors. The operation of this wrapper
 /// class should not have a run-time effect; it's simply converting references.
-/// the wrapped functor is only used via operator(), so this is what we provide.
 /// While it would be nice to simply pass through the unwrapped unary_functor,
-/// this would force us to deal with the distinction between data in TinyVectors
+/// this would force us to deal with the distinction between data in xel_t
 /// and 'naked' fundamentals deeper down in the code, and here is a good central
-/// place where we can route to uniform access via TinyVectors - possibly with
+/// place where we can route to uniform access via xel_t - possibly with
 /// only one element.
 /// By inheriting from inner_type, we provide all of inner_type's type system
 /// which we don't explicitly override.
@@ -270,39 +270,7 @@ void coupled_f ( act_t act ,
 
       // first we perform a peeling run, processing data vectorized
       // as long as there are enough data to fill the vectorized
-      // buffers (md_XXX_data_type). Vc needs special code here:
-
-      #ifdef USE_VC
-
-      // flags which are true if vsize is a multiple of the hardware
-      // vector size for the elementary types involved. This works like
-      // an opt-in: even if chn_in or chn_out are not 1, if these flags
-      // are true, specialized load/store variants are called. If, then,
-      // use_load_t or use_store_t are std::false_type, we'll end up in
-      // the specialized Vc code using InterleavedMemoryWrapper.
-
-      static const bool in_n_vecsz
-        = (    zimt::vector_traits<in_ele_type>::hsize > 0
-            && vsize % zimt::vector_traits<in_ele_type>::hsize == 0 ) ;
-
-      static const bool out_n_vecsz
-        = (    zimt::vector_traits<out_ele_type>::hsize > 0
-            && vsize % zimt::vector_traits<out_ele_type>::hsize == 0 ) ;
-
-      #else
-
-      static const bool in_n_vecsz = false ;
-      static const bool out_n_vecsz = false ;
-
-      #endif
-
-      // used to dispatch to either of the unstrided bunch/fluff overloads;
-      // see also the remarks coming with use_store_t in the routine above.
-
-      typedef typename std::integral_constant < bool , chn_in == 1 > use_load_t ;
-
-      typedef typename std::integral_constant < bool , chn_out == 1 > use_store_t ;
-
+      // buffers (md_XXX_data_type).
       // depending on whether the input/output is strided or not,
       // and on the vector size and number of channels,
       // we pick different overloads of 'bunch' and fluff'. The
@@ -314,18 +282,16 @@ void coupled_f ( act_t act ,
       // conditionals. But the complexity is rewarded with optimal
       // peformance.
 
-      if (    in_stride == 1
-          && ( chn_in == 1 || in_n_vecsz ) )
+      if ( in_stride == 1 )
       {
-        if (    out_stride == 1
-            && ( chn_out == 1 || out_n_vecsz ) )
+        if ( out_stride == 1 )
         {
           for ( ic_type a = 0 ; a < nr_vectors ; a++ )
           {
-            bunch ( src , in_buffer , use_load_t() ) ;
+            in_buffer.bunch ( src ) ;
             src += vsize ;
             act.eval ( in_buffer , out_buffer ) ;
-            fluff ( out_buffer , trg , use_store_t() ) ;
+            out_buffer.fluff ( trg ) ;
             trg += vsize ;
           }
         }
@@ -333,38 +299,36 @@ void coupled_f ( act_t act ,
         {
           for ( ic_type a = 0 ; a < nr_vectors ; a++ )
           {
-            bunch ( src , in_buffer , use_load_t() ) ;
+            in_buffer.bunch ( src ) ;
             src += vsize ;
             act.eval ( in_buffer , out_buffer ) ;
-            fluff ( out_buffer , trg , out_stride ) ;
-            trg += out_stride * vsize ;
+            out_buffer.fluff ( trg , out_stride ) ;
+            trg += vsize * out_stride ;
           }
         }
       }
       else
       {
-        if (    out_stride == 1
-            && ( chn_out == 1 || out_n_vecsz ) )
+        if ( out_stride == 1 )
         {
           for ( ic_type a = 0 ; a < nr_vectors ; a++ )
           {
-            bunch ( src , in_buffer , in_stride ) ;
-            src += in_stride * vsize ;
+            in_buffer.bunch ( src , in_stride ) ;
+            src += vsize * in_stride ;
             act.eval ( in_buffer , out_buffer ) ;
-            fluff ( out_buffer , trg , use_store_t() ) ;
+            out_buffer.fluff ( trg ) ;
             trg += vsize ;
           }
         }
         else
         {
-          // this is the 'generic' case:
           for ( ic_type a = 0 ; a < nr_vectors ; a++ )
           {
-            bunch ( src , in_buffer , in_stride ) ;
-            src += in_stride * vsize ;
+            in_buffer.bunch ( src , in_stride ) ;
+            src += vsize * in_stride ;
             act.eval ( in_buffer , out_buffer ) ;
-            fluff ( out_buffer , trg , out_stride ) ;
-            trg += out_stride * vsize ;
+            out_buffer.fluff ( trg , out_stride ) ;
+            trg += vsize * out_stride ;
           }
         }
       }
@@ -430,15 +394,15 @@ void coupled_f ( act_t act ,
 {
   zimt::view_t < 2 , typename act_t::in_type > vi
     ( in_view.origin ,
-      { in_view.strides[0] ,
+      { long ( in_view.strides[0] ) ,
         long ( in_view.strides[0] * in_view.shape[0] ) } ,
-      { in_view.shape[0] , 1 } ) ;
+      { in_view.shape[0] , 1UL } ) ;
 
   zimt::view_t < 2 , typename act_t::out_type > vo
     ( out_view.origin ,
-      { out_view.strides[0] ,
+      { long ( out_view.strides[0] ) ,
         long ( out_view.strides[0] * out_view.shape[0] ) } ,
-      { out_view.shape[0] , 1 } ) ;
+      { out_view.shape[0] , 1UL } ) ;
 
   coupled_f ( act , vi , vo , bill ) ;
 }
@@ -605,46 +569,14 @@ void indexed_f ( act_t act ,
 
       // first we perform a peeling run, processing data vectorized
       // as long as there are enough data to fill the vectorized
-      // buffers (md_XXX_data_type). Vc needs special code here:
+      // buffers (md_XXX_data_type).
 
-#ifdef USE_VC
-
-      // flag which is true if vsz is a multiple of the hardware
-      // vector size for out_ele_type. This flag will activate the use
-      // of specialized memory access code (Vc::InterleavedMemoryWrapper)
-      // If this is unwanted, the easiest way to deactivate that code
-      // is by setting this flag to false. Then, all access which can't
-      // use straight SIMD store operations will use scatters.
-
-      static const bool out_n_vecsz
-      (
-        ( zimt::vector_traits<out_ele_type>::hsize <= 0 )
-          ? false
-          : ( vsize % zimt::vector_traits<out_ele_type>::hsize == 0 )
-      ) ;
-
-#else
-
-      static const bool out_n_vecsz = false ;
-
-#endif
-
-      // used to dispatch to either of the unstrided fluff overloads;
-
-      typedef typename std::integral_constant < bool , chn_out == 1 > use_store_t ;
-
-      // if the stride is 1, we can use specialized 'fluff' variants,
-      // provided the data are single-channel (or the vector width
-      // is a multiple of the hardware vector width when Vc is used).
-      // All other cases are handled with the variant of 'fluff'
-      // taking a stride.
-
-      if ( out_stride == 1 && ( chn_out == 1 || out_n_vecsz ) )
+      if ( out_stride == 1 )
       {
         for ( ic_type a = 0 ; a < nr_vectors ; a++ )
         {
           act.eval ( md_crd , buffer ) ;
-          fluff ( buffer , trg , use_store_t() ) ;
+          buffer.fluff ( trg ) ;
           trg += vsize ;
           md_crd[axis] += vsize ;
         }
@@ -654,7 +586,7 @@ void indexed_f ( act_t act ,
         for ( ic_type a = 0 ; a < nr_vectors ; a++ )
         {
           act.eval ( md_crd , buffer ) ;
-          fluff ( buffer , trg , out_stride ) ;
+          buffer.fluff ( trg , out_stride ) ;
           trg += vsize * out_stride ;
           md_crd[axis] += vsize ;
         }
@@ -830,46 +762,14 @@ void indexed_f ( act_t act ,
 
       // first we perform a peeling run, processing data vectorized
       // as long as there are enough data to fill the vectorized
-      // buffers (md_XXX_data_type). Vc needs special code here:
+      // buffers (md_XXX_data_type).
 
-#ifdef USE_VC
-
-      // flag which is true if vsz is a multiple of the hardware
-      // vector size for out_ele_type. This flag will activate the use
-      // of specialized memory access code (Vc::InterleavedMemoryWrapper)
-      // If this is unwanted, the easiest way to deactivate that code
-      // is by setting this flag to false. Then, all access which can't
-      // use straight SIMD store operations will use scatters.
-
-      static const bool out_n_vecsz
-      (
-        ( zimt::vector_traits<out_ele_type>::hsize <= 0 )
-          ? false
-          : ( vsize % zimt::vector_traits<out_ele_type>::hsize == 0 )
-      ) ;
-
-#else
-
-      static const bool out_n_vecsz = false ;
-
-#endif
-
-      // used to dispatch to either of the unstrided fluff overloads;
-
-      typedef typename std::integral_constant < bool , chn_out == 1 > use_store_t ;
-
-      // if the stride is 1, we can use specialized 'fluff' variants,
-      // provided the data are single-channel (or the vector width
-      // is a multiple of the hardware vector width when Vc is used).
-      // All other cases are handled with the variant of 'fluff'
-      // taking a stride.
-
-      if ( out_stride == 1 && ( chn_out == 1 || out_n_vecsz ) )
+      if ( out_stride == 1 )
       {
         for ( ic_type a = 0 ; a < nr_vectors ; a++ )
         {
           act.eval ( md_crd , buffer ) ;
-          fluff ( buffer , trg , use_store_t() ) ;
+          buffer.fluff ( trg ) ;
           trg += vsize ;
           md_crd[0] += vsize ;
         }
@@ -879,7 +779,7 @@ void indexed_f ( act_t act ,
         for ( ic_type a = 0 ; a < nr_vectors ; a++ )
         {
           act.eval ( md_crd , buffer ) ;
-          fluff ( buffer , trg , out_stride ) ;
+          buffer.fluff ( trg , out_stride ) ;
           trg += vsize * out_stride ;
           md_crd[0] += vsize ;
         }

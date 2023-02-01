@@ -765,6 +765,7 @@ void convert ( const simd_t < src_t , vsize > & src ,
 template < typename _value_type ,
            std::size_t _vsize >
 struct HWY_ALIGN simd_t
+: public zimt::simd_tag < _value_type , _vsize , zimt::HWY >
 {
   typedef std::size_t size_type ;
 
@@ -2041,6 +2042,124 @@ struct allocator_traits < hwy_simd_type < T , N > >
 {
   typedef simd_allocator < hwy_simd_type < T , N > > type ;
 } ;
+
+// for the time being, highway can interleave 2, 3, and 4-channel
+// data. We route the code with overloads, because there is no
+// generalized code for an arbitrary number of channels.
+// code de/interleaving xel data with more than four channels will
+// be routed to one of the templates in xel.h, using gather/scatter
+
+template < typename T , std::size_t vsz >
+void interleave ( const zimt::xel_t
+                    < zimt::hwy_simd_type < T , vsz > , 2 > & src ,
+                  zimt::xel_t < T , 2 > * const & trg )
+{
+  typedef typename zimt::hwy_simd_type < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved2 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 2 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void interleave ( const zimt::xel_t
+                    < zimt::hwy_simd_type < T , vsz > , 3 > & src ,
+                  zimt::xel_t < T , 3 > * const & trg )
+{
+  typedef typename zimt::hwy_simd_type < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved3 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        src[2].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 3 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void interleave ( const zimt::xel_t
+                    < zimt::hwy_simd_type < T , vsz > , 4 > & src ,
+                  zimt::xel_t < T , 4 > * const & trg )
+{
+  typedef typename zimt::hwy_simd_type < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved4 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        src[2].yield ( i ) ,
+                        src[3].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 4 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const zimt::xel_t < T , 2 > * const & src ,
+                    zimt::xel_t
+                       < zimt::hwy_simd_type < T , vsz > , 2 > & trg )
+{
+  typedef typename zimt::hwy_simd_type < T , vsz > :: vec_t vec_t ;
+  typedef  typename zimt::hwy_simd_type < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved2 ( D() , p_src , c0 , c1 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    p_src += 2 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const zimt::xel_t < T , 3 > * const & src ,
+                    zimt::xel_t
+                       < zimt::hwy_simd_type < T , vsz > , 3 > & trg )
+{
+  typedef typename zimt::hwy_simd_type < T , vsz > :: vec_t vec_t ;
+  typedef  typename zimt::hwy_simd_type < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 , c2 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved3 ( D() , p_src , c0 , c1 , c2 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    trg[2].take ( i , c2 ) ;
+    p_src += 3 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const zimt::xel_t < T , 4 > * const & src ,
+                    zimt::xel_t
+                       < zimt::hwy_simd_type < T , vsz > , 4 > & trg )
+{
+  typedef typename zimt::hwy_simd_type < T , vsz > :: vec_t vec_t ;
+  typedef  typename zimt::hwy_simd_type < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 , c2 , c3 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved4 ( D() , p_src , c0 , c1 , c2 , c3 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    trg[2].take ( i , c2 ) ;
+    trg[3].take ( i , c3 ) ;
+    p_src += 4 * trg[0].L() ;
+  }
+}
+
 } ;
 
 
@@ -2053,6 +2172,7 @@ struct allocator_traits < zimt::hwy_simd_type < T , N > >
   typedef zimt::simd_allocator
             < zimt::hwy_simd_type < T , N > > allocator_type ;
 } ;
+
 
 } ;
 

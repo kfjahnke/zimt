@@ -120,6 +120,7 @@
 
 #include <iostream>
 #include <initializer_list>
+#include "common.h"
 
 namespace zimt
 {
@@ -155,6 +156,7 @@ namespace zimt
 template < typename _value_type ,
            std::size_t _vsize >
 class XEL
+: public simd_tag < _value_type , _vsize , GOADING >
 {
 #include "xel_inner.h"
 

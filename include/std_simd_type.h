@@ -85,7 +85,8 @@ struct simd_type
 : private std::experimental::simd
           < _value_type ,
             std::experimental::simd_abi::fixed_size < _vsize >
-          >
+          > ,
+  public zimt::simd_tag < _value_type , _vsize , zimt::STDSIMD >
 {
   typedef std::experimental::simd_abi::fixed_size < _vsize > abi_t ;
 

@@ -37,7 +37,7 @@
 /************************************************************************/
 
 
-/*! \file simd_type.h
+/*! \file xel.h
 
     \brief arithmetic container type
 */
@@ -50,9 +50,47 @@
 #include <assert.h>
 #include <iostream>
 #include <initializer_list>
+#include "common.h"
 
 namespace zimt
 {
+// class simd_flag { } ;
+//
+// enum backend { GOADING , VC , HWY , STDSIMD } ;
+//
+// template < typename T , std::size_t N , backend B >
+// class simd_tag
+// : public simd_flag
+// { } ;
+//
+// free function templates for deinterleave and interleave, which can
+// be overridden for specific vec_t - e.g. zimt::vc_simd_type. The
+// fallback, general case uses a regular gather/scatter, which is
+// will work for any vec_t but may be less efficient than specialized
+// code for de/interleaving
+
+template < typename vec_t , std::size_t nch >
+void deinterleave ( const xel_t < ET < vec_t > , nch > * _src ,
+                    xel_t < vec_t , nch > & v )
+{
+  static const typename vec_t::index_type indexes
+    = vec_t::IndexesFromZero() * int ( nch ) ;
+  auto * src = _src->data() ;
+  for ( std::size_t i = 0 ; i < nch ; i++ , src++ )
+    v[i].gather ( src , indexes ) ;
+}
+
+template < typename vec_t , std::size_t nch >
+void interleave ( const xel_t < vec_t , nch > & v ,
+                  xel_t < ET < vec_t > , nch > * _trg )
+{
+  static const typename vec_t::index_type indexes
+    = vec_t::IndexesFromZero() * int ( nch ) ;
+  auto * trg = _trg->data() ;
+  for ( std::size_t i = 0 ; i < nch ; i++ , trg++ )
+    v[i].scatter ( trg , indexes ) ;
+}
+
 /// class template xel_t provides a fixed-size container type for
 /// small sets of fundamentals or SIMD data types which are stored
 /// in a C vector.
@@ -138,6 +176,109 @@ bool operator!= ( const xel_t < value_type , vsize > rhs ) const
 {
   return ! ( (*this) == rhs ) ;
 }
+
+// next we have code which will only be present for xel_t of some
+// SIMD data type, like zimt::simd_type or zimt::vc_simd_type.
+// For such types, value_type will inherit from simd_flag, so we
+// can use enable_if to produce the code if appropriate.
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void fluff_contiguous ( xel_t < ET < value_type > , vsize > * trg ,
+                        std::true_type ) const // multi-channel
+{
+  interleave ( *this , trg ) ;
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void fluff_contiguous ( xel_t < ET < value_type > , vsize > * _trg ,
+                        std::false_type ) const // single channel
+{
+  auto * trg = _trg->data() ;
+  (*this)[0].store ( trg ) ;
+}
+
+// unstrided fluff. The target memory is contiguous, meaning one
+// xel is following the other without gaps. For this scenario, we
+// don't need a stride, but we dispatch further on whether we have
+// single-channel or multi-channel data.
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void fluff ( xel_t < ET < value_type > , vsize > * trg ) const
+{
+  typedef std::integral_constant < bool , ( vsize > 1 ) > tag_t ;
+  fluff_contiguous ( trg , tag_t() ) ;
+}
+
+// strided 'fluff'. The target memory is not contiguous (hence the
+// stride) - but we do a runtime dispatch to unstrided fluff (above)
+// if the stride is one.
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void fluff ( xel_t < ET < value_type > , vsize > * _trg ,
+             std::size_t stride ) const
+{
+  static const typename value_type::index_type indexes
+    = value_type::IndexesFromZero() * int ( stride * vsize ) ;
+  auto * trg = _trg->data() ;
+  if ( stride == 1 )
+  {
+    fluff ( _trg ) ;
+  }
+  else
+  {
+    for ( std::size_t i = 0 ; i < vsize ; i++ , trg++ )
+      (*this)[i].scatter ( trg , indexes ) ;
+  }
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void bunch_contiguous ( const xel_t < ET < value_type > , vsize > * src ,
+                        std::true_type ) // multi-channel
+{
+  deinterleave ( src , *this ) ;
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void bunch_contiguous ( const xel_t < ET < value_type > , vsize > * _src ,
+                        std::false_type ) // single channel
+{
+  auto const * src = _src->data() ;
+  (*this)[0].load ( src ) ;
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void bunch ( const xel_t < ET < value_type > , vsize > * src )
+{
+  typedef std::integral_constant < bool , ( vsize > 1 ) > tag_t ;
+  bunch_contiguous ( src , tag_t() ) ;
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void bunch ( const xel_t < ET < value_type > , vsize > * _src ,
+             std::size_t stride )
+{
+  static const typename value_type::index_type indexes
+    = value_type::IndexesFromZero() * int ( stride * vsize ) ;
+  auto const * src = _src->data() ;
+  if ( stride == 1 )
+  {
+    bunch ( _src ) ;
+  }
+  else
+  {
+    for ( std::size_t i = 0 ; i < vsize ; i++ , src++ )
+      (*this)[i].gather ( src , indexes ) ;
+  }
+}
+
 
 } ;
 

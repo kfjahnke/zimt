@@ -74,7 +74,8 @@ namespace zimt
 template < typename _value_type ,
            std::size_t _vsize >
 struct vc_simd_type
-: private Vc::SimdArray < _value_type , _vsize >
+: private Vc::SimdArray < _value_type , _vsize > ,
+  public zimt::simd_tag < _value_type , _vsize , zimt::VC >
 {
   typedef Vc::SimdArray < _value_type , _vsize > base_t ;
 

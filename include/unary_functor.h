@@ -289,27 +289,10 @@ struct callable
   typedef typename vector_traits < IN , vsize > :: type cl_in_v ;
   typedef typename vector_traits < OUT , vsize > :: type cl_out_v ;
   
-  OUT operator() ( const IN & in ) const
-  {
-    auto self = static_cast < const derived_type * const > ( this ) ;
-    OUT out ;
-    self->eval ( in , out ) ;
-    return out ;
-  }
-  
   OUT operator() ( const IN & in )
   {
     auto self = static_cast < derived_type * > ( this ) ;
     OUT out ;
-    self->eval ( in , out ) ;
-    return out ;
-  }
-  
-  template < typename = std::enable_if < ( vsize > 1 ) > >
-  cl_out_v operator() ( const cl_in_v & in ) const
-  {
-    auto self = static_cast < const derived_type * const > ( this ) ;
-    cl_out_v out ;
     self->eval ( in , out ) ;
     return out ;
   }
@@ -391,49 +374,44 @@ struct broadcast
 
   template < typename = std::enable_if < ( vsize > 1 ) > >
   void eval ( const in_v & inv ,
-                    out_v & outv ) const
+                    out_v & outv )
   {
     // to use the derived functor's eval routine, we need:
 
-    auto fp = static_cast < const derived_type * > ( this ) ;
+    auto fp = static_cast < derived_type * > ( this ) ;
 
     // we reinterpret input and output as nD types. in_v/out_v are
     // plain SIMD types if in_type/out_type is fundamental; here we
-    // want a TinyVector of one element in this case.
+    // want a xel_t of one element in this case.
 
-    const in_nd_ele_v & iv ( reinterpret_cast < const in_nd_ele_v & > ( inv ) ) ;
-    out_nd_ele_v & ov ( reinterpret_cast < out_nd_ele_v & > ( outv ) ) ;
+    const in_nd_ele_v & iv
+      ( reinterpret_cast < const in_nd_ele_v & > ( inv ) ) ;
 
-    // we also need a view to an in_type and an out_type object as a nD
-    // entity, even if they are single-channel, so that we can us a loop
-    // to access them, while we need the plain in_type/out_type objects
-    // as arguments to the unvectorized eval routine
+    out_nd_ele_v & ov
+      ( reinterpret_cast < out_nd_ele_v & > ( outv ) ) ;
 
-    in_nd_ele_type nd_in ;
-    out_nd_ele_type nd_out ;
+    // we need buffers of in_type and out_type for interleaved
+    // values to feed them to 'fp' one by one. The buffers are
+    // filled and emptied with the vectorized input/output type's
+    // 'fluff' and 'bunch' member functions which provide the best
+    // de/interleaving available - or delegate to load/store if
+    // the data are single-channel.
 
-    in_type  & in ( reinterpret_cast < in_type & >  ( nd_in ) ) ;
-    out_type & out ( reinterpret_cast < out_type & > ( nd_out ) ) ;
+    in_type itl_in [ vsize ] ;
+    out_type itl_out [ vsize ] ;
 
-    // now comes the rollout. If either dim_in or dim_out are 1,
-    // the compiler should optimize away the loop.
+    // fill the buffer of scalar input values
+
+    inv.fluff ( itl_in ) ;
+
+    // process the input values one by one
 
     for ( int e = 0 ; e < vsize ; e++ )
-    {
-      // extract the eth input value from the simdized input
+      fp->eval ( itl_in[e] , itl_out[e] ) ;
 
-      for ( int d = 0 ; d < dim_in ; d++ )
-        nd_in [ d ] = iv [ d ] [ e ] ;
+    // store the output back to the vectorized output object
 
-      // process it with eval, passing the eval-compatible references
-
-      fp->eval ( in , out ) ;
-
-      // now distribute eval's result to the simdized output
-
-      for ( int d = 0 ; d < dim_out ; d++ )
-        ov [ d ] [ e ] = nd_out [ d ] ;
-    }
+    outv.bunch ( itl_out ) ;
   }
 } ;
 
@@ -484,7 +462,7 @@ public:
 
   // unvectorized eval delegates to _eval
 
-  void eval ( const I & in , O & out ) const
+  void eval ( const I & in , O & out )
   {
     _eval ( in , out ) ;
   }
@@ -559,7 +537,7 @@ struct chain_type
   // the intermediate type from the type of the first argument.
 
   void eval ( const in_type & argument ,
-                    out_type & result ) const
+                    out_type & result )
   {
     intermediate_type intermediate ;
     t1.eval ( argument , intermediate ) ; // evaluate first functor into intermediate
@@ -568,7 +546,7 @@ struct chain_type
 
   template < typename = std::enable_if < ( vsize > 1 ) > >
   void eval ( const in_v & argument ,
-                    out_v & result ) const
+                    out_v & result )
   {
     intermediate_v intermediate ;
     t1.eval ( argument , intermediate ) ; // evaluate first functor into intermediate
@@ -785,7 +763,7 @@ struct grok_type
   
   /// unvectorized evaluation. This is delegated to _ev.
 
-  void eval ( const IN & i , OUT & o ) const
+  void eval ( const IN & i , OUT & o )
   {
     _ev ( i , o ) ;
   }
@@ -795,7 +773,7 @@ struct grok_type
   /// while this overload will catch vectorized evaluations.
 
   template < typename = std::enable_if < ( vsize > 1 ) > >
-  void eval ( const in_v & i , out_v & o ) const
+  void eval ( const in_v & i , out_v & o )
   {
     _v_ev ( i , o ) ;
   }
@@ -851,7 +829,7 @@ struct grok_type < IN , OUT , 1 >
   : _ev ( eval_wrap ( f ) )
   { } ;
     
-  void eval ( const IN & i , OUT & o ) const
+  void eval ( const IN & i , OUT & o )
   {
     _ev ( i , o ) ;
   }
@@ -935,13 +913,13 @@ struct amplify_type
   : factor ( _factor )
   { } ;
   
-  void eval ( const in_type & in , out_type & out ) const
+  void eval ( const in_type & in , out_type & out )
   {
     out = out_type ( math_type ( in ) * factor ) ;
   }
   
   template < typename = std::enable_if < ( vsize > 1 ) > >
-  void eval ( const in_v & in , out_v & out ) const
+  void eval ( const in_v & in , out_v & out )
   {
     // we take a view to the arguments as TinyVectors, even if
     // the data are 'singular'
@@ -997,7 +975,7 @@ struct flip
   using typename base_type::in_nd_ele_v ;
   using typename base_type::out_nd_ele_v ;
   
-  void eval ( const in_type & in_ , out_type & out ) const
+  void eval ( const in_type & in_ , out_type & out )
   {
     // we need a copy of 'in' in case _in == out
     
@@ -1017,7 +995,7 @@ struct flip
   }
   
   template < typename = std::enable_if < ( vsize > 1 ) > >
-  void eval ( const in_v & in_ , out_v & out ) const
+  void eval ( const in_v & in_ , out_v & out )
   {
     // we need a copy of 'in' in case _in == out
     
@@ -1116,7 +1094,7 @@ private:
               std::true_type ,
               d_t ,
               c_t
-            ) const
+            )
   {
     v = data [ crd ] ;
   }
@@ -1127,7 +1105,7 @@ private:
   void eval ( const in_v & crd , out_v & v ,
               std::false_type ,
               std::false_type ,
-              std::false_type ) const
+              std::false_type )
   {
     auto ofs = crd * int(data.stride(0)) ;
 
@@ -1140,7 +1118,7 @@ private:
   void eval ( const in_v & crd , out_v & v ,
               std::false_type ,
               std::false_type ,
-              std::true_type ) const
+              std::true_type )
   {
     auto ofs = crd * int(data.stride(0)) ;
     ofs *= channels ;
@@ -1157,7 +1135,7 @@ private:
   void eval ( const in_v & crd , out_v & v ,
               std::false_type ,
               std::true_type ,
-              std::false_type ) const
+              std::false_type )
   {
     auto ofs = crd[0] * int(data.stride(0)) ;
     for ( int d = 1 ; d < dimension ; d++ )
@@ -1174,7 +1152,7 @@ private:
   void eval ( const in_v & crd , out_v & v ,
               std::false_type ,
               std::true_type ,
-              std::true_type ) const
+              std::true_type )
   {
     auto ofs = crd[0] * int(data.stride(0)) ;
     for ( int d = 1 ; d < dimension ; d++ )
@@ -1195,7 +1173,7 @@ public:
   // this is the dispatching function:
 
   template < typename in_t , typename out_t >
-  void eval ( const in_t & crd , out_t & v ) const
+  void eval ( const in_t & crd , out_t & v )
   {
     typedef typename std::is_same < out_t , out_type > :: type is_scalar_t ;
     eval ( crd , v , is_scalar_t() , is_nd_t() , is_mc_t() ) ; 
@@ -1260,14 +1238,14 @@ private:
 
   void eval ( const in_type & crd , out_type & v ,
               std::true_type ,
-              std::false_type ) const
+              std::false_type )
   {
     iy.eval ( std::round ( crd ) , v ) ;
   }
 
   void eval ( const in_type & crd , out_type & v ,
               std::true_type ,
-              std::true_type ) const
+              std::true_type )
   {
     zimt::xel_t < int , dimension > icrd ;
     for ( int d = 0 ; d < dimension ; d++ )
@@ -1279,7 +1257,7 @@ private:
 
   void eval ( const in_v & crd , out_v & v ,
               std::false_type ,
-              std::false_type ) const
+              std::false_type )
   {
     typename iy_t::in_v icrd ( round ( crd ) ) ;
     iy.eval ( icrd , v ) ;
@@ -1287,7 +1265,7 @@ private:
 
   void eval ( const in_v & crd , out_v & v ,
               std::false_type ,
-              std::true_type ) const
+              std::true_type )
   {
     typename iy_t::in_v icrd ;
     for ( int d = 0 ; d < dimension ; d++ )
@@ -1298,7 +1276,7 @@ private:
 public:
 
   template < typename in_t , typename out_t >
-  void eval ( const in_t & crd , out_t & v ) const
+  void eval ( const in_t & crd , out_t & v )
   {
     typedef typename std::is_same < out_t , out_type > :: type is_scalar_t ;
     eval ( crd , v , is_scalar_t() , is_nd_t() ) ; 
