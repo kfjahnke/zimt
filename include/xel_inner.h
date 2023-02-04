@@ -47,11 +47,12 @@
 /// simd_type. The inner workings of the generated types are the
 /// same, but they are used in different semantic slots: class xel_t
 /// is used as a container to hold 'xel' data and their SIMDized
-/// equivalents - stuff like pixels - data which have several
-/// channels - like rhe R, G, and B channels of an RGB pixel.
-/// We might split this header up into several parts to, e.g, remove
-/// the masking and other SIMDish stuff from the generated class;
-/// for now, both xel_t and simd_type will share the same code.
+/// equivalents - data which have several channels - like rhe
+/// R, G, and B channels of an RGB pixel.
+/// So this header has the code which bot classes share. Here, we
+/// use the 'neutral' symbol N for the number of contained elements,
+/// whereas in xel.h and simd_type.h we use nch (number of channels),
+/// and vsize (number of lanes), respectively.
 
 // storage of data is in a simple C array. This array is private,
 // and the only access to it is via member functions. Using a plain
@@ -59,39 +60,20 @@
 // desirable, especially on older hardware. We rely on the
 // compiler to handle this as efficiently as possible.
 
-_value_type _store [ _vsize ] ;
+value_type _store [ N ] ;
 
 public:
 
 // some common typedefs for a container type
 
 typedef std::size_t size_type ;
-typedef _value_type value_type ;
-static const size_type vsize = _vsize ;
-static const int ivsize = _vsize ;      // finessing for g++
 
 // provide the size as a constexpr
 
 static constexpr size_type size()
 {
-  return vsize ;
+  return N ;
 }
-
-// types used for masks and index vectors. In terms of 'true' SIMD
-// arithmetics, these definitions may not be optimal - especially the
-// definition of a mask as a XEL of bool is questionable - one
-// might consider using a bit field or a sufficiently large integral
-// type. But using a XEL of bool makes processing simple, in
-// a way it's the 'generic' mask type, whereas SIMD masks used by
-// the hardware are the truly 'exotic' types. The problem here is
-// the way C++ encodes booleans - they are usually encoded as some
-// smallish integral type, rather than a single bit.
-
-// we define both the 'old school' and the 'camel case' variants
-
-typedef XEL < int , vsize > index_type ;
-
-typedef XEL < int , vsize > IndexType ;
 
 // operator[] is mapped to ordinary element access on a C vector.
 // This is the only place where we explicitly access _store, the
@@ -124,7 +106,7 @@ const value_type * data() const
 
 XEL & operator= ( const value_type & rhs )
 {
-  for ( size_type i = 0 ; i < vsize ; i++ )
+  for ( size_type i = 0 ; i < N ; i++ )
     (*this) [ i ] = rhs ;
   return *this ;
 }
@@ -144,10 +126,10 @@ XEL ( const XEL & ) = default ;
 
 // construction from a std::initializer_list
 
-template < typename T >
-XEL ( const std::initializer_list < T > & rhs )
+template < typename TI >
+XEL ( const std::initializer_list < TI > & rhs )
 {
-  assert ( rhs.size() == vsize ) ; // TODO: prefer constexpr
+  assert ( rhs.size() == N ) ; // TODO: prefer constexpr
   value_type * trg = _store ;
   for ( const auto & src : rhs )
     *trg++ = value_type ( src ) ;
@@ -156,35 +138,9 @@ XEL ( const std::initializer_list < T > & rhs )
 static const XEL iota()
 {
   XEL result ;
-  for ( size_type i = 0 ; i < vsize ; i++ )
+  for ( size_type i = 0 ; i < N ; i++ )
     result [ i ] = value_type ( i ) ;
   return result ;
-}
-
-// mimick Vc's IndexesFromZero. This function produces an index
-// vector filled with indexes starting with zero.
-
-static const index_type IndexesFromZero()
-{
-  typedef typename index_type::value_type IT ;
-  static const IT ceiling = std::numeric_limits < IT > :: max() ;
-  assert ( ( vsize - 1 ) <= std::size_t ( ceiling ) ) ;
-
-  static const index_type ix ( index_type::iota() ) ;
-  return ix ;
-}
-
-// variant which starts from a different starting point and optionally
-// uses steps other than one.
-
-static const index_type IndexesFrom ( std::size_t start ,
-                                      std::size_t step = 1 )
-{
-  typedef typename index_type::value_type IT ;
-  static const IT ceiling = std::numeric_limits < IT > :: max() ;
-  assert ( start + ( vsize - 1 ) * step <= std::size_t ( ceiling ) ) ;
-
-  return ( IndexesFromZero() * int(step) ) + int(start) ;
 }
 
 // functions Zero and One produce XEL objects filled with
@@ -206,114 +162,18 @@ friend std::ostream & operator<< ( std::ostream & osr ,
                                     XEL it )
 {
   osr << "{ " ;
-  for ( size_type i = 0 ; i < vsize - 1 ; i++ )
+  for ( size_type i = 0 ; i < N - 1 ; i++ )
     osr << it [ i ] << ", " ;
-  osr << it [ vsize - 1 ] << " }" ;
+  osr << it [ N - 1 ] << " }" ;
   return osr ;
 }
 
 friend std::istream & operator>> ( std::istream & isr ,
                                     XEL it )
 {
-  for ( size_type i = 0 ; i < vsize ; i++ )
+  for ( size_type i = 0 ; i < N ; i++ )
     isr >> it [ i ] ;
   return isr ;
-}
-
-// memory access functions, which load and store vector data.
-// We start out with functions transporting data from memory into
-// the XEL. Some of these operations have corresponding
-// c'tors which use the member function to initialize (*this).
-// For now I keep them in the common xel code, but they might
-// be taken out to a separate file and included only by simd_type
-
-// load uses a simple loop, which is about as easy to recognize as
-// an autovectorizable construct as it gets:
-
-void load ( const value_type * const p_src )
-{
-  for ( size_type i = 0 ; i < vsize ; i++ )
-    (*this) [ i ] = p_src [ i ] ;
-}
-
-// generic gather performs the gather operation using a loop.
-// Rather than loading consecutive values, The offset from 'p_src'
-// is looked up in 'indexes' for each vector element. We allow
-// any old indexable type as index_type, not just 'index_type'
-// defined above.
-
-template < typename index_type >
-void gather ( const value_type * const p_src ,
-              const index_type & indexes )
-{
-  for ( size_type i = 0 ; i < vsize ; i++ )
-    (*this) [ i ] = p_src [ indexes [ i ] ] ;
-}
-
-// c'tor from pointer and indexes, uses gather
-
-template < typename index_type >
-XEL ( const value_type * const p_src ,
-            const index_type & indexes )
-{
-  gather ( p_src , indexes ) ;
-}
-
-// store saves the content of the container to memory
-
-void store ( value_type * const p_trg ) const
-{
-  for ( size_type i = 0 ; i < vsize ; i++ )
-    p_trg [ i ] = (*this) [ i ] ;
-}
-
-// scatter is the reverse operation to gather, see the comments there.
-
-template < typename index_type >
-void scatter ( value_type * const p_trg ,
-                const index_type & indexes ) const
-{
-  for ( size_type i = 0 ; i < vsize ; i++ )
-    p_trg [ indexes [ i ] ] = (*this) [ i ] ;
-}
-
-// 'regular' gather and scatter, accessing strided memory so that the
-// first address visited is p_src/p_trg, and successive addresses are
-// 'step' apart - in units of T. Might also be done with goading, the
-// loop should autovectorize.
-
-void rgather ( const value_type * const p_src ,
-                const int & step )
-{
-  index_type indexes ( IndexesFrom ( 0 , step ) ) ;
-  gather ( p_src , indexes ) ;
-}
-
-void rscatter ( value_type * p_trg ,
-                const int & step ) const
-{
-  index_type indexes ( IndexesFrom ( 0 , step ) ) ;
-  scatter ( p_trg , indexes ) ;
-}
-
-// use 'indexes' to perform a gather from the data held in '(*this)'
-// and return the result of the gather operation.
-
-template < typename index_type >
-XEL shuffle ( index_type indexes )
-{
-  XEL result ;
-  for ( size_type i = 0 ; i < vsize ; i++ )
-    result [ i ] = (*this) [ indexes [ i ] ] ;
-  return result ;
-}
-
-// operator[] with an index_type argument performs the same
-// operation
-
-XEL operator[] ( index_type indexes )
-{
-  return shuffle ( indexes ) ;
 }
 
 // apply functions from namespace std to each element in a vector,
@@ -328,7 +188,7 @@ XEL operator[] ( index_type indexes )
   friend XEL FUNC ( XEL arg ) \
   { \
     XEL result ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       result [ i ] = FUNC ( arg [ i ] ) ; \
     return result ; \
   }
@@ -356,7 +216,7 @@ BROADCAST_STD_FUNC(atan)
                           XEL arg2 ) \
   { \
     XEL result ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       result [ i ] = std::FUNC ( arg1 [ i ] , arg2 [ i ] ) ; \
     return result ; \
   }
@@ -375,7 +235,7 @@ BROADCAST_STD_FUNC2(pow)
                           XEL arg3 ) \
   { \
     XEL result ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       result [ i ] = FUNC ( arg1 [ i ] , arg2 [ i ] , arg3[i] ) ; \
     return result ; \
   }
@@ -412,14 +272,14 @@ BROADCAST_STD_FUNC3(fma)
   XEL & OPFUNC ( value_type rhs ) \
   { \
     CONSTRAINT \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       (*this) [ i ] OPEQ rhs ; \
     return *this ; \
   } \
   XEL & OPFUNC ( XEL rhs ) \
   { \
     CONSTRAINT \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       (*this) [ i ] OPEQ rhs [ i ] ; \
     return *this ; \
   }
@@ -446,7 +306,7 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
   { \
     CONSTRAINT \
     XEL help ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
     return help ; \
   } \
@@ -454,7 +314,7 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
   { \
     CONSTRAINT \
     XEL help ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = (*this) [ i ] OP rhs ; \
     return help ; \
   } \
@@ -463,7 +323,7 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
   { \
     CONSTRAINT                                   \
     XEL help ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = lhs OP rhs [ i ] ; \
     return help ; \
   }
@@ -489,7 +349,7 @@ OP_FUNC(operator||,||,BOOL_ONLY)
   XEL OPFUNC() const \
   { \
     XEL help ; \
-    for ( size_type i = 0 ; i < vsize ; i++ ) \
+    for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = OP (*this) [ i ] ; \
     return help ; \
   }
@@ -510,7 +370,7 @@ OP_FUNC(operator~,~,INTEGRAL_ONLY)
   XEL FNAME ( XEL threshold ) const \
   { \
     XEL result ( threshold ) ; \
-    for ( std::size_t i = 0 ; i < vsize ; i++ ) \
+    for ( std::size_t i = 0 ; i < N ; i++ ) \
     { \
       if ( (*this) [ i ] REL threshold ) \
         result [ i ] = (*this) [ i ] ; \
@@ -530,7 +390,7 @@ CLAMP(at_most,<)
 value_type sum() const
 {
   value_type s ( 0 ) ;
-  for ( std::size_t e = 0 ; e < vsize ; e++ )
+  for ( std::size_t e = 0 ; e < N ; e++ )
     s += (*this) [ e ] ;
   return s ;
 }

@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file simd_type.h
+/*! \file simd_t.h
 
     \brief SIMD type using small loops
 
@@ -53,7 +53,7 @@
     'goading': By presenting the data flow in deliberately vector-friendly
     format, the compiler is more likely to 'get it'.
 
-    class template simd_type is designed to provide an interface similar
+    class template simd_t is designed to provide an interface similar
     to Vc::SimdArray, to be able to use it as a drop-in replacement.
     It aims to provide those SIMD capabilities which are actually used by
     zimt and is *not* a complete replacement for Vc::SimdArray.
@@ -79,11 +79,11 @@
     produce fast binary with clang++. Your mileage will vary with other
     compilers.
 
-    Class zimt::simd_type is actually quite similar to vigra::TinyVector
+    Class zimt::simd_t is actually quite similar to vigra::TinyVector
     which also stores in a plain C array and provides arithmetic. But that
     type is quite complex, using CRTP with a base class, explicitly coding
     loop unrolling, catering for deficient compilers and using vigra's
-    sophisticated type promotion mechanism. zimt::simd_type on the other
+    sophisticated type promotion mechanism. zimt::simd_t on the other
     hand is stripped down to the bare essentials, to make the code as simple
     as possible, in the hope that 'goading' will indeed work. It replaces
     zimt's previous SIMD type, zimt::simd_tv, which was derived
@@ -104,15 +104,15 @@
     coded with loops over the TinyVector's elements throughout zimt's
     code base. In zimt's opt directory, you can find 'xel_of_vector.h',
     which can provide overloads for all operator functions involving
-    TinyVectors of zimt::simd_type - or, more generally, small
+    TinyVectors of zimt::simd_t - or, more generally, small
     aggregates of vector data. Please see this header's comments for
     more detailed information.
 
     Note also that throughout zimt, there is almost no explicit use of
-    zimt::simd_type. zimt picks appropriate SIMD data types with
+    zimt::simd_t. zimt picks appropriate SIMD data types with
     mechanisms 'one level up', coded in vector.h. vector.h checks if use
     of Vc is possible and whether Vc can vectorize a given type, and
-    produces a 'simdized type', which you mustn't confuse with a simd_type.
+    produces a 'simdized type', which you mustn't confuse with a simd_t.
 */
 
 #ifndef VSPLINE_SIMD_TYPE_H
@@ -125,12 +125,12 @@
 namespace zimt
 {
 
-/// class simd_type serves as fallback type to provide SIMD semantics
+/// class simd_t serves as fallback type to provide SIMD semantics
 /// without explicit SIMD code. It can be used throughout when use of
 /// the SIMD 'backends' is unwanted, or to 'fill the gap' where some
 /// SIMD backends do not provide implementations for specific
 /// combinations of value_type and vsize. The latter type of use is
-/// handled by 'vector.h'. Using simd_type may well result in actual
+/// handled by 'vector.h'. Using simd_t may well result in actual
 /// SIMD instructions being issued by the compiler due to
 /// autovectorization - the data are presented in small loops which
 /// are deliberately autovectorization-friendly - a technique I call
@@ -144,42 +144,217 @@ namespace zimt
 /// as being the same (std::is_same comes out false). This helps us
 /// in putting the types into their specific sematic slot: xel_t is
 /// used for xel-like aggregates of semantically different channels,
-/// whereas simd_type is a SIMDish vector of semantically equal
+/// whereas simd_t is a SIMDish vector of semantically equal
 /// lanes whose only commonality is that they populate the same
 /// vector (as long as we stick with 'horizontal vectorization').
 /// Here, we define a class with xel functionality and add masking
 /// which is essential in SIMD code, while it makes little sense in
 /// a non-SIMD arithmetic type like xel_t.
 
-#define XEL simd_type
-
-template < typename _value_type ,
-           std::size_t _vsize >
-class XEL
-: public simd_tag < _value_type , _vsize , GOADING >
+template < typename T , std::size_t N >
+struct simd_t
+: public simd_tag < T , N , GOADING >
 {
+typedef zimt::simd_tag < T , N , GOADING > tag_t ;
+using typename tag_t::value_type ;
+using tag_t::vsize ;
+using tag_t::backend ;
+
+#define XEL simd_t
+
 #include "xel_inner.h"
+#include "xel_mask.h"
 
-// assigment and c'tor from another simd_type with equal vsize
+#undef XEL
 
-template < typename T >
-simd_type & operator= ( const simd_type < T , vsize > & rhs )
+// types used for masks and index vectors. In terms of 'true' SIMD
+// arithmetics, these definitions may not be optimal - especially the
+// definition of a mask as a simd_t of bool is questionable - one
+// might consider using a bit field or a sufficiently large integral
+// type. But using a simd_t of bool makes processing simple, in
+// a way it's the 'generic' mask type, whereas SIMD masks used by
+// the hardware are the truly 'exotic' types. The problem here is
+// the way C++ encodes booleans - they are usually encoded as some
+// smallish integral type, rather than a single bit.
+
+// we define both the 'old school' and the 'camel case' variants
+
+typedef simd_t < int , N > index_type ;
+
+typedef simd_t < int , N > IndexType ;
+
+// mimick Vc's IndexesFromZero. This function produces an index
+// vector filled with indexes starting with zero.
+
+static const index_type IndexesFromZero()
+{
+  typedef typename index_type::value_type IT ;
+  static const IT ceiling = std::numeric_limits < IT > :: max() ;
+  assert ( ( N - 1 ) <= std::size_t ( ceiling ) ) ;
+
+  static const index_type ix ( index_type::iota() ) ;
+  return ix ;
+}
+
+// variant which starts from a different starting point and optionally
+// uses steps other than one.
+
+static const index_type IndexesFrom ( std::size_t start ,
+                                      std::size_t step = 1 )
+{
+  typedef typename index_type::value_type IT ;
+  static const IT ceiling = std::numeric_limits < IT > :: max() ;
+  assert ( start + ( N - 1 ) * step <= std::size_t ( ceiling ) ) ;
+
+  return ( IndexesFromZero() * int(step) ) + int(start) ;
+}
+
+// memory access functions, which load and store vector data.
+// We start out with functions transporting data from memory into
+// the simd_t. Some of these operations have corresponding
+// c'tors which use the member function to initialize (*this).
+// For now I keep them in the common xel code, but they might
+// be taken out to a separate file and included only by simd_t
+
+// load uses a simple loop, which is about as easy to recognize as
+// an autovectorizable construct as it gets:
+
+void load ( const value_type * const p_src )
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    (*this) [ i ] = p_src [ i ] ;
+}
+
+// generic gather performs the gather operation using a loop.
+// Rather than loading consecutive values, The offset from 'p_src'
+// is looked up in 'indexes' for each vector element. We allow
+// any old indexable type as index_type, not just 'index_type'
+// defined above.
+
+template < typename index_type >
+void gather ( const value_type * const p_src ,
+              const index_type & indexes )
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    (*this) [ i ] = p_src [ indexes [ i ] ] ;
+}
+
+// c'tor from pointer and indexes, uses gather
+
+template < typename index_type >
+simd_t ( const value_type * const p_src ,
+            const index_type & indexes )
+{
+  gather ( p_src , indexes ) ;
+}
+
+// store saves the content of the container to memory
+
+void store ( value_type * const p_trg ) const
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    p_trg [ i ] = (*this) [ i ] ;
+}
+
+// scatter is the reverse operation to gather, see the comments there.
+
+template < typename index_type >
+void scatter ( value_type * const p_trg ,
+                const index_type & indexes ) const
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    p_trg [ indexes [ i ] ] = (*this) [ i ] ;
+}
+
+// 'regular' gather and scatter, accessing strided memory so that the
+// first address visited is p_src/p_trg, and successive addresses are
+// 'step' apart - in units of T. Might also be done with goading, the
+// loop should autovectorize.
+
+void rgather ( const value_type * const p_src ,
+                const int & step )
+{
+  index_type indexes ( IndexesFrom ( 0 , step ) ) ;
+  gather ( p_src , indexes ) ;
+}
+
+void rscatter ( value_type * p_trg ,
+                const int & step ) const
+{
+  index_type indexes ( IndexesFrom ( 0 , step ) ) ;
+  scatter ( p_trg , indexes ) ;
+}
+
+// use 'indexes' to perform a gather from the data held in '(*this)'
+// and return the result of the gather operation.
+
+template < typename index_type >
+simd_t shuffle ( index_type indexes )
+{
+  simd_t result ;
+  for ( size_type i = 0 ; i < N ; i++ )
+    result [ i ] = (*this) [ indexes [ i ] ] ;
+  return result ;
+}
+
+// operator[] with an index_type argument performs the same
+// operation
+
+simd_t operator[] ( index_type indexes )
+{
+  return shuffle ( indexes ) ;
+}
+
+// assigment and c'tor from another simd_t with equal vsize
+
+template < typename U >
+simd_t & operator= ( const simd_t < U , vsize > & rhs )
 {
   for ( size_type i = 0 ; i < vsize ; i++ )
     (*this) [ i ] = rhs [ i ] ;
   return *this ;
 }
 
-template < typename T >
-simd_type ( const simd_type < T , vsize > & rhs )
+template < typename U >
+simd_t ( const simd_t < U , vsize > & rhs )
 {
   *this = rhs ;
 }
 
-#include "xel_mask.h"
-} ;
+// broadcasting functions processing single value_type
 
-#undef XEL
+typedef std::function < value_type() > gen_f ;
+typedef std::function < value_type ( const value_type & ) > mod_f ;
+typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
+
+simd_t & broadcast ( gen_f f )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f() ;
+  }
+  return *this ;
+}
+
+simd_t & broadcast ( mod_f f )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f ( (*this)[i] ) ;
+  }
+  return *this ;
+}
+
+simd_t & broadcast ( bin_f f , const simd_t & rhs )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f ( (*this)[i] , rhs[i] ) ;
+  }
+  return *this ;
+}
+
+} ;
 
 // reductions for masks. It's often necessary to determine whether
 // a mask is completely full or empty, or has at least some non-false
@@ -189,7 +364,7 @@ simd_type ( const simd_type < T , vsize > & rhs )
 // 'any_of ( v )'.
 
 template < std::size_t vsize >
-bool any_of ( simd_type < bool , vsize > arg )
+bool any_of ( simd_t < bool , vsize > arg )
 {
   bool result = false ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
@@ -198,7 +373,7 @@ bool any_of ( simd_type < bool , vsize > arg )
 }
 
 template < std::size_t vsize >
-bool all_of ( simd_type < bool , vsize > arg )
+bool all_of ( simd_t < bool , vsize > arg )
 {
   bool result = true ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
@@ -207,7 +382,7 @@ bool all_of ( simd_type < bool , vsize > arg )
 }
 
 template < std::size_t vsize >
-bool none_of ( simd_type < bool , vsize > arg )
+bool none_of ( simd_t < bool , vsize > arg )
 {
   bool result = true ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
@@ -215,12 +390,15 @@ bool none_of ( simd_type < bool , vsize > arg )
   return result ;
 }
 
+template < typename T , std::size_t N >
+using simd_type = simd_t < T , N > ;
+
 } ;
 
 template < typename T , std::size_t N >
-struct std::allocator_traits < zimt::simd_type < T , N > >
+struct std::allocator_traits < zimt::simd_t < T , N > >
 {
-  typedef std::allocator < zimt::simd_type < T , N > > type ;
+  typedef std::allocator < zimt::simd_t < T , N > > type ;
 } ;
 
 #endif // #define VSPLINE_SIMD_TYPE_H

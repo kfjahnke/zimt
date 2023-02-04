@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file simd_type.h
+/*! \file std_simd_type.h
 
     \brief SIMD type derived from std::simd
 
@@ -88,11 +88,14 @@ struct simd_type
           > ,
   public zimt::simd_tag < _value_type , _vsize , zimt::STDSIMD >
 {
+  typedef zimt::simd_tag < _value_type , _vsize , zimt::STDSIMD > tag_t ;
+  using typename tag_t::value_type ;
+  using tag_t::vsize ;
+  using tag_t::backend ;
+
   typedef std::experimental::simd_abi::fixed_size < _vsize > abi_t ;
 
   typedef std::size_t size_type ;
-  typedef _value_type value_type ;
-  static const size_type vsize = _vsize ;
 
   typedef std::experimental::simd < value_type , abi_t > base_t ;
   typedef std::experimental::simd < int , abi_t > index_type ;
@@ -462,6 +465,8 @@ struct simd_type
 
   // a short note on atan2: Vc provides a hand-written vectorized version
   // of atan2 which is especially fast and superior to autovectorized code.
+  // As of this writing, std::simd does not seem to provide this, so this
+  // atan2 variant is slow. Consider 'cherrypicking'.
 
   BROADCAST_STD_FUNC2(atan2)
   BROADCAST_STD_FUNC2(pow)
@@ -712,6 +717,40 @@ struct simd_type
       s += (*this) [ e ] ;
     return s ;
   }
+
+// broadcasting functions processing single value_type
+
+typedef std::function < value_type() > gen_f ;
+typedef std::function < value_type ( const value_type & ) > mod_f ;
+typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
+
+simd_type & broadcast ( gen_f f )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f() ;
+  }
+  return *this ;
+}
+
+simd_type & broadcast ( mod_f f )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f ( (*this)[i] ) ;
+  }
+  return *this ;
+}
+
+simd_type & broadcast ( bin_f f , const simd_type & rhs )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f ( (*this)[i] , rhs[i] ) ;
+  }
+  return *this ;
+}
+
 } ;
 
 } ;

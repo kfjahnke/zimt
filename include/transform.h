@@ -222,9 +222,10 @@ void transform ( const act_t & _act ,
 ///   to allow for arbitrary ways of achieving it's goal. The unary functor's
 ///   'in_type' determines the number of dimensions of the coordinates - since
 ///   they are coordinates into the target array, the functor's input type
-///   has to have the same number of dimensions as the target. The functor's
-///   'out_type' has to be the same as the data type of the target array, since
-///   the target array stores the results of calling the functor.
+///   has to have the same number of channels as the target has dimensions.
+///   The functor's 'out_type' has to be the same as the data type of the
+///   target array, since the target array stores the results of calling the
+///   functor.
 ///
 /// this transform overload takes two parameters:
 ///
@@ -238,6 +239,15 @@ void transform ( const act_t & _act ,
 /// which puts the fastest-changing index first. In a 2D, image processing,
 /// context, this is the column index, or the x coordinate. C and C++ do
 /// instead put this index last when using multidimensional array access code.
+/// I think of the index ordering as 'latin book order': character follows
+/// character in a line, line follows line in a page and page follows page
+/// in a book... and you write coordinates as (column, line, page, ...)
+/// Of course, if you invert the strides from their 'standard' order
+/// (ascending in size) to, e.g, descending in size, the meaning of the
+/// coordinates is different, but still the first component will use the
+/// first stride etc.. view_t has the 'offset' function which transforms
+/// a multi-dimensional coordinate into an offset. This is simply coded
+/// as (coordinate * strides).sum()
 ///
 /// transform can be used without template arguments, they will be inferred
 /// by ATD from the arguments.
@@ -282,6 +292,8 @@ void transform ( const act_t & _act ,
 
   wielding::indexed_f ( act , trg , bill ) ;
 }
+
+// overload for 1D views
 
 template < class act_t >
 void transform ( const act_t & _act ,
@@ -351,76 +363,8 @@ void transform ( const act_t & act ,
               bill , std::true_type() ) ;
 }
 
-/*
-template < typename C , typename T , std::size_t S ,
-           template < typename , typename , std::size_t > class F >
-typename std::enable_if < std::is_arithmetic < C > :: value > :: type
-transform ( const F < C , T , S > & _act ,
-                 view_t < 1 , T > output ,
-                 bill_t bill = bill_t() )
-{
-  typedef F < C , T , S > act_t ;
-
-  assert ( bill.axis == 0 ) ;
-
-  typedef wielding::vs_adapter < act_t > aact_t ;
-  aact_t act ( _act ) ;
-
-  // we'll cast the pointers to the arrays to these types to be
-  // compatible with the wrapped functor above.
-
-  typedef typename aact_t::in_type src_type ;
-  typedef typename aact_t::out_type trg_type ;
-
-  typedef zimt::view_t < act_t::dim_in , trg_type > trg_view_type ;
-
-  auto & trg ( static_cast < trg_view_type & > ( output ) ) ;
-
-  // confine the bill to sensible values
-
-  if (    bill.segment_size <= 0
-       || bill.segment_size > trg.shape [ bill.axis ])
-    bill.segment_size = trg.shape [ bill.axis ] ;
-
-  if ( bill.njobs <= 1 )
-    bill.njobs = 1 ;
-
-  if ( bill.njobs > zimt::default_njobs )
-    bill.njobs = zimt::default_njobs ;
-
-  // now delegate to the wielding code
-
-  wielding::indexed_f ( act , trg , bill ) ;
-}
-
-template < std::size_t D , typename C , typename T , std::size_t S ,
-           template < typename , typename , std::size_t > class F >
-void transform ( const F < xel_t < C , D > , T , S > & act ,
-                 view_t < D , T > trg ,
-                 bill_t bill = bill_t() )
-{
-  typedef F < C , T , S > act_t ;
-
-  // confine the bill to sensible values
-
-  if (    bill.segment_size <= 0
-       || bill.segment_size > trg.shape [ bill.axis ])
-    bill.segment_size = trg.shape [ bill.axis ] ;
-
-  if ( bill.njobs <= 1 )
-    bill.njobs = 1 ;
-
-  if ( bill.njobs > zimt::default_njobs )
-    bill.njobs = zimt::default_njobs ;
-
-  // now delegate to the wielding code
-
-  wielding::indexed_f ( act , trg , bill ) ;
-}
-*/
-
 /// we code 'apply' as a special variant of 'transform' where the output
-/// is also used as input, so the effect is to feed the unary functor
+/// is also used as input, so the effect is to feed the unary functor with
 /// each 'output' value in turn, let it process it and store the result
 /// back to the same location. While this looks like a rather roundabout
 /// way of performing an apply, it has the advantage of using the same
@@ -455,7 +399,6 @@ void apply ( const unary_functor_type & ev ,
 
   transform ( ev , output , output , bill ) ;
 }
-
 
 } ; // end of namespace zimt
 

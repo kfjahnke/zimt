@@ -84,7 +84,7 @@
 ///
 /// I like this technique, and I've dubbed it 'atomic surfing' ;)
 ///
-/// So now it should be clear why a stnd-in type is needed if ZIMT_SINGLETHREAD
+/// So now it should be clear why a stand-in type is needed if ZIMT_SINGLETHREAD
 /// is #defined: using the atomic to share joblet numbers between caller and
 /// workers is part of the logic, and it's easier to just code using them and
 /// using the stand-in type for the single-threaded case, which preserves the
@@ -101,10 +101,6 @@
 /// of threads is chosen which runs best *on my system* - thiy may not be optimal
 /// for other hardware. To change the number, see the definition of default_njobs
 /// in thread_pool.h.
-///
-/// the multithreading code in this header is used both by zimt's digital filter
-/// code and by 'wielding.h' which provides the data flow logic for zimt's
-/// transform-like routines.
 
 #ifndef ZIMT_MULTITHREAD_H
 #define ZIMT_MULTITHREAD_H
@@ -114,7 +110,8 @@
 #ifndef ZIMT_SINGLETHREAD
 
 // only include multithreading-related headers if ZIMT_SINGLETHREAD
-// is *not* defined
+// is *not* defined. With ZIMT_SINGLETHREAD defined, all use of threading
+// code is switched off and linking with pthread is unnecessary.
 
 #include <thread>
 #include <mutex>

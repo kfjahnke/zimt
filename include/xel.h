@@ -42,8 +42,8 @@
     \brief arithmetic container type
 */
 
-#ifndef VSPLINE_XEL_H
-#define VSPLINE_XEL_H
+#ifndef VSPLINE_xel_t_H
+#define VSPLINE_xel_t_H
 
 #include <cmath>
 #include <limits>
@@ -54,15 +54,6 @@
 
 namespace zimt
 {
-// class simd_flag { } ;
-//
-// enum backend { GOADING , VC , HWY , STDSIMD } ;
-//
-// template < typename T , std::size_t N , backend B >
-// class simd_tag
-// : public simd_flag
-// { } ;
-//
 // free function templates for deinterleave and interleave, which can
 // be overridden for specific vec_t - e.g. zimt::vc_simd_type. The
 // fallback, general case uses a regular gather/scatter, which is
@@ -108,13 +99,17 @@ void interleave ( const xel_t < vec_t , nch > & v ,
 /// types: we create them as xel of a simd-capable type (which may
 /// be simd_type or some other such type).
 
+template < typename T , std::size_t N >
+struct xel_t
+{
+  typedef T value_type ;
+  static const std::size_t nch = N ;
+
 #define XEL xel_t
 
-template < typename _value_type ,
-           std::size_t _vsize >
-class XEL
-{
 #include "xel_inner.h"
+
+#undef XEL
 
 // assignment from equally-sized container.
 // Note that the rhs can use any elementary type which can be legally
@@ -125,31 +120,31 @@ class XEL
 // and overload them if necessary.
 
 template < typename U , template < typename , std::size_t > class V >
-XEL & operator= ( const V < U , vsize > & rhs )
+xel_t & operator= ( const V < U , nch > & rhs )
 {
-  for ( size_type i = 0 ; i < vsize ; i++ )
+  for ( size_type i = 0 ; i < nch ; i++ )
     (*this) [ i ] = rhs [ i ] ;
   return *this ;
 }
 
 template < typename U , template < typename , std::size_t > class V >
-XEL ( const V < U , vsize > & ini )
+xel_t ( const V < U , nch > & ini )
 {
   *this = ini ;
 }
 
 // 'projection' to some other fixed-size aggregate via a templated
 // conversion operator: converts a xel_t to an object of class C
-// which holds vsize value_type. We want to use xel_t as all-purpose
+// which holds nch value_type. We want to use xel_t as all-purpose
 // fixed-size aggregate and still allow user code which assigns
 // xel_t values to, say, std::arrays when they are returned by
 // functions.
 
 template < template < typename , std::size_t > class C >
-operator C < value_type , vsize > ()
+operator C < value_type , nch > ()
 {
-  C < value_type , vsize > result ;
-  for ( size_type i = 0 ; i < vsize ; i++ )
+  C < value_type , nch > result ;
+  for ( size_type i = 0 ; i < nch ; i++ )
     result [ i ] = _store [ i ] ;
   return result ;
 }
@@ -157,14 +152,14 @@ operator C < value_type , vsize > ()
 value_type prod() const
 {
   value_type s ( _store[0] ) ;
-  for ( std::size_t e = 1 ; e < vsize ; e++ )
+  for ( std::size_t e = 1 ; e < nch ; e++ )
     s *= _store[e] ;
   return s ;
 }
 
-bool operator== ( const xel_t < value_type , vsize > rhs ) const
+bool operator== ( const xel_t < value_type , nch > rhs ) const
 {
-  for ( std::size_t i = 0 ; i < vsize ; i++ )
+  for ( std::size_t i = 0 ; i < nch ; i++ )
   {
     if ( _store[i] != rhs[i] )
       return false ;
@@ -172,9 +167,37 @@ bool operator== ( const xel_t < value_type , vsize > rhs ) const
   return true ;
 }
 
-bool operator!= ( const xel_t < value_type , vsize > rhs ) const
+bool operator!= ( const xel_t < value_type , nch > rhs ) const
 {
   return ! ( (*this) == rhs ) ;
+}
+
+// produce a xel with one more element at position 'at', defaulting to
+// the last position.
+
+xel_t < value_type , nch + 1 > widen ( const value_type & by ,
+                                         const std::size_t & at = nch  )
+{
+  xel_t < value_type , nch + 1 > result ;
+  if ( at >= nch )
+  {
+    for ( std::size_t d = 0 ; d < nch ; d++ )
+    {
+      result [ d ] = _store [ d ] ;
+    }
+    result [ nch ] = by ;
+  }
+  else
+  {
+    std::size_t t = 0 ;
+    for ( std::size_t d = 0 ; d < nch ; d++ )
+    {
+      if ( d == at )
+        result [ t++ ] = by ;
+      result [ t++ ] = _store [ d ] ;
+    }
+  }
+  return result ;
 }
 
 // next we have code which will only be present for xel_t of some
@@ -184,7 +207,7 @@ bool operator!= ( const xel_t < value_type , vsize > rhs ) const
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void fluff_contiguous ( xel_t < ET < value_type > , vsize > * trg ,
+void fluff_contiguous ( xel_t < ET < value_type > , nch > * trg ,
                         std::true_type ) const // multi-channel
 {
   interleave ( *this , trg ) ;
@@ -192,7 +215,7 @@ void fluff_contiguous ( xel_t < ET < value_type > , vsize > * trg ,
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void fluff_contiguous ( xel_t < ET < value_type > , vsize > * _trg ,
+void fluff_contiguous ( xel_t < ET < value_type > , nch > * _trg ,
                         std::false_type ) const // single channel
 {
   auto * trg = _trg->data() ;
@@ -206,9 +229,9 @@ void fluff_contiguous ( xel_t < ET < value_type > , vsize > * _trg ,
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void fluff ( xel_t < ET < value_type > , vsize > * trg ) const
+void fluff ( xel_t < ET < value_type > , nch > * trg ) const
 {
-  typedef std::integral_constant < bool , ( vsize > 1 ) > tag_t ;
+  typedef std::integral_constant < bool , ( nch > 1 ) > tag_t ;
   fluff_contiguous ( trg , tag_t() ) ;
 }
 
@@ -218,11 +241,11 @@ void fluff ( xel_t < ET < value_type > , vsize > * trg ) const
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void fluff ( xel_t < ET < value_type > , vsize > * _trg ,
+void fluff ( xel_t < ET < value_type > , nch > * _trg ,
              std::size_t stride ) const
 {
   static const typename value_type::index_type indexes
-    = value_type::IndexesFromZero() * int ( stride * vsize ) ;
+    = value_type::IndexesFromZero() * int ( stride * nch ) ;
   auto * trg = _trg->data() ;
   if ( stride == 1 )
   {
@@ -230,14 +253,14 @@ void fluff ( xel_t < ET < value_type > , vsize > * _trg ,
   }
   else
   {
-    for ( std::size_t i = 0 ; i < vsize ; i++ , trg++ )
+    for ( std::size_t i = 0 ; i < nch ; i++ , trg++ )
       (*this)[i].scatter ( trg , indexes ) ;
   }
 }
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void bunch_contiguous ( const xel_t < ET < value_type > , vsize > * src ,
+void bunch_contiguous ( const xel_t < ET < value_type > , nch > * src ,
                         std::true_type ) // multi-channel
 {
   deinterleave ( src , *this ) ;
@@ -245,7 +268,7 @@ void bunch_contiguous ( const xel_t < ET < value_type > , vsize > * src ,
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void bunch_contiguous ( const xel_t < ET < value_type > , vsize > * _src ,
+void bunch_contiguous ( const xel_t < ET < value_type > , nch > * _src ,
                         std::false_type ) // single channel
 {
   auto const * src = _src->data() ;
@@ -254,19 +277,19 @@ void bunch_contiguous ( const xel_t < ET < value_type > , vsize > * _src ,
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void bunch ( const xel_t < ET < value_type > , vsize > * src )
+void bunch ( const xel_t < ET < value_type > , nch > * src )
 {
-  typedef std::integral_constant < bool , ( vsize > 1 ) > tag_t ;
+  typedef std::integral_constant < bool , ( nch > 1 ) > tag_t ;
   bunch_contiguous ( src , tag_t() ) ;
 }
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void bunch ( const xel_t < ET < value_type > , vsize > * _src ,
+void bunch ( const xel_t < ET < value_type > , nch > * _src ,
              std::size_t stride )
 {
   static const typename value_type::index_type indexes
-    = value_type::IndexesFromZero() * int ( stride * vsize ) ;
+    = value_type::IndexesFromZero() * int ( stride * nch ) ;
   auto const * src = _src->data() ;
   if ( stride == 1 )
   {
@@ -274,7 +297,7 @@ void bunch ( const xel_t < ET < value_type > , vsize > * _src ,
   }
   else
   {
-    for ( std::size_t i = 0 ; i < vsize ; i++ , src++ )
+    for ( std::size_t i = 0 ; i < nch ; i++ , src++ )
       (*this)[i].gather ( src , indexes ) ;
   }
 }
@@ -282,9 +305,9 @@ void bunch ( const xel_t < ET < value_type > , vsize > * _src ,
 
 } ;
 
-#undef XEL
+#undef xel_t
 
 } ;
 
-#endif // #define VSPLINE_XEL_H
+#endif // #define VSPLINE_xel_t_H
 

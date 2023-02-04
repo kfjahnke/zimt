@@ -58,8 +58,8 @@
 
 // KFJ 2019-09-02 new namespace zimt_threadpool
 // I am now keeping class thread_pool and common_thread_pool in this
-// separate namespace to facilitata 'dubbing' of zimt. With dubbing
-// I mean using preprocessor manoevreas like "#define zimt NS_AVX"
+// separate namespace to facilitate 'dubbing' of zimt. With dubbing
+// I mean using preprocessor manoevres like "#define zimt NS_AVX"
 // used to create independent, ISA-specific compiles of zimt in
 // several TUs, to be linked together into a 'monolithic' binary.
 // While this worked with the thread pool code in namespace zimt,

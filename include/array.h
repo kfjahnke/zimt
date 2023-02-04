@@ -40,6 +40,14 @@
 
     \brief nD array and view classes
 
+    classes view_t and array_t provide code to handle n-dimensional
+    arrays with arbitrary striding. The strides are given as
+    multiples of the value_type held in the array. Apart from that,
+    the types are similar to NumPy's ndarray and vigra's
+    Multiarray(View). The dimensionality and value_type are
+    template arguments, shape and strides are run-time arguments,
+    but const and fixed at construction time.
+
     While the implementation is very close to vigra's MultiArray and
     MultiArrayView, the types here are - for now - stripped down to
     the bare essentials. There are also subtle differences in the
@@ -50,7 +58,7 @@
 
     view_t is lightweight and only holds the 'origin' pointer, shape
     and strides. array_t adds data ownership via a std::shared_ptr.
-    This allows array_t object to be copied and passed around freely,
+    This allows array_t objects to be copied and passed around freely,
     and when the last copy goes out of scope, the owned data are
     destructed.
 
@@ -113,7 +121,7 @@ struct view_t
   // 'pick out' an individual value, use operator[], to 'pick out'
   // a section, use 'window'.
 
-  typedef view_t < six_t::vsize , value_type > slice_t ;
+  typedef view_t < six_t::nch , value_type > slice_t ;
 
   // make_strides creates 'canonical' strides for an array of
   // the given shape. The strides are in ascending order.
@@ -515,7 +523,6 @@ public:
     auto slc = v.slice ( d , i ) ;
     return slice_t ( base , slc ) ;
   }
-
 } ;
 
 // coordinate iterators. For now, we don't implement 'proper'

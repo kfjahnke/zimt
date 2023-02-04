@@ -40,7 +40,7 @@
 
     \brief Implementation of zimt::transform
 
-    wielding.h provides code to process all 1D subbarrays of nD views.
+    wielding.h provides code to process all 1D sub-views of nD views.
     This is similar to using vigra::Navigator, which also iterates over
     1D subarrays of nD arrays. Here, this access is hand-coded to have
     complete control over the process, and to work with range-based
@@ -123,7 +123,7 @@ struct vs_adapter
 // this replaces the older code which was unnecessarily convoluted.
 
 template < class act_t , std::size_t dimension >
-void coupled_f ( act_t act ,
+void coupled_f ( const act_t & _act ,
                  zimt::view_t < dimension ,
                                 typename act_t::in_type
                               > in_view ,
@@ -202,10 +202,6 @@ void coupled_f ( act_t act ,
 
   // set up the payload code for 'multithread' which fetches joblet
   // 'tickets' and processes each ticket
-  // we use a reference for the lambda to 'grab' so it can use the
-  // same name 'act' internally for it's own copy
-
-  const auto & r_act ( act ) ;
 
   auto worker =
   [&]()
@@ -218,7 +214,7 @@ void coupled_f ( act_t act ,
     // notice if the copy is unnecessary (copy elision). With the
     // copy, reductions can use the same code as ordinary transforms
 
-    act_t act ( r_act ) ; // create per-thread copy of 'act'
+    act_t act ( _act ) ; // create per-thread copy of '_act'
 
     // loop as long as there are joblet indices left
 
@@ -382,7 +378,7 @@ void coupled_f ( act_t act ,
 } // coupled_f
 
 template < class act_t >
-void coupled_f ( act_t act ,
+void coupled_f ( const act_t & act ,
                  zimt::view_t < 1 ,
                                 typename act_t::in_type
                               > in_view ,
@@ -414,7 +410,7 @@ void coupled_f ( act_t act ,
 // that view.
 
 template < class act_t >
-void indexed_f ( act_t act ,
+void indexed_f ( const act_t & _act ,
                  zimt::view_t < act_t::dim_in ,
                                 typename act_t::out_type
                               > out_view ,
@@ -475,8 +471,6 @@ void indexed_f ( act_t act ,
 
   zimt::atomic < std::ptrdiff_t > indexes ( nr_indexes ) ;
 
-  const auto & r_act ( act ) ;
-
   // set up the payload code for 'multithread' which fetches joblet
   // 'tickets' and processes each ticket
 
@@ -491,7 +485,7 @@ void indexed_f ( act_t act ,
     // notice if the copy is unnecessary (copy elision). With the
     // copy, reductions can use the same code as ordinary transforms
 
-    act_t act ( r_act ) ; // create per-thread copy of 'act'
+    act_t act ( _act ) ; // create per-thread copy of '_act'
 
     // loop as long as there are joblet indices left
 
@@ -621,7 +615,7 @@ void indexed_f ( act_t act ,
 // overload for 1D
 
 template < class act_t >
-void indexed_f ( act_t act ,
+void indexed_f ( const act_t & _act ,
                  zimt::view_t < 1 ,
                                 typename act_t::out_type
                               > out_view ,
@@ -684,8 +678,6 @@ void indexed_f ( act_t act ,
 
   zimt::atomic < std::ptrdiff_t > indexes ( nr_indexes ) ;
 
-  const auto & r_act ( act ) ;
-
   // set up the payload code for 'multithread' which fetches joblet
   // 'tickets' and processes each ticket
 
@@ -700,7 +692,7 @@ void indexed_f ( act_t act ,
     // notice if the copy is unnecessary (copy elision). With the
     // copy, reductions can use the same code as ordinary transforms
 
-    act_t act ( r_act ) ; // create per-thread copy of 'act'
+    act_t act ( _act ) ; // create per-thread copy of '_act'
 
     // loop as long as there are joblet indices left
 

@@ -767,9 +767,13 @@ template < typename _value_type ,
 struct HWY_ALIGN simd_t
 : public zimt::simd_tag < _value_type , _vsize , zimt::HWY >
 {
+  typedef zimt::simd_tag < _value_type , _vsize , zimt::HWY > tag_t ;
+  using typename tag_t::value_type ;
+  using tag_t::vsize ;
+  using tag_t::backend ;
+
   typedef std::size_t size_type ;
 
-  typedef _value_type value_type ;
   typedef value_type T ;
 
   // A typical choice of vsize would be 'as many as there are
@@ -777,8 +781,6 @@ struct HWY_ALIGN simd_t
   // are interoperable without having to use half- or quarter-filled
   // vectors for size compatibility.
 
-  static const size_type vsize = _vsize ;
-  static const int ivsize = _vsize ;      // finessing for g++
   static const int vbytes = sizeof ( value_type ) * vsize ;
 
   // we make sure vsize is a power of two - simd_traits in vector.h
@@ -916,19 +918,23 @@ public:
     hn::Store ( rhs , DT() , inner + i * Lanes ( DT() ) ) ;
   }
 
-/*
-
   // broadcast functions to help with functionality which is not
   // available ready-made, and to help rolling out vector code to
   // chunks, which need the operation repeated over the set of
   // constituent vectors. The functions ending on _vf are vector
-  // functions and applied to the constituent vectors, the functions
-  // ending in plain _f are scalar functions and they are rolled
-  // out over the array of T, 'inner'.
+  // functions and applied to the constituent vectors, using the
+  // access functions yield and take.
+  // broadcast functions ending in plain _f are scalar functions and
+  // they are rolled out over the array of value_type, 'inner'. value_typehis type of
+  // operation may well be recognized by the optimizer and result
+  // in 'proper' SIMD code.
+  // In all cases, *this is the receiving end of the operation and
+  // contains the result of the repeated execution of the function
+  // passed to 'broadcast'.
 
-  typedef std::function < T() > gen_f ;
-  typedef std::function < T ( const T & ) > mod_f ;
-  typedef std::function < T ( const T & , const T & ) > bin_f ;
+  typedef std::function < value_type() > gen_f ;
+  typedef std::function < value_type ( const value_type & ) > mod_f ;
+  typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
 
   simd_t & broadcast ( gen_f f )
   {
@@ -963,7 +969,7 @@ public:
 
   // broadcast a vector generator function
   
-  simd_t & broadcast ( gen_vf f )
+  simd_t & vbroadcast ( gen_vf f )
   {
     for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
       take ( i , f() ) ;
@@ -972,7 +978,7 @@ public:
 
   // broadcast a vector modulator
 
-  simd_t & broadcast ( mod_vf f )
+  simd_t & vbroadcast ( mod_vf f )
   {
     for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
       take ( i , f ( yield ( i ) ) ) ;
@@ -981,14 +987,12 @@ public:
 
   // broadcast a vector binary function
 
-  simd_t & broadcast ( bin_vf f , const simd_t & rhs )
+  simd_t & vbroadcast ( bin_vf f , const simd_t & rhs )
   {
     for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
       take ( i , f ( yield ( i ) , rhs.yield ( i ) ) ) ;
     return *this ;
   }
-
-*/
 
   // c'tor from T, using hn::Set to provide a vector as initializer
 

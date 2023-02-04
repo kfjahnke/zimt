@@ -91,7 +91,9 @@ struct bill_t
   // zimt 'chops up' the view into individual lines for processing,
   // and the lines are - optionally - subdivided further into smaller
   // 'segments' to increase granularity. If you pass segment_size
-  // zero, the lines will be processed whole.
+  // zero, the lines will be processed whole. Watch out when
+  // processing 1D arrays: if you pass segment_size zero, the
+  // operation becomes effectively single-threaded.
 
   std::size_t segment_size = WIELDING_SEGMENT_SIZE ;
 

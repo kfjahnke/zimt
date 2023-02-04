@@ -75,8 +75,13 @@ template < typename _value_type ,
            std::size_t _vsize >
 struct vc_simd_type
 : private Vc::SimdArray < _value_type , _vsize > ,
-  public zimt::simd_tag < _value_type , _vsize , zimt::VC >
+  public zimt::simd_tag < _value_type , _vsize , VC >
 {
+  typedef zimt::simd_tag < _value_type , _vsize , VC > tag_t ;
+  using typename tag_t::value_type ;
+  using tag_t::vsize ;
+  using tag_t::backend ;
+
   typedef Vc::SimdArray < _value_type , _vsize > base_t ;
 
   // access the underlying base type
@@ -104,9 +109,6 @@ struct vc_simd_type
   }
 
   typedef std::size_t size_type ;
-  typedef _value_type value_type ;
-  static const size_type vsize = _vsize ;
-  static const int ivsize = _vsize ;      // finessing for g++
 
   // provide the size as a constexpr
 
@@ -396,6 +398,92 @@ struct vc_simd_type
                   const index_ele_type & step ) const
   {
     scatter ( p_trg , IndexesFrom ( step ) ) ;
+  }
+
+  // broadcasting functions processing single value_type
+
+  typedef std::function < value_type() > gen_f ;
+  typedef std::function < value_type ( const value_type & ) > mod_f ;
+  typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
+
+  vc_simd_type & broadcast ( gen_f f )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f() ;
+    }
+    return *this ;
+  }
+
+  vc_simd_type & broadcast ( mod_f f )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( (*this)[i] ) ;
+    }
+    return *this ;
+  }
+
+  vc_simd_type & broadcast ( bin_f f , const vc_simd_type & rhs )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( (*this)[i] , rhs[i] ) ;
+    }
+    return *this ;
+  }
+
+  typedef Vc::Vector < value_type > vec_t ;
+  static const std::size_t hsize = vec_t::size() ;
+  static const std::size_t nvec = vsize / hsize ;
+
+  typedef std::function < vec_t() > gen_vf ;
+  typedef std::function < vec_t ( const vec_t & ) > mod_vf ;
+  typedef std::function < vec_t ( const vec_t & , const vec_t & ) > bin_vf ;
+
+  // we take a lazy approach to broadcasting vector functions and go via
+  // a vsize-sized buffer of value_type, expecting that the buffer will
+  // be optimized away
+
+  // broadcast a vector generator function
+
+  template < typename = std::enable_if < ( vsize % hsize == 0 ) > >
+  vc_simd_type & vbroadcast ( gen_vf f )
+  {
+    alignas ( sizeof ( vec_t ) ) value_type buffer [ vsize ] ;
+    for ( std::size_t i = 0 , ofs = 0 ; i < nvec ; i++ , ofs += hsize )
+      f().store ( buffer + ofs ) ;
+    load ( buffer ) ;
+    return *this ;
+  }
+
+  // broadcast a vector modulator
+
+  template < typename = std::enable_if < ( vsize % hsize == 0 ) > >
+  vc_simd_type & vbroadcast ( mod_vf f )
+  {
+    alignas ( sizeof ( vec_t ) ) value_type buffer [ vsize ] ;
+    store ( buffer ) ;
+    for ( std::size_t i = 0 , ofs = 0 ; i < nvec ; i++ , ofs += hsize )
+      f ( vec_t ( buffer + ofs ) ).store ( buffer + ofs ) ;
+    load ( buffer ) ;
+    return *this ;
+  }
+
+  // broadcast a vector binary function
+
+  template < typename = std::enable_if < ( vsize % hsize == 0 ) > >
+  vc_simd_type & vbroadcast ( bin_vf f , const vc_simd_type & rhs )
+  {
+    alignas ( sizeof ( vec_t ) ) value_type buffer [ vsize ] ;
+    alignas ( sizeof ( vec_t ) ) value_type rhs_buffer [ vsize ] ;
+    store ( buffer ) ;
+    rhs.store ( rhs_buffer ) ;
+    for ( std::size_t i = 0 , ofs = 0 ; i < nvec ; i++ , ofs += hsize )
+      f ( vec_t ( buffer + ofs ) , vec_t ( rhs_buffer + ofs ) )
+        .store ( buffer + ofs ) ;
+    load ( buffer ) ;
+    return *this ;
   }
 
   // apply functions from namespace std to each element in a vector,

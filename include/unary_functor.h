@@ -400,7 +400,9 @@ struct broadcast
     in_type itl_in [ vsize ] ;
     out_type itl_out [ vsize ] ;
 
-    // fill the buffer of scalar input values
+    // fill the buffer of scalar input values. This is now done with
+    // inv's 'fluff' method which uses the most effective method of
+    // moving the data from deinterleaved form to interleaved form.
 
     inv.fluff ( itl_in ) ;
 
@@ -409,7 +411,8 @@ struct broadcast
     for ( int e = 0 ; e < vsize ; e++ )
       fp->eval ( itl_in[e] , itl_out[e] ) ;
 
-    // store the output back to the vectorized output object
+    // store the output back to the vectorized output object, using
+    // 'bunch', the reverse operation of 'fluff'.
 
     outv.bunch ( itl_out ) ;
   }

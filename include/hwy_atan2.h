@@ -196,11 +196,11 @@ HWY_INLINE V Atan2(const D d, V y, V x) {
 // covered by the licenses of either of the the original files
 // given above is copyrighted and licensed like this:
 //
-// Copyright Kay F. Jahnke 2022
+// Copyright Kay F. Jahnke 2022 - 2023
 //
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
-/*    kfjahnke+vspline@gmail.com                                        */
+/*    kfjahnke+zimt@gmail.com                                           */
 /*                                                                      */
 /*    Permission is hereby granted, free of charge, to any person       */
 /*    obtaining a copy of this software and associated documentation    */

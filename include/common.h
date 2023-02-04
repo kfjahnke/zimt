@@ -60,18 +60,29 @@
 #include <functional>
 #include <assert.h>
 #include <cmath>
-// #include "xel.h"
 
 namespace zimt
 {
+  // to mark all variations of SIMD data types, we'll derive them
+  // from simd_tag, and therefore also from simd_flag.
+
   class simd_flag { } ;
 
-  enum backend { GOADING , VC , HWY , STDSIMD } ;
+  enum backend_e { GOADING , VC , HWY , STDSIMD } ;
 
-  template < typename T , std::size_t N , backend B >
-  class simd_tag
+  std::string backend_name[] { "GOADING" ,
+                               "Vc" ,
+                               "highway" ,
+                               "std::simd" } ;
+
+  template < typename T , std::size_t N , backend_e B >
+  struct simd_tag
   : public simd_flag
-  { } ;
+  {
+    typedef T value_type ;
+    static const std::size_t vsize = N ;
+    static const backend_e backend = B ;
+  } ;
 
   template < typename T , std::size_t > struct xel_t ;
 

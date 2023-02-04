@@ -156,3 +156,86 @@ which may even be optimized away by the compiler if you're lucky.
 Please note that this feature is currently 'evolving', so the act of moving
 from one type to the other by simple assignment may not yet work as well for
 all of zimt's SIMD back-end types as in my example.
+
+## using several ISAs/backends in one binary
+
+If you look at the zimt code, you'll notice that there is no inherent facility
+to use several ISAs in one binary - instead, everything is made so that you
+can compile the code for one specific ISA. But there is a simple method to
+combine code for several ISAs in one binary which I have established in lux,
+and I'll outline it here.
+
+the trick is to 'dub' the zimt namespace to something ISA-specific with a
+simple preprocessor #define, and then compile separate TUs, each with it's
+own set of compiler switches. The calling code can then pick the ISA-specific
+version. So if we have ISA specific code like this (file isa-specific.cc):
+
+    #include "../../zimt.h"
+
+    namespace zimt
+    {
+      void foo()
+      {
+        typedef zimt::simdized_type < float , 16 > f16_t ;
+        std::cout << "base vector size: "
+                  << sizeof ( f16_t::vec_t ) << std::endl ;
+        std::cout << f16_t::iota() << std::endl ;
+      }
+    } ;
+
+We wrap it in the 'dubbing' code like this for an AVX version (foo_avx.cc):
+
+    #define zimt zimt_AVX
+    #include "isa_specific.cc"
+
+And like this for an SSE version:
+
+    #define zimt zimt_SSE
+    #include "isa_specific.cc"
+
+Calling code can pick the ISA-specific code like this (main.cc):
+
+    namespace zimt_AVX
+    {
+      extern void foo() ;
+    } ;
+
+    namespace zimt_SSE
+    {
+      extern void foo() ;
+    } ;
+
+    int main ( int argc , char * argv[] )
+    {
+      zimt_SSE::foo() ;
+      zimt_AVX::foo() ;
+    }
+
+Now we can put it all together:
+
+    $ g++ -msse2 -c -DUSE_HWY -o foo_sse.o foo_sse.cc
+    $ g++ -mavx2 -c -DUSE_HWY -o foo_avx.o foo_avx.cc
+    $ g++ main.cc *.o
+    $ ./a.out
+      base vector size: 4
+      (* 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 *)
+      base vector size: 16
+      (* 0, 1, 2, 3 | 4, 5, 6, 7 | 8, 9, 10, 11 | 12, 13, 14, 15 *)
+
+I've picked the highway backend for this example because hwy_simd_type has
+a vec_t member, and we can actually see a difference in the output, USE_VC
+works as well. With this technique, you can combine any number of TUs with
+different compiler directives into a single binary, and you can also combine
+code from different backends - e.g. if you intend to compare performance and
+want everything else to be the same.
+
+Having to declare each function in the dubbed namespace can become annoying
+and error-prone - a simple way out is to use a 'dispatcher' object: a class
+with pure virtual member functions which you instantiate in each ISA-specific
+TU. With a bit of header artistry, you can make this to work so that you only
+need to write the function declaration once, to see this in action have a look
+at how it's done in [lux](https://bitbucket.org/kfj/lux/ "git repository of the lux image and panorama viewer"), see interface.h and dispatch.h there. Then you
+use a set of dispatcher objects, one for each ISA-specific TU, and call the member
+functions through them, resulting in calls to the ISA-specific overloads via
+the virtual member functions.
+
