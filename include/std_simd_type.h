@@ -115,10 +115,7 @@ struct simd_type
 
   using base_t::operator[] ;
 
-  // assignment from a value_type. The assignment is coded as a loop,
-  // but it should be obvious to the compiler's loop vectorizer that
-  // the loop is a 'SIMD operation in disguise', so here we have the
-  // first appearance of 'goading'.
+  // assignment from a value_type.
 
   simd_type & operator= ( const value_type & rhs )
   {
@@ -152,17 +149,7 @@ struct simd_type
     return ( * static_cast < const base_t * const > ( this ) ) ;
   }
 
-  // assignment from equally-sized container. Most containers use std::size_t
-  // for the template argument defining the number of elements they hold,
-  // but some (notably vigra::TinyVector) use int, which is probably a relic
-  // from times when non-type template arguments were of a restricted type
-  // set only. By providing a specialization for SIZE_TYPE int, we make
-  // equally-sized vigra::TinyVectors permitted initializers.
-  // the c'tor from an equally-sized container also uses the corresponding
-  // operator= overload, so we use one macro for both.
-  // we also need two different variants of vsize for g++; clang++ accepts
-  // size_type vsize for both places where VSZ is used, but g++ requires
-  // an integer.
+  // assignment from equally-sized container.
   // Note that the rhs can use any elementary type which can be legally
   // assigned to value_type. This allows transport of information from
   // differently typed objects, but there are no further constraints on
@@ -170,23 +157,19 @@ struct simd_type
   // responsibility to make sure such assignments have the desired effect
   // and overload them if necessary.
 
-  #define BUILD_FROM_CONTAINER(SIZE_TYPE,VSZ) \
-    template < typename U , template < typename , SIZE_TYPE > class V > \
-    simd_type & operator= ( const V < U , VSZ > & rhs ) \
-    { \
-      for ( size_type i = 0 ; i < vsize ; i++ ) \
-        to_base() [ i ] = value_type ( rhs [ i ] ) ; \
-      return *this ; \
-    } \
-    template < typename U , template < typename , SIZE_TYPE > class V > \
-    simd_type ( const V < U , VSZ > & ini ) \
-    { \
-      *this = ini ; \
-    }
+  template < typename U >
+  simd_type & operator= ( const simd_type < U , vsize > & rhs )
+  {
+    for ( size_type i = 0 ; i < vsize ; i++ )
+      (*this) [ i ] = value_type ( rhs [ i ] ) ;
+    return *this ;
+  }
 
-  BUILD_FROM_CONTAINER(std::size_t,vsize)
-
-  #undef BUILD_FROM_CONTAINER
+  template < typename U >
+  simd_type ( const simd_type < U , vsize > & rhs )
+  {
+    *this = rhs ;
+  }
 
   // because all simd_type objects are of a distinct size
   // explicitly coded in template arg vsize, we can initialize

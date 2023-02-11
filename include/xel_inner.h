@@ -301,6 +301,10 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
 // binary operators and left and right scalar operations with
 // value_type, unary operators -, ! and ~
 
+// TODO: add type promotion: as is, the code will accept e.g. float rhs
+// and convert it to int lhs, producing int rather than float.
+// Alternatively, enforce equal lhs and rhs type
+
 #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
   XEL OPFUNC ( XEL rhs ) const \
   { \

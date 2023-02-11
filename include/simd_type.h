@@ -125,7 +125,7 @@
 namespace zimt
 {
 
-/// class simd_t serves as fallback type to provide SIMD semantics
+/// class simd_type serves as fallback type to provide SIMD semantics
 /// without explicit SIMD code. It can be used throughout when use of
 /// the SIMD 'backends' is unwanted, or to 'fill the gap' where some
 /// SIMD backends do not provide implementations for specific
@@ -150,6 +150,9 @@ namespace zimt
 /// Here, we define a class with xel functionality and add masking
 /// which is essential in SIMD code, while it makes little sense in
 /// a non-SIMD arithmetic type like xel_t.
+
+// we start out with a class called simd_t for brevity, at the end of
+// this header we'll introduce simd_type with a 'using' statement
 
 template < typename T , std::size_t N >
 struct simd_t
@@ -213,8 +216,6 @@ static const index_type IndexesFrom ( std::size_t start ,
 // We start out with functions transporting data from memory into
 // the simd_t. Some of these operations have corresponding
 // c'tors which use the member function to initialize (*this).
-// For now I keep them in the common xel code, but they might
-// be taken out to a separate file and included only by simd_t
 
 // load uses a simple loop, which is about as easy to recognize as
 // an autovectorizable construct as it gets:
@@ -358,35 +359,33 @@ simd_t & broadcast ( bin_f f , const simd_t & rhs )
 
 // reductions for masks. It's often necessary to determine whether
 // a mask is completely full or empty, or has at least some non-false
-// members. The code might be extended to test arbitrary vectors rather
-// than only masks. As it stands, to apply the functions to an
-// arbitrary vector, use a construct like 'any_of ( v == 0 )' instead of
-// 'any_of ( v )'.
+// members. The code was extended to test arbitrary vectors rather
+// than only masks.
 
-template < std::size_t vsize >
-bool any_of ( simd_t < bool , vsize > arg )
+template < typename P , std::size_t vsize >
+bool any_of ( simd_t < P , vsize > arg )
 {
   bool result = false ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
-    result |= arg [ i ] ;
+    result = result || arg [ i ] ;
   return result ;
 }
 
-template < std::size_t vsize >
-bool all_of ( simd_t < bool , vsize > arg )
+template < typename P , std::size_t vsize >
+bool all_of ( simd_t < P , vsize > arg )
 {
   bool result = true ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
-    result &= arg [ i ] ;
+    result = result && arg [ i ] ;
   return result ;
 }
 
-template < std::size_t vsize >
-bool none_of ( simd_t < bool , vsize > arg )
+template < typename P , std::size_t vsize >
+bool none_of ( simd_t < P , vsize > arg )
 {
   bool result = true ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
-    result &= ( ! arg [ i ] ) ;
+    result = result && ( ! arg [ i ] ) ;
   return result ;
 }
 

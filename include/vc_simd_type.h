@@ -364,14 +364,16 @@ struct vc_simd_type
   void gather ( const value_type * const p_src ,
                 const _index_type & _indexes )
   {
-    to_base().gather ( p_src , _indexes.to_base() ) ;
+    for ( std::size_t i = 0 ; i < vsize ; i++ )
+      (*this) [ i ] = p_src [ _indexes [ i ] ] ;
   }
 
   template < typename _index_type >
   void scatter ( value_type * const p_trg ,
                  const _index_type & _indexes ) const
   {
-    to_base().scatter ( p_trg , _indexes.to_base() ) ;
+    for ( std::size_t i = 0 ; i < vsize ; i++ )
+      p_trg [ _indexes [ i ] ] = (*this) [ i ] ;
   }
 
   // c'tor from pointer and indexes, uses gather

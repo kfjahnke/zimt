@@ -2,7 +2,7 @@
 /*                                                                      */
 /*    zimt - abstraction layer for SIMD programming                     */
 /*                                                                      */
-/*            Copyright 2023 by Kay F. Jahnke                           */
+/*            Copyright 2022 - 2023 by Kay F. Jahnke                    */
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
@@ -49,7 +49,7 @@
     construct which may well exceed the hardware size. The 'goading'
     implementation of zimt::simd_type uses small loops over a
     POD C vector to implement the functionality - hoping that the
-    compiler will 'get it' and autovectorize the code. This
+    compiler will 'get it' and autovectorize the code. This here
     implementation is also based on a POD C vector, but the
     functionality is implemented (wherever this seems feasible or
     sensible) by using highway SIMD code. In a way it's enforcing

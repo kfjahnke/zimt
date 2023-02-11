@@ -68,12 +68,18 @@ namespace zimt
 
   class simd_flag { } ;
 
+  // So far, we have four backends
+
   enum backend_e { GOADING , VC , HWY , STDSIMD } ;
+
+  // For diagnostic output:
 
   std::string backend_name[] { "GOADING" ,
                                "Vc" ,
                                "highway" ,
                                "std::simd" } ;
+
+  // now we can code the tag:
 
   template < typename T , std::size_t N , backend_e B >
   struct simd_tag
@@ -83,6 +89,8 @@ namespace zimt
     static const std::size_t vsize = N ;
     static const backend_e backend = B ;
   } ;
+
+  // forward declaration of xel_t
 
   template < typename T , std::size_t > struct xel_t ;
 

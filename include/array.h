@@ -75,6 +75,8 @@
 
 namespace zimt
 {
+class view_flag { } ;
+
 // view_t is a view to an array. Like vigra, zimt uses view_t
 // as the base class and derives array_t from it, adding ownership
 // of the data. class view_t is lightweight and only refers to data
@@ -82,6 +84,7 @@ namespace zimt
 
 template < std::size_t D , typename T >
 struct view_t
+: public view_flag
 {
   typedef T value_type ;
   static const std::size_t dimension = D ;
@@ -168,6 +171,12 @@ struct view_t
     shape ( rhs.shape )
   { }
 
+  view_t ( const view_t & rhs ,
+           const index_type & _strides ,
+           const shape_type & _shape )
+  : view_t ( rhs.origin , _strides , _shape )
+  { }
+
   // copy assignment is forbidden.
 
   view_t & operator= ( const view_t & rhs ) = delete ;
@@ -248,7 +257,7 @@ private:
 
   slice_t _slice ( std::size_t d , long k , std::true_type ) const
   {
-    return slice_t ( origin , strides , shape ) ;
+    return slice_t ( origin , strides , 1 ) ; // shape ) ;
   }
 
 public:
@@ -479,6 +488,15 @@ public:
   array_t ( const array_t & rhs )
   : base_t ( rhs ) ,
     base ( rhs.base )
+  { }
+
+  // copy c'tor with different shape and strides
+
+  array_t ( const array_t & rhs ,
+            const index_type & _strides ,
+            const shape_type & _shape )
+  : base ( rhs.base ) ,
+    base_t ( rhs.origin , _strides , _shape )
   { }
 
   // copy assignment is forbidden.

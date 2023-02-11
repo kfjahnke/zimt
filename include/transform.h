@@ -97,6 +97,46 @@
 
 namespace zimt {
 
+template < typename view_type ,
+           typename = std::enable_if
+             < std::is_base_of < view_flag , view_type > :: value > >
+view_type sort_strides ( const view_type & rhs , bool ascending = true )
+{
+  static const size_t dimension = view_type::dimension ;
+  if ( dimension <= 1 )
+    return rhs ;
+
+  auto strides = view_type::strides ;
+  auto shape = view_type::shape ;
+
+  bool ordered = true ;
+
+  // strategy: large strides wil 'trickle upwards', every iteration
+  // of the outer loop will move the largest stride to the last
+  // position (dmax-1). The next iteration will deal with the remaining
+  // values. If no swaps were performed, the order is correct already.
+
+  auto cmp =   ascending
+             ? [] ( long a , long b ) { return a > b ; }
+             : [] ( long a , long b ) { return a < b ; } ;
+
+  for ( std::size_t dmax = dimension ; dmax > 1 ; dmax-- )
+  {
+    for ( std::size_t d = 1 ; d < dmax ; d++ )
+    {
+      if ( cmp ( strides [ d-1 ] , strides [ d ] ) )
+      {
+        std::swap ( strides [ d-1 ] , strides [ d ] ) ;
+        std::swap ( shape [ d-1 ] , shape [ d ] ) ;
+        ordered = false ;
+      }
+    }
+    if ( ordered )
+      break ;
+  }
+  view_type ( rhs , strides , shape ) ;
+}
+
 /// implementation of two-array transform using wielding::coupled_f.
 ///
 /// 'array-based' transform takes two template arguments:
@@ -253,15 +293,26 @@ void transform ( const act_t & _act ,
 /// by ATD from the arguments.
 ///
 /// See the remarks on the trailing parameter given with the two-array
-/// overload of transform.
+/// overload of transform. coordinate-based transforms take an optional
+/// last argument 'co' - a 'coordinator'. This is a functor which is used
+/// during the transform to provide input to the operation. The default
+/// is a default-initialized wielding::coordinator, which will result
+/// in discrete coordinates starting at zero. Using other coordinators
+/// opens up a whole range of possibilities: The coordinator can provide
+/// anything that the 'actor' can take as input. The constraint is that
+/// the coordinator has to follow a specific design, which can be gleaned
+/// from class template wielding::coordinator.
 
-template < class act_t >
+using wielding::norm_coordinator ;
+
+template < class act_t ,
+           class coord_t = norm_coordinator < act_t > >
 void transform ( const act_t & _act ,
                  view_t < act_t::dim_in ,
                           typename act_t::out_type
                         > output ,
-                 bill_t bill ,
-                 std::false_type )
+                 bill_t bill = bill_t() ,
+                 const coord_t & co = coord_t() )
 {
   typedef wielding::vs_adapter < act_t > aact_t ;
   aact_t act ( _act ) ;
@@ -290,77 +341,25 @@ void transform ( const act_t & _act ,
 
   // now delegate to the wielding code
 
-  wielding::indexed_f ( act , trg , bill ) ;
-}
-
-// overload for 1D views
-
-template < class act_t >
-void transform ( const act_t & _act ,
-                 view_t < 1 ,
-                          typename act_t::out_type
-                        > output ,
-                 bill_t bill ,
-                 std::true_type )
-{
-  assert ( bill.axis == 0 ) ;
-
-  typedef wielding::vs_adapter < act_t > aact_t ;
-  aact_t act ( _act ) ;
-
-  // we'll cast the pointers to the arrays to these types to be
-  // compatible with the wrapped functor above.
-
-  typedef typename aact_t::in_type src_type ;
-  typedef typename aact_t::out_type trg_type ;
-
-  typedef zimt::view_t < act_t::dim_in , trg_type > trg_view_type ;
-
-  auto & trg ( static_cast < trg_view_type & > ( output ) ) ;
-
-  // confine the bill to sensible values
-
-  if (    bill.segment_size <= 0
-       || bill.segment_size > trg.shape [ bill.axis ])
-    bill.segment_size = trg.shape [ bill.axis ] ;
-
-  if ( bill.njobs <= 1 )
-    bill.njobs = 1 ;
-
-  if ( bill.njobs > zimt::default_njobs )
-    bill.njobs = zimt::default_njobs ;
-
-  // now delegate to the wielding code
-
-  wielding::indexed_f ( act , trg , bill ) ;
-}
-
-template < class act_t >
-void transform ( const act_t & act ,
-                 view_t < act_t::dim_in ,
-                          typename act_t::out_type
-                        > output ,
-                 bill_t bill = bill_t() )
-{
-  static const bool is_1d ( act_t::dim_in == 1 ) ;
-  transform ( act , output , bill ,
-              std::integral_constant < bool , is_1d >() ) ;
+  wielding::indexed_f ( act , trg , bill , co ) ;
 }
 
 // for 1D index-based transforms, we add an overload taking a naked
 // pointer, stride and length
 
-template < class act_t >
+template < class act_t ,
+           class coord_t = norm_coordinator < act_t > >
 void transform ( const act_t & act ,
                  typename act_t::out_type * trg ,
                  long stride ,
                  std::size_t length ,
-                 bill_t bill = bill_t() )
+                 bill_t bill = bill_t() ,
+                 const coord_t & co = coord_t() )
 {
   typedef zimt::view_t < 1 , typename act_t::out_type > v_t ;
 
   transform ( act , v_t ( trg , { stride } , { length } ) ,
-              bill , std::true_type() ) ;
+              bill , co ) ;
 }
 
 /// we code 'apply' as a special variant of 'transform' where the output

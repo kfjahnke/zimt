@@ -521,14 +521,11 @@ struct chain_type
   static_assert ( std::is_same < typename T1::out_type , typename T2::in_type > :: value ,
                   "chain: output of first functor must match input of second functor" ) ;
 
-  typedef typename T1::out_type intermediate_type ;
-  typedef typename T1::out_v intermediate_v ;
-  
   // hold the two functors by value
 
   const T1 t1 ;
   const T2 t2 ;
-  
+
   // the constructor initializes them
 
   chain_type ( const T1 & _t1 , const T2 & _t2 )
@@ -536,9 +533,12 @@ struct chain_type
     t2 ( _t2 )
     { } ;
 
-  // the actual eval needs a bit of trickery to determine the type of
-  // the intermediate type from the type of the first argument.
+  // intermediate_type is the first functor's out_type and the
+  // second functor's in_type - vectors accordingly
 
+  typedef typename T1::out_type intermediate_type ;
+  typedef typename T1::out_v intermediate_v ;
+  
   void eval ( const in_type & argument ,
                     out_type & result )
   {
@@ -636,7 +636,7 @@ operator+ ( const T1 & t1 , const T2 & t2 )
 /// 'grok' the result, so you only have one type left, which is much
 /// easier to handle: you can pass it around and introduce it's type
 /// into other parts of your code without having to deal with the
-/// complexity of the originla grokked type family.
+/// complexity of the original grokked type family.
 ///
 /// For grok_type objects where _vsize is greater 1, there are
 /// constructor overloads taking only a single function. These
@@ -922,7 +922,8 @@ struct amplify_type
   }
   
   template < typename = std::enable_if < ( vsize > 1 ) > >
-  void eval ( const in_v & in , out_v & out )
+  void eval ( const in_v & in , out_v & out ,
+              const std::size_t & cap = 0 )
   {
     // we take a view to the arguments as TinyVectors, even if
     // the data are 'singular'
