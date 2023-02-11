@@ -421,7 +421,7 @@ void indexed_f ( const act_t & _act ,
           act.eval ( md_crd , buffer ) ;
           buffer.fluff ( trg ) ;
           trg += vsize ;
-          if ( a < nr_vectors + 1 )
+          if ( a < nr_vectors - 1 )
             c.increase ( md_crd ) ;
         }
       }
@@ -433,7 +433,7 @@ void indexed_f ( const act_t & _act ,
           act.eval ( md_crd , buffer ) ;
           buffer.fluff ( trg , out_stride ) ;
           trg += vsize * out_stride ;
-          if ( a < nr_vectors + 1 )
+          if ( a < nr_vectors - 1 )
             c.increase ( md_crd ) ;
         }
       }
