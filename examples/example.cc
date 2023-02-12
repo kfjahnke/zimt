@@ -147,21 +147,14 @@ template < typename dtype > struct sum_up
   : collector ( other.collector )
   { sum = 0 ; }
 
-  // finally, two eval overloads, one for scalar input and
-  // one for SIMD input. Note how the eval member functions
+  // finally, two eval overloads, one for 'uncapped'' input and
+  // one for 'capped' input. Note how the eval member functions
   // declare but do not produce output. The functor will be
   // used with 'apply' which in turn delegates to transform
-  // which expects the functor to have two arguments, but the
+  // which expects the functor to have these arguments, but the
   // optimzer will see that the second argument is not used
   // and optimize it away, so having it here is merely a
   // syntactic requirement.
-
-  // void eval ( const in_type & v , in_type & )
-  // { sum += v ; }
-
-  // two versions for vectorized evaluation, one capped and
-  // one uncapped. Here we need to actually use the cap value
-  // to get a correct result.
 
   void eval ( const in_v & v , in_v & )
   {
@@ -175,8 +168,14 @@ template < typename dtype > struct sum_up
       sum += v[e] ;
   }
 
+  // because we're performing a reduction, we need a destructor:
+  // The values cumulated in the tread-local copy of this functor
+  // have to be communicated to the pooled result in 'collector'.
+
   ~sum_up()
-  { collector.fetch_add ( sum ) ; }
+  {
+    collector.fetch_add ( sum ) ;
+  }
 } ;
 
 // variation using a yield function, which writes to a
@@ -230,13 +229,7 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   // you can go via a pointer and allocate the score with new in
   // the c'tor, and delete it in the d'tor. Then the eval functions
   // can be const, because the functor itself is no longer modified.
-
-  // void eval ( const in_type & v , in_type & )
-  // {
-  //   score += v ;
-  // }
-
-  // two versions for vectorized evaluation, one capped and
+  // we have two versions for vectorized evaluation, one capped and
   // one uncapped. Here we need to actually use the cap value
   // to get a correct result.
 
@@ -257,6 +250,9 @@ template < typename T , std::size_t N > struct sum_up_fcpy
     for ( int ch = 0 ; ch < N ; ch++ )
       score [ ch ] += v [ ch ] . sum () ;
   }
+
+  // again, the 'dtor adds the trhead-local result to the total
+  // score
 
   ~sum_up_fcpy()
   {
@@ -353,7 +349,7 @@ void test ( zimt::bill_t bill )
 
   zimt::transform ( amp , v3 , bill ) ;
 
-  zimt::transform
+  zimt::transform < 3 >
     ( amp , { data , { 1 , 50 , 500 } , { 50 , 10 , 2 } } , bill ) ;
 
   // again we check the result. Here we can compare the content of
@@ -479,68 +475,6 @@ void test ( zimt::bill_t bill )
   assert ( collect == expected ) ;
 }
 
-// example of a 'coordinator'. This one holds more state: a variable
-// named 'current'. It is set to zero in 'init' and grows with every
-// call to 'increase' - by one, if it's the scalar increase, by vsize
-// if it's the vectorized one.
-
-template < typename T , std::size_t N , std::size_t L >
-struct co_t
-{
-  typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , N > crd_t ;
-  typedef zimt::simdized_type < crd_t , L > crd_v ;
-  typedef typename crd_v::value_type crd_ele_v ;
-
-  const std::size_t d ;
-  const value_t start ;
-  const value_t step ;
-
-  // co_t's c'tor receives start, step and axis.
-
-  co_t ( const value_t & _start ,
-         const value_t & _step ,
-         const std::size_t & _d )
-  : start ( _start ) , step ( _step ) , d ( _d )
-  { }
-
-  // init is used to initialize the vectorized value to the value
-  // it should hold at the beginning of the peeling run. The discrete
-  // coordinate 'crd' gives the location of the first value, and the
-  // coordinator infers the start value from it. The scalar value will
-  // not be used until peeling is done, so it isn't initialized here.
-
-  void init ( value_v & cv , const crd_t & crd )
-  {
-    cv = step * crd + start ;
-    cv [ d ] += value_ele_v::iota() * step [ d ] ;
-  }
-
-  // initialize the scalar value from the discrete coordinate.
-  // This needs to be done once after peeling, the scalar value
-  // is not initialized before.
-
-  void init ( value_t & c , const crd_t & crd )
-  {
-    c = step * crd + start ;
-  }
-
-  // increase modifies it's argument to contain the next value, or
-  // next vectorized value, respectively
-
-  void increase ( value_t & trg )
-  {
-    trg [ d ] += step [ d ] ;
-  }
-
-  void increase ( value_v & trg )
-  {
-    trg [ d ] += ( step [ d ] * L ) ;
-  }
-} ;
-
 int main ( int argc , char * argv[] )
 {
   zimt::bill_t bill ;
@@ -556,27 +490,4 @@ int main ( int argc , char * argv[] )
     bill.segment_size = times % 103 ;
     test ( bill ) ;
   }
-
-  bill = zimt::bill_t() ;
-
-  // demonstration of using a custom 'coordinator' - a class
-  // which wielding::indexed_f can use to produce input for
-  // a transform-like operation.
-
-  zimt::xel_t < float , 2 > start { .1f , .2f } ;
-  zimt::xel_t < float , 2 > step { .3f , .5f } ;
-
-  zimt::array_t < 2 , zimt::xel_t < float , 2 > >
-    linspace ( { 8 , 8 } ) ;
-  co_t < float , 2 , 16 > co ( start , step , bill.axis ) ;
-  wielding::indexed_f ( pass_through < float , 2 , 16 >() ,
-                        linspace , bill , co ) ;
-
-
-  for ( int y = 0 ; y < 8 ; y++ )
-  {
-    for ( int x = 0 ; x < 8 ; x++ )
-      std::cout << linspace [ { x , y } ] << " " ;
-    std::cout << std::endl ;
-  }
- }
+}

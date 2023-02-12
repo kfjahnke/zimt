@@ -922,8 +922,7 @@ struct amplify_type
   }
   
   template < typename = std::enable_if < ( vsize > 1 ) > >
-  void eval ( const in_v & in , out_v & out ,
-              const std::size_t & cap = 0 )
+  void eval ( const in_v & in , out_v & out )
   {
     // we take a view to the arguments as TinyVectors, even if
     // the data are 'singular'

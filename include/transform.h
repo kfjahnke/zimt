@@ -84,7 +84,9 @@
     this requires additional coding effort in the zimt::unary_functor:
     it has to gather it's reduction result in the functor and have a
     way to communicate this (partial) result to the caling code in a
-    tread-safe manner when it's destructed.
+    tread-safe manner when it's destructed. functors for reduction
+    also need to provide a 'capped eval' overload, see wielding.h for
+    more about this topic.
 */
 
 #ifndef ZIMT_TRANSFORM_H
@@ -96,6 +98,9 @@
 #include "wielding.h"
 
 namespace zimt {
+
+using wielding::norm_get_crd ;
+using wielding::norm_put_t ;
 
 template < typename view_type ,
            typename = std::enable_if
@@ -229,17 +234,18 @@ void transform ( const act_t & _act ,
   wielding::coupled_f ( act , src , trg , bill ) ;
 }
 
-/// implementation of index-based transform using wielding::indexed_f
+/// implementation of index-based transform using wielding::process
 ///
-/// this overload of transform() is very similar to the first one, but
-/// instead of picking input from an array, it feeds the discrete coordinates
-/// of the successive places data should be rendered to as input to the
-/// unary_functor_type object.
-///
-/// This sounds complicated, but is really quite simple. Let's assume you have
-/// a 2X3 output array to fill with data. When this array is passed to transform,
-/// the functor will be called with every coordinate pair in turn, and the result
-/// the functor produces is written to the output array. So for the example given,
+/// this overload of transform() is very similar to the first one,
+/// but instead of picking input from an array, it feeds the discrete
+/// coordinates of the successive places data should be rendered to
+/// as input to the unary_functor_type object.
+
+/// This sounds complicated, but is really quite simple. Let's assume
+/// you have a 2X3 output array to fill with data. When this array is
+/// passed to transform, the functor will be called with every
+/// coordinate pair in turn, and the result the functor produces is
+/// written to the output array. So for the example given,
 /// with 'ev' being the functor, we have this set of operations:
 ///
 /// output [ ( 0 , 0 ) ] = ev ( ( 0 , 0 ) ) ;
@@ -254,9 +260,11 @@ void transform ( const act_t & _act ,
 ///
 /// output [ ( 2 , 1 ) ] = ev ( ( 2 , 1 ) ) ;
 ///
-/// this transform overload takes one template argument:
+/// this transform overload takes two template arguments:
 ///
-/// - 'unary_functor_type', which is a class satisfying the interface laid
+/// - the dimensionality of the view/array
+///
+/// - 'act_t', which is a class satisfying the interface laid
 ///   down in unary_functor.h. This is an object which can provide values
 ///   given *discrete* coordinates, like class evaluator, but generalized
 ///   to allow for arbitrary ways of achieving it's goal. The unary functor's
@@ -267,13 +275,15 @@ void transform ( const act_t & _act ,
 ///   target array, since the target array stores the results of calling the
 ///   functor.
 ///
-/// this transform overload takes two parameters:
+/// this transform overload takes three parameters:
 ///
 /// - a reference to a const unary_functor_type object providing the
 ///   functionality needed to generate values from discrete coordinates
 ///
 /// - a reference to a zimt::view_t to use as a target. This is where the
 ///   resulting data are put.
+///
+/// - optionally, a bill_t object with additional parameters
 ///
 /// Please note that zimt holds with vigra's coordinate handling convention,
 /// which puts the fastest-changing index first. In a 2D, image processing,
@@ -290,29 +300,17 @@ void transform ( const act_t & _act ,
 /// as (coordinate * strides).sum()
 ///
 /// transform can be used without template arguments, they will be inferred
-/// by ATD from the arguments.
-///
-/// See the remarks on the trailing parameter given with the two-array
-/// overload of transform. coordinate-based transforms take an optional
-/// last argument 'co' - a 'coordinator'. This is a functor which is used
-/// during the transform to provide input to the operation. The default
-/// is a default-initialized wielding::coordinator, which will result
-/// in discrete coordinates starting at zero. Using other coordinators
-/// opens up a whole range of possibilities: The coordinator can provide
-/// anything that the 'actor' can take as input. The constraint is that
-/// the coordinator has to follow a specific design, which can be gleaned
-/// from class template wielding::coordinator.
+/// by ATD from the arguments if that is possible: if you actually pass
+/// a view_t, the dimensionality can be inferred, but if you pass a
+/// std::initilaizer_sequence to create a view_t 'on the fly', you must
+/// pass the dimensionality explicitly.
 
-using wielding::norm_coordinator ;
-
-template < class act_t ,
-           class coord_t = norm_coordinator < act_t > >
+template < std::size_t dimension , class act_t >
 void transform ( const act_t & _act ,
-                 view_t < act_t::dim_in ,
+                 view_t < dimension ,
                           typename act_t::out_type
                         > output ,
-                 bill_t bill = bill_t() ,
-                 const coord_t & co = coord_t() )
+                 bill_t bill = bill_t() )
 {
   typedef wielding::vs_adapter < act_t > aact_t ;
   aact_t act ( _act ) ;
@@ -339,27 +337,33 @@ void transform ( const act_t & _act ,
   if ( bill.njobs > zimt::default_njobs )
     bill.njobs = zimt::default_njobs ;
 
-  // now delegate to the wielding code
+  // now delegate to the wielding code. We need two additional
+  // parameters: 'get' generates coordinates as input to 'act',
+  // and 'put' disposes of the result by storing to 'trg'.
+  // The coordinate-generation produces discrete coordinates,
+  // in the type act takes as input. So, act can take, e.g.
+  // float coordinates and 'get' will provide.
 
-  wielding::indexed_f ( act , trg , bill , co ) ;
+  norm_get_crd < act_t , dimension > get ( bill.axis ) ;
+  norm_put_t < act_t , dimension > put ( trg , bill.axis ) ;
+
+  wielding::process ( act , trg , bill , get , put ) ;
 }
 
 // for 1D index-based transforms, we add an overload taking a naked
-// pointer, stride and length
+// pointer, stride and length. Then we delegate to the vesion above.
 
-template < class act_t ,
-           class coord_t = norm_coordinator < act_t > >
+template < class act_t >
 void transform ( const act_t & act ,
                  typename act_t::out_type * trg ,
                  long stride ,
                  std::size_t length ,
-                 bill_t bill = bill_t() ,
-                 const coord_t & co = coord_t() )
+                 bill_t bill = bill_t() )
 {
   typedef zimt::view_t < 1 , typename act_t::out_type > v_t ;
+  v_t v ( trg , { stride } , { length } ) ;
 
-  transform ( act , v_t ( trg , { stride } , { length } ) ,
-              bill , co ) ;
+  transform ( act , v , bill ) ;
 }
 
 /// we code 'apply' as a special variant of 'transform' where the output
