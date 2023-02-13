@@ -349,6 +349,12 @@ struct storer
     p_trg += L ;
   }
 
+  // note this 'save' overload: 'leftover' values which remain after
+  // 'peeling' are collected in a buffer until a full vector is ready.
+  // The data from this buffer need to be stored to the correct loci
+  // in memory, which are encoded in 'indexes' as a set of offsets
+  // from the view's/array's origin.
+
   void save ( const value_v & v , const sc_indexes_t & indexes )
   {
     auto po = (T*)(trg.origin) ;
@@ -364,7 +370,8 @@ struct storer
 } ;
 
 // For brevity, here's a using declaration deriving the default
-// get_t from the actor's type.
+// get_t and put_t from the actor's type and the array's/view's
+// dimension.
 
 template < typename act_t , std::size_t dimension >
 using norm_get_crd
@@ -382,11 +389,23 @@ using norm_put_t
     dimension ,
     act_t::vsize > ;
 
-// TODO: rewrite: get_t -> input -> act_t -> output > put_t
-
 /// process is now the central function in the wielding namespace
 /// and used to implement all 'transform-like' operations. It is
-/// a generalization of
+/// a generalization of the 'transform' concept, adding choosable
+/// 'get' and 'put' methods which generate input for the functor
+/// and dispose of it's output. By factoring these two activities
+/// out, the code becomes much more flexible, and by selecting
+/// simple appropriate 'get' and 'put' objects, zimt::transform
+/// can easily be implemented as a specialized application of the
+/// more general code in 'process'.
+/// So 'process' uses a three-step process: the 'get' object
+/// produces data the 'act' functor can process, the 'act'
+/// functor produces output data from this input, and the 'put'
+/// object disposes of the output.
+/// 'process' 'aggregates' the data so that all of the input will
+/// be processed by vector code (unless the data themselves are not
+/// vectorizable), so the 'act' functor may omit a scalar eval
+/// member function and provide vectorized only.
 
 template < class act_t ,
            std::size_t dimension = act_t::dim_in , // default is dodgy
