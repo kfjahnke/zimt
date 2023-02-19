@@ -234,8 +234,79 @@ and error-prone - a simple way out is to use a 'dispatcher' object: a class
 with pure virtual member functions which you instantiate in each ISA-specific
 TU. With a bit of header artistry, you can make this to work so that you only
 need to write the function declaration once, to see this in action have a look
-at how it's done in [lux](https://bitbucket.org/kfj/lux/ "git repository of the lux image and panorama viewer"), see interface.h and dispatch.h there. Then you
+at how it's done in [lux](https://bitbucket.org/kfj/lux/ "git repository of
+the lux image and panorama viewer"), see interface.h and dispatch.h there. Then you
 use a set of dispatcher objects, one for each ISA-specific TU, and call the member
 functions through them, resulting in calls to the ISA-specific overloads via
 the virtual member functions.
+
+## n-dimensional arrays and zimt::transform
+
+Now we'll use zimt's unary functors to process n-dimensional arrays. We'll
+start with an explanation of n-dimensional arrays and 'views' - there is
+more to them than what you might expect when you just think of
+multidimensional C arrays. The C++ standard library has a data typoe which
+is similar to the arrays zimt processes, but it's mildly exotic, and
+chances are you haven't heard about it: it's std::gslice. We won't look
+at this similarity here, I only mention it for reference. Another close
+relative is NumPy's ndarray. What's common between these data types is
+that they describe a block of equally-typed data in n-dimensional space
+which has a fixed size in every direction - so, in 2D, it's like a
+rectangular grid, i 3D, it's box-shaped etc..
+
+### nD arrays, strides and memory
+
+Memory presents itself to the programmer as a one-dimensional array of bytes.
+Any notion of multidimensionality is created by chopping up this continuous
+array of bytes into chunks - and possibly chopping up the chunks again into
+smaller chunks and so forth. Let's assume we have 1000 bytes. If we chop them
+up into 10 chunks of 100 bytes each, we can think of these 10 chunks as lines
+of a 2D array, where each line contains 100 columns. Now how do we get from
+one column to the next? We add one to it's adress. But if we want to get to
+the same column in the next line, we have to add 100! This 'number we must add
+to get to the next one' is called the stride, and in this example we have
+'two' strides: the first one - from one column to the next - is 1, the second
+one is 100. If we were to furter subdivide the lines into - let's call them
+'segments' - of 10 bytes each, we'd now have three strides: 1, 10, and 100,
+which get us from one byte to it's successor in the line, the byte at the same
+position in the next segment, or the next line, respectively.
+
+With the example above, we see that we have two metrics which describe an
+array. The first is the extent along each axis, this is called the array's
+'shape'. In the example above, we had a shape of (100, 10) for the 2D array
+and a shape of (10, 10, 10) for the 3D array. Note the notation I use: I start
+out with the extent of the smallest chunk. The product of the shape's
+components is the size of the entire array - 1000 in both cases. The other
+metric is the array's strides, as explained above: (1, 100) or (1, 10, 100),
+respectively. This should give you a notion of what the shape, size and
+strides of an array are - but don't get to attached to this notion: in fact
+you can use the shape and strides as a method to find a member of an array
+in memory or to find a memory location's nD coordinate in an array. Let's
+start with the first one, and let's not use a specific dimensionality. We'll
+use this notation: let a 'coordinate' Ck denote an n-tuple of k integers,
+M an address in memory, and the strides, Sk,another n-tuple of integers.
+The formula to find an array element's location in memory is
+
+    m = M + sum ( Ck * Sk )
+
+provided that M is the 'base' address of the array, the location of the
+array element with an all-zero coordinate. Let's use the 2D example above
+and let's say M is zero. If we want to find the array element (3, 5), we
+apply the formula and get
+
+    m = 0 + sum ( (3, 5) * (1, 100) )
+    m = sum ( 3 , 500 )
+    m = 503
+
+If we just use the formula, we needn't even have a notion of memory or
+data - it can stand by itself, and if you use a coordinate which is
+'in range' and 'correct strides', you'll receive a value of m for
+them. The method is applicable with coordinates of any dimensionality.
+As long as the strides have certain properties, you'll even get a
+unique result, making the process reversible:
+
+    m % 100 = 3
+    m / 100 = 5
+
+
 

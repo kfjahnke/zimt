@@ -246,16 +246,20 @@ int main ( int argc , char * argv[] )
   // 'origin' will never actually be accessed, because the put_t we'll
   // use does not touch it. But of course we need a valid shape. The
   // strides aren't used either, so they can be set to zero as well.
+  // We chosse an 'odd' shape to make sure as much code as possible
+  // gets used and that the 'capping' works.
 
-  zimt::view_t < 3 , delta_t >
-    a ( nullptr , { 0 , 0 , 0 } , { 1000 , 1000 , 1000 } ) ;
+  zimt::xel_t < std::size_t , 3 > shape { 999 , 1011 , 971 } ;
+  zimt::xel_t < long , 3 > strides { 0 , 0 , 0 } ; // unused.
+
+  zimt::view_t < 3 , delta_t > a ( nullptr , strides , shape ) ;
 
   // this is out put_t which simply discards the results.
 
   discard_result < float , 3 , 3 , 16 > p ;
 
   // we need a bit of infrastructure to cumulate the results from
-  // per-thread copies of the 'act' functors to 'collect'
+  // per-thread copies of the 'act' functor to 'collect'
 
 #ifndef ZIMT_SINGLETHREAD
   std::mutex m ;
@@ -264,7 +268,8 @@ int main ( int argc , char * argv[] )
   typedef zimt::xel_t < double , 3 > score_t ;
   score_t collect ( 0 ) ;
 
-  // lambda used to 'yield' the personal score to 'collect'
+  // lambda used to 'yield' the per-thread score to 'collect'
+  // in a thread-safe manner
 
   auto yield = [&] ( const score_t & v )
   {
@@ -278,36 +283,32 @@ int main ( int argc , char * argv[] )
 
   wielding::process ( act_t ( yield ) , a , zimt::bill_t() , l , p ) ;
 
-  // here's the final result over 1e9 pixels:
+  // here's the final result over ca. 1e9 pixels:
 
   std::cout << "collect: " << collect << std::endl ;
 
   // if you'd like to arrive at the same result by a simple iteration
   // without any multithreading or SIMD, uncomment this code:
 
-  /*
-
-  typedef zimt::xel_t < float , 3 > f3_t ;
-
-  collect = 0 ;
-
-  auto f = act_t ( yield ) ;
-
-  for ( std::size_t i = 0 ; i < 1000 ; i++ )
-  {
-    for ( std::size_t j = 0 ; j < 1000 ; j++ )
-    {
-      for ( std::size_t k = 0 ; k < 1000 ; k++ )
-      {
-        f3_t x { i * .01 , j * .01 , k * .01 } ;
-        f3_t y ;
-        f._eval ( x , y ) ;
-        collect += y ;
-      }
-    }
-  }
-
-  std::cout << "collect: " << collect << std::endl ;
-
-  */
+  // typedef zimt::xel_t < float , 3 > f3_t ;
+  //
+  // collect = 0 ;
+  //
+  // auto f = act_t ( yield ) ;
+  //
+  // for ( std::size_t i = 0 ; i < shape[0] ; i++ )
+  // {
+  //   for ( std::size_t j = 0 ; j < shape[1] ; j++ )
+  //   {
+  //     for ( std::size_t k = 0 ; k < shape[2] ; k++ )
+  //     {
+  //       f3_t x { i * .01 , j * .01 , k * .01 } ;
+  //       f3_t y ;
+  //       f._eval ( x , y ) ;
+  //       collect += y ;
+  //     }
+  //   }
+  // }
+  //
+  // std::cout << "collect: " << collect << std::endl ;
 }

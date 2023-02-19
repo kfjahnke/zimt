@@ -337,16 +337,16 @@ struct storer
   // save writes to the current taget pointer and increases the
   // pointer by the amount of value_t written
 
-  void save ( const value_t & trg )
+  void save ( const value_t & v )
   {
-    p_trg = trg ;
-    ++ p_trg ;
+    *p_trg = v ;
+    p_trg += stride ;
   }
 
-  void save ( const value_v & trg )
+  void save ( const value_v & v )
   {
-    trg.fluff ( p_trg , stride ) ;
-    p_trg += L ;
+    v.fluff ( p_trg , stride ) ;
+    p_trg += L * stride ;
   }
 
   // note this 'save' overload: 'leftover' values which remain after
@@ -505,7 +505,7 @@ void process ( const act_t & _act ,
     in_type crd ;
     out_type * trg ;
     out_type * trg0 = out_view.origin ;
-    zimt::xel_t < std::ptrdiff_t , vsize > sc_indexes ;
+    zimt::xel_t < std::ptrdiff_t , vsize > sc_indexes = 0 ;
 
     // these SIMD variables will hold one batch if input or
     // output, respectively. Here, the SIMD input is a
@@ -606,9 +606,7 @@ void process ( const act_t & _act ,
       {
         for ( ic_type a = 0 ; a < nr_vectors ; a++ )
         {
-          // std::cout << "*** " << md_crd << std::endl ;
           act.eval ( md_crd , buffer ) ;
-          // buffer.fluff ( trg ) ;
           p.save ( buffer ) ;
           trg += vsize ;
           if ( a < nr_vectors - 1 )
@@ -619,9 +617,7 @@ void process ( const act_t & _act ,
       {
         for ( ic_type a = 0 ; a < nr_vectors ; a++ )
         {
-          // std::cout << "*** " << md_crd << std::endl ;
           act.eval ( md_crd , buffer ) ;
-          // buffer.fluff ( trg , out_stride ) ;
           p.save ( buffer ) ;
           trg += vsize * out_stride ;
           if ( a < nr_vectors - 1 )
@@ -646,8 +642,6 @@ void process ( const act_t & _act ,
         sc_indexes [ tail_index ] = trg - trg0 ;
 
         // save the current scalar coordinate to 'tail'
-
-        // std::cout << "*** " << crd << std::endl ;
 
         tail [ tail_index++ ] = crd ;
 

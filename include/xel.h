@@ -244,7 +244,7 @@ template < typename = std::enable_if
 void fluff ( xel_t < ET < value_type > , nch > * _trg ,
              std::size_t stride ) const
 {
-  static const typename value_type::index_type indexes
+  const typename value_type::index_type indexes
     = value_type::IndexesFromZero() * int ( stride * nch ) ;
   auto * trg = _trg->data() ;
   if ( stride == 1 )
@@ -288,7 +288,7 @@ template < typename = std::enable_if
 void bunch ( const xel_t < ET < value_type > , nch > * _src ,
              std::size_t stride )
 {
-  static const typename value_type::index_type indexes
+  const typename value_type::index_type indexes
     = value_type::IndexesFromZero() * int ( stride * nch ) ;
   auto const * src = _src->data() ;
   if ( stride == 1 )
