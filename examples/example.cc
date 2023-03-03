@@ -92,16 +92,8 @@ struct amp13_t
   : factor ( _factor )
   { }
 
-  // the vectorized evaluation does not make use of cap, but it
-  // has to declare it with a default argument, so that both
-  // overloads' signatures (with and without cap) can be called.
-  // the wielding code makes sure that incoming vectors are
-  // padded with the element before the cap, it only offers
-  // cap as information for reductions which need it.
-
   template < typename I , typename O >
-  void eval ( const I & in , O & out ,
-              const std::size_t & cap = 0 ) const
+  void eval ( const I & in , O & out ) const
   {
     out = in * factor ;
   }
@@ -147,7 +139,7 @@ template < typename dtype > struct sum_up
   : collector ( other.collector )
   { sum = 0 ; }
 
-  // finally, two eval overloads, one for 'uncapped'' input and
+  // finally, two eval overloads, one for 'uncapped' input and
   // one for 'capped' input. Note how the eval member functions
   // declare but do not produce output. The functor will be
   // used with 'apply' which in turn delegates to transform
@@ -270,7 +262,7 @@ struct pass_through
                                S >
 {
   template < typename I , typename O >
-  void eval ( const I & i , O & o , std::size_t cap = 0 )
+  void eval ( const I & i , O & o )
   {
     o = i ;
   }

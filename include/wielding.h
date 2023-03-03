@@ -45,10 +45,10 @@
     1D subarrays of nD arrays. Here, this access is hand-coded to have
     complete control over the process, and to work with range-based
     code rather than the iterator-based approach vigra uses.
-    This is a new attempt at the code and it does not use the
+    This is a new attempt at the code and it does not use a
     scalar eval variant: the data are now always processed with
     a vector function, and if any 'odd bits' are left over, an
-    overload of the vectorized eval taking a 'cap' argument is
+    overload of the vectorized eval taking a 'cap' argument may be
     invoked, which does process the given input to output just
     as the uncapped overload, but may make use of the cap value
     if the operation is a reduction. The wielding code pads the
@@ -59,7 +59,15 @@
     whether lanes with invalid input may or may not produce an
     exception. The order of the data is - per definition - not
     an issue, there are no guarantees concerning the sequence in
-    which values are processed.
+    which values are processed. The invocation of a 'capped' eval
+    overload only happens if such an overload is present at all;
+    this is determined by looking at the functor passed in,
+    dispatching to one of two code paths. If the functor has no
+    capped eval overload, the 'ordinary' uncapped eval is always
+    used, which is guaranteed to be safe (due to padding). This
+    behaviour makes it easier to implement functors, because most
+    of the time capped eval is not used at all (it's only for
+    reductions) so users should not be forced to supply it.
 
     The code in wielding.h is an abstraction of the 'transform'
     concept, adding selectable 'get' and 'put' abjects which handle

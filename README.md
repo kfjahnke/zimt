@@ -240,12 +240,12 @@ use a set of dispatcher objects, one for each ISA-specific TU, and call the memb
 functions through them, resulting in calls to the ISA-specific overloads via
 the virtual member functions.
 
-## n-dimensional arrays and zimt::transform
+## n-dimensional arrays, zimt::transform and relatives
 
-Now we'll use zimt's unary functors to process n-dimensional arrays. We'll
+Wa can use zimt's unary functors to process n-dimensional arrays. We'll
 start with an explanation of n-dimensional arrays and 'views' - there is
 more to them than what you might expect when you just think of
-multidimensional C arrays. The C++ standard library has a data typoe which
+multidimensional C arrays. The C++ standard library has a data type which
 is similar to the arrays zimt processes, but it's mildly exotic, and
 chances are you haven't heard about it: it's std::gslice. We won't look
 at this similarity here, I only mention it for reference. Another close
@@ -279,13 +279,12 @@ out with the extent of the smallest chunk. The product of the shape's
 components is the size of the entire array - 1000 in both cases. The other
 metric is the array's strides, as explained above: (1, 100) or (1, 10, 100),
 respectively. This should give you a notion of what the shape, size and
-strides of an array are - but don't get to attached to this notion: in fact
-you can use the shape and strides as a method to find a member of an array
-in memory or to find a memory location's nD coordinate in an array. Let's
-start with the first one, and let's not use a specific dimensionality. We'll
-use this notation: let a 'coordinate' Ck denote an n-tuple of k integers,
-M an address in memory, and the strides, Sk,another n-tuple of integers.
-The formula to find an array element's location in memory is
+strides of an array are, and you can use the shape and strides as a method
+to find a member of an array in memory or to find a memory location's nD coordinate in an array. Let's start with the first one, and let's not use
+a specific dimensionality. We'll use this notation: let a 'coordinate' Ck
+denote an n-tuple of k integers, M an address in memory, and the strides,
+Sk, another n-tuple of integers. The formula to find an array element's
+location in memory is
 
     m = M + sum ( Ck * Sk )
 
@@ -299,14 +298,110 @@ apply the formula and get
     m = 503
 
 If we just use the formula, we needn't even have a notion of memory or
-data - it can stand by itself, and if you use a coordinate which is
-'in range' and 'correct strides', you'll receive a value of m for
-them. The method is applicable with coordinates of any dimensionality.
-As long as the strides have certain properties, you'll even get a
-unique result, making the process reversible:
+data - it can stand by itself. The method is applicable with coordinates
+of any dimensionality. As long as the strides have certain properties,
+you'll even get a unique result, making the process reversible:
 
     m % 100 = 3
     m / 100 = 5
 
+In zimt, array and view objects are thin wrappers around the set of
+M, Ck and Sk - plus a std::shared_ptr for arrays, which keeps track of
+memory ownership.
 
+What's left is an important abstraction: you don't have to deal with
+a block of memory, instead your data can be spread out in the address
+space with gaps between them and you may get 'from one to the next'
+along with arbitrary stridese. Your array - or view - now becomes the
+set of memory locations which follow the M + sum ( Ck * Sk ) formula,
+but you can pick any Sk (set of strides) you like so as to fit any
+'regular', grid-like distribution of data. One common 'deviation'
+from 'ordinary' arrays is, for example, to put M at the location of
+the array element with the highest address and use negative strides.
+Other common techniques with arrays/views are 'slicing' and 'windowing',
+which both produce new views to part of the original array's data by
+using different M and Sk and different Ck to address them.
+
+In zimt, you can access members of an array/view easily with n-dimensional
+discrete coordinates. Let's say you have a 2D zimt view v. If you want
+it's element in line 3, column 8, you can access it with
+
+    v [ { 8 , 3 } ]
+
+Where the part in curly braces can also be kept in a zimt xel_t variable:
+
+    auto crd = zimt::xel_t < int , 2 > { 8 , 3 }
+    v [ crd ]
+
+### zimt::transform
+
+If you have - or intend to generate - data in a form which fits the
+'nD array model' - sporting a set of M, Ck and Sk - zimt offers you
+a powerful family of functions to get the job done with several threads
+and SIMD code. zimt will handle all the nitty-gritty detail and leave
+you to do the interesting bits: on the inside, to write 'pipeline'
+code - functions which are capable of processing 'simdized' data,
+and on the outside, your application with it's arrays of data which
+you can create and manipulate with zimt. zimt::transform and relatives
+are go-between code which 'rolls out' your pipeline code to your
+arrays, using efficient methods to 'feed' your pipeline code with
+input and dispose of the pipeline's output.
+
+### an abstraction
+
+Looking at zimt::transform and family, you can see that they bring
+together the pipeline code (the 'act' functor) and one or two arrays.
+But there is a deeper and more abstract layer of code which is used
+to actually implement the 'transform family': it's the code in the
+'wielding' namespace. There you can find the back-end function template
+'process' which is an abstraction: it may or may not relate to arrays,
+but it follows their structural properties. Instead of necessarily
+fetching input data from an array, it uses 'get' objects with a
+specific set of capabilites to provide data which can serve as input
+to the 'act' functor - and 'put' objects which can dispose of the
+act functor's result. With this abstraction, and your own 'get'
+and 'put' classes, the process becomes very versatile. You might
+even set up your code so that there is no 'real' act functor but
+rather an 'empty shell' object which merely passes it's input through.
+But this doesn't make for the best designs unless you really only
+need to do something trivial. The rule where to draw the line between
+code to go into the 'get' and 'put' objects and the 'pipeline code'
+in the act functor is that you want the code 'in the pipeline' when
+the usefulness of handling the data segments as 1D entities ends.
+An example would be handling interpolation: you might use the get
+object to produce coordinates in some 'model space', readily scaled
+and shifted. The pipeline code can then take over and do the job of
+finding RGBA values for the coordinates in model space. Once you have
+the RGBA values, you may write a put object to 'brush up' your RGBA
+data, applying stuff like colour space conversions, gradation or
+quantization. Decoupling the three steps makes it easier to write
+your program to be flexible: to stick with the given example, if
+you want to store to different formats, you don't have to modify
+the pipeline, just use different put objects. And you can still
+use a zimt function to orchestrate the dispatch to the worker
+threads and the data parcelling strategy *as if* you were processing
+an array. The get and put object act as *accessors*, while the
+wielding code holds a notion of something N-dimensional with
+a given N-dimensional shape where content is uniquely related
+to discrete N-dimensional coordinates - with this coordinate
+acting as an *iterator*. Because of the specific way in which
+zimt's 'wielding' code traverses - or iterates over - the given
+coordinate space, the accessors - the get and put objects - can
+be made to precisely fit their niche (rather than using the
+C++ standard 'mechanics') and get along with a minimum amount
+of CPU cycles, giving you maximal performance without
+sacrificing flexibility.
+
+To sum this up, you can think of what happens in pseudocode:
+
+    for all discrete coordinates Ik
+      vi = get ( Ik )
+      vo = act ( vi )
+      put ( vo )
+
+Where zimt::tansform is less general and does stuff like
+
+    for all values V in array A
+      vo = act ( A )
+      store vo in array B
 
