@@ -47,12 +47,12 @@
 
 */
 
-#ifndef VSPLINE_STD_SIMD_TYPE_H
-#define VSPLINE_STD_SIMD_TYPE_H
+#ifndef ZIMT_STD_SIMD_TYPE_H
+#define ZIMT_STD_SIMD_TYPE_H
 
-#ifndef VSPLINE_VECTOR_NBYTES
+#ifndef ZIMT_VECTOR_NBYTES
 
-#define VSPLINE_VECTOR_NBYTES 64
+#define ZIMT_VECTOR_NBYTES 64
 
 #endif
 
@@ -745,4 +745,4 @@ using std_simd_type = zimt_stdsimd::simd_type < T , N > ;
 } ;
 
 
-#endif // #define VSPLINE_SIMD_TYPE_H
+#endif // #define ZIMT_SIMD_TYPE_H

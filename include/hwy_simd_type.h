@@ -84,8 +84,8 @@
     SIMD code rather than towards the goading implementation.
 */
 
-#ifndef VSPLINE_HWY_SIMD_TYPE_H
-#define VSPLINE_HWY_SIMD_TYPE_H
+#ifndef ZIMT_HWY_SIMD_TYPE_H
+#define ZIMT_HWY_SIMD_TYPE_H
 
 #include <iostream>
 #include <functional>
@@ -93,6 +93,9 @@
 #include <assert.h>
 
 #include "simd_type.h"
+
+#ifndef HWY_SIMD_TYPE_H
+#define HWY_SIMD_TYPE_H
 
 #include <hwy/highway.h>
 #include <hwy/contrib/math/math-inl.h>
@@ -2006,6 +2009,8 @@ public:
 
 } ; // namespace HWY_NAMESPACE
 
+#endif // HWY_SIMD_TYPE_H
+
 namespace zimt
 {
 template < typename T , std::size_t N >
@@ -2180,7 +2185,7 @@ struct allocator_traits < zimt::hwy_simd_type < T , N > >
 
 } ;
 
-#ifndef VSPLINE_VECTOR_NBYTES
+#ifndef ZIMT_VECTOR_NBYTES
 
 // this is tentative, but an informed guess, because the data handled
 // by the rendering code are single precision float or int at most,
@@ -2194,10 +2199,10 @@ struct allocator_traits < zimt::hwy_simd_type < T , N > >
 // what the current CPU actually needs. This may become a problem
 // with, e.g. SVE.
 
-#define VSPLINE_VECTOR_NBYTES (4*HWY_MAX_BYTES)
+#define ZIMT_VECTOR_NBYTES (4*HWY_MAX_BYTES)
 
 #endif
 
 HWY_AFTER_NAMESPACE();  // at file scope
 
-#endif // #define VSPLINE_HWY_SIMD_TYPE_H
+#endif // #define ZIMT_HWY_SIMD_TYPE_H

@@ -85,7 +85,7 @@
     it has to gather it's reduction result in the functor and have a
     way to communicate this (partial) result to the caling code in a
     tread-safe manner when it's destructed. functors for reduction
-    also need to provide a 'capped eval' overload, see wielding.h for
+    also need to provide a 'capped eval' overload, see minz.h for
     more about this topic.
 */
 
@@ -93,14 +93,14 @@
 #define ZIMT_TRANSFORM_H
 
 // The bulk of the implementation of zimt's two 'transform' functions
-// is now in wielding.h:
+// is now in minz.h:
 
-#include "wielding.h"
+#include "minz.h"
 
 namespace zimt {
 
-using wielding::norm_get_crd ;
-using wielding::norm_put_t ;
+using minz::norm_get_crd ;
+using minz::norm_put_t ;
 
 template < typename view_type ,
            typename = std::enable_if
@@ -142,7 +142,7 @@ view_type sort_strides ( const view_type & rhs , bool ascending = true )
   view_type ( rhs , strides , shape ) ;
 }
 
-/// implementation of two-array transform using wielding::coupled_f.
+/// implementation of two-array transform using minz::coupled_f.
 ///
 /// 'array-based' transform takes two template arguments:
 ///
@@ -198,13 +198,13 @@ void transform ( const act_t & _act ,
      ( "transform: the shapes of the input and output array do not match" ) ;
   }
 
-  // wrap the zimt::unary_functor to be used with wielding code.
-  // The wrapper is necessary because the code in wielding.h feeds
+  // wrap the zimt::unary_functor to be used with minz code.
+  // The wrapper is necessary because the code in minz.h feeds
   // arguments as xel_t, even if the data are 'singular'.
   // The wrapper simply reinterpret_casts any 'singular' arguments
   // to corresponding xel_t of one element.
 
-  typedef wielding::vs_adapter < act_t > aact_t ;
+  typedef minz::vs_adapter < act_t > aact_t ;
   aact_t act ( _act ) ;
   
   // we'll cast the pointers to the arrays to these types to be
@@ -231,10 +231,10 @@ void transform ( const act_t & _act ,
   if ( bill.njobs > zimt::default_njobs )
     bill.njobs = zimt::default_njobs ;
 
-  wielding::coupled_f ( act , src , trg , bill ) ;
+  minz::coupled_f ( act , src , trg , bill ) ;
 }
 
-/// implementation of index-based transform using wielding::process
+/// implementation of index-based transform using minz::process
 ///
 /// this overload of transform() is very similar to the first one,
 /// but instead of picking input from an array, it feeds the discrete
@@ -312,7 +312,7 @@ void transform ( const act_t & _act ,
                         > output ,
                  bill_t bill = bill_t() )
 {
-  typedef wielding::vs_adapter < act_t > aact_t ;
+  typedef minz::vs_adapter < act_t > aact_t ;
   aact_t act ( _act ) ;
 
   // we'll cast the pointers to the arrays to these types to be
@@ -337,7 +337,7 @@ void transform ( const act_t & _act ,
   if ( bill.njobs > zimt::default_njobs )
     bill.njobs = zimt::default_njobs ;
 
-  // now delegate to the wielding code. We need two additional
+  // now delegate to the minz code. We need two additional
   // parameters: 'get' generates coordinates as input to 'act',
   // and 'put' disposes of the result by storing to 'trg'.
   // The coordinate-generation produces discrete coordinates,
@@ -347,7 +347,7 @@ void transform ( const act_t & _act ,
   norm_get_crd < act_t , dimension > get ( bill.axis ) ;
   norm_put_t < act_t , dimension > put ( trg , bill.axis ) ;
 
-  wielding::process ( act , trg , bill , get , put ) ;
+  minz::process ( act , trg , bill , get , put ) ;
 }
 
 // for 1D index-based transforms, we add an overload taking a naked

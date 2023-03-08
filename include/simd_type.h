@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file simd_t.h
+/*! \file simd_type.h
 
     \brief SIMD type using small loops
 
@@ -115,16 +115,20 @@
     produces a 'simdized type', which you mustn't confuse with a simd_t.
 */
 
-#ifndef VSPLINE_SIMD_TYPE_H
-#define VSPLINE_SIMD_TYPE_H
+#ifndef ZIMT_SIMD_TYPE_H
+#define ZIMT_SIMD_TYPE_H
 
 #include <iostream>
 #include <initializer_list>
 #include "common.h"
 
+// we'll include some headers with repetetive definitions where
+// we use 'XEL' for the types which are elaborated
+
+#define XEL simd_t
+
 namespace zimt
 {
-
 /// class simd_type serves as fallback type to provide SIMD semantics
 /// without explicit SIMD code. It can be used throughout when use of
 /// the SIMD 'backends' is unwanted, or to 'fill the gap' where some
@@ -163,12 +167,85 @@ using typename tag_t::value_type ;
 using tag_t::vsize ;
 using tag_t::backend ;
 
-#define XEL simd_t
-
-#include "xel_inner.h"
 #include "xel_mask.h"
+#include "xel_inner.h"
 
-#undef XEL
+// binary operators (used to be in xel_inner.h)
+
+// we use a simple scheme for type promotion: the promoted type
+// of two values fed to a binary operator should be the same as
+// the type we would receive when adding the two values.
+
+#define PROMOTE(A,B)  \
+XEL < decltype (   std::declval < A::value_type > () \
+                 + std::declval < B > () ) , N >
+
+// for simd_type, we accept only other simd_type and fundamentals
+// as second operand. We code the three variants as templates, to
+// impose the desired type restrictions and to avoid the pitfall
+// of having arguments implicitly converted, which is prone to
+// happen when coding non-template functions for the purpose.
+
+#define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  PROMOTE(XEL,RHST) \
+  OPFUNC ( XEL < RHST , N > rhs ) const \
+  { \
+    CONSTRAINT \
+    PROMOTE(XEL,RHST) help ; \
+    for ( size_type i = 0 ; i < N ; i++ ) \
+      help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
+    return help ; \
+  } \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  PROMOTE(XEL,RHST) \
+  OPFUNC ( RHST rhs ) const \
+  { \
+    CONSTRAINT \
+    PROMOTE(XEL,RHST) help ; \
+    for ( size_type i = 0 ; i < N ; i++ ) \
+      help [ i ] = (*this) [ i ] OP rhs ; \
+    return help ; \
+  } \
+  template < typename LHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < LHST > :: value \
+                       > :: type \
+           > \
+  friend PROMOTE(XEL,LHST) OPFUNC ( LHST lhs , XEL rhs ) \
+  { \
+    CONSTRAINT \
+    PROMOTE(XEL,LHST) help ; \
+    for ( size_type i = 0 ; i < N ; i++ ) \
+      help [ i ] = lhs OP rhs [ i ] ; \
+    return help ; \
+  }
+
+OP_FUNC(operator+,+,)
+OP_FUNC(operator-,-,)
+OP_FUNC(operator*,*,)
+OP_FUNC(operator/,/,)
+
+OP_FUNC(operator%,%,INTEGRAL_ONLY)
+OP_FUNC(operator&,&,INTEGRAL_ONLY)
+OP_FUNC(operator|,|,INTEGRAL_ONLY)
+OP_FUNC(operator^,^,INTEGRAL_ONLY)
+OP_FUNC(operator<<,<<,INTEGRAL_ONLY)
+OP_FUNC(operator>>,>>,INTEGRAL_ONLY)
+
+OP_FUNC(operator&&,&&,BOOL_ONLY)
+OP_FUNC(operator||,||,BOOL_ONLY)
+
+#undef OP_FUNC
+#undef PROMOTE
 
 // types used for masks and index vectors. In terms of 'true' SIMD
 // arithmetics, these definitions may not be optimal - especially the
@@ -400,4 +477,6 @@ struct std::allocator_traits < zimt::simd_t < T , N > >
   typedef std::allocator < zimt::simd_t < T , N > > type ;
 } ;
 
-#endif // #define VSPLINE_SIMD_TYPE_H
+#undef XEL
+
+#endif // #define ZIMT_SIMD_TYPE_H

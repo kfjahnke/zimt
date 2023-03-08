@@ -112,8 +112,8 @@
     than scalar code.
 */
 
-#ifndef VSPLINE_UNARY_FUNCTOR_H
-#define VSPLINE_UNARY_FUNCTOR_H
+#ifndef ZIMT_UNARY_FUNCTOR_H
+#define ZIMT_UNARY_FUNCTOR_H
 
 #include "common.h"
 #include "vector.h"
@@ -430,7 +430,7 @@ struct broadcast
 // worth while. Another use scenario is calls to opaque code like
 // foreign functions. When using broadcast_type with python code, keep
 // in mind that you shouldn't have multithreading enabled, so
-// define VSPLINE_SINGLETHREAD.
+// define ZIMT_SINGLETHREAD.
 // The c'tor args allow passing in lambdas, which is extra convenient:
 // zimt::broadcast_type < T > bf ( [] ( T x ) { return x + x ; } ) ;
 
@@ -1369,5 +1369,5 @@ struct sink_functor
 
 } ; // end of namespace zimt
 
-#endif // VSPLINE_UNARY_FUNCTOR_H
+#endif // ZIMT_UNARY_FUNCTOR_H
 

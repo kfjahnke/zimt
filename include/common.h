@@ -60,6 +60,7 @@
 #include <functional>
 #include <assert.h>
 #include <cmath>
+#include <utility>
 
 namespace zimt
 {
@@ -74,10 +75,10 @@ namespace zimt
 
   // For diagnostic output:
 
-  std::string backend_name[] { "GOADING" ,
-                               "Vc" ,
-                               "highway" ,
-                               "std::simd" } ;
+  const std::string backend_name[] { "GOADING" ,
+                                     "Vc" ,
+                                     "highway" ,
+                                     "std::simd" } ;
 
   // now we can code the tag:
 
@@ -181,6 +182,30 @@ using is_element_expandable = typename
         zimt::UnsuitableTypeForExpandElements
       > :: value
   > :: type ;
+
+// class no_type_promotion_defined_t
+// { } ;
+//
+// template < typename A , typename B , typename E = void >
+// struct promote_traits
+// {
+//   typedef no_type_promotion_defined_t type ;
+//   static const bool value = false ;
+// } ;
+//
+// template < typename A , typename B >
+// struct promote_traits < A ,
+//                         B ,
+//                         typename std::enable_if
+//                            <    std::is_fundamental < A > :: value
+//                              && std::is_fundamental < B > :: value
+//                            > :: type
+//                       >
+// {
+//   typedef decltype (   std::declval < A > () \
+//                      + std::declval < B > () ) type ;
+//   static const bool value = true ;
+// } ;
 
 /*
 // for mathematics, we use a few using declarations. First we have

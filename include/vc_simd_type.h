@@ -49,8 +49,8 @@
 
 */
 
-#ifndef VSPLINE_VC_SIMD_TYPE_H
-#define VSPLINE_VC_SIMD_TYPE_H
+#ifndef ZIMT_VC_SIMD_TYPE_H
+#define ZIMT_VC_SIMD_TYPE_H
 
 #include <iostream>
 #include <Vc/Vc>
@@ -896,4 +896,4 @@ interleave ( const zimt::xel_t < zimt::vc_simd_type < ele_type , vsz > , chn > &
 
 } ;
 
-#endif // #define VSPLINE_VC_SIMD_TYPE_H
+#endif // #define ZIMT_VC_SIMD_TYPE_H

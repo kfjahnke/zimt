@@ -237,7 +237,7 @@ public:
 
 /// class get_crd is an implementation of a 'get_t' class which the
 /// rolling-out code uses to produce input values to the functor 'act'.
-///
+
 template < typename T ,    // elementary type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array

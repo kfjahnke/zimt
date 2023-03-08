@@ -42,8 +42,8 @@
     \brief arithmetic container type
 */
 
-#ifndef VSPLINE_xel_t_H
-#define VSPLINE_xel_t_H
+#ifndef ZIMT_xel_t_H
+#define ZIMT_xel_t_H
 
 #include <cmath>
 #include <limits>
@@ -52,8 +52,50 @@
 #include <initializer_list>
 #include "common.h"
 
+#define XEL xel_t
+
 namespace zimt
 {
+template < typename T , std::size_t N >
+struct xel_t ;
+
+// 'form' is a traits class used to abstract from the concrete
+// 'atomic' type held by a xel_t construct, to help with the
+// formulation of type restrictions in binary operators. The
+// 'level-0' definition accepts arbitrary types T, with the
+// intention that xel_t should treat fundamentals and simdized
+// values as semantically equivalent.
+
+template < typename T , typename F = void >
+struct form
+{
+  typedef F type ;
+  typedef F atom_t ;
+  static const std::size_t level = 0 ;
+  static const std::size_t size = 1 ;
+} ;
+
+template < typename T , std::size_t N , typename F >
+struct form < xel_t < T , N > , F >
+{
+  typedef typename
+    std::conditional
+      < form < T > :: level == 0 ,
+        xel_t < F , N > ,
+        xel_t < form < T , F > , N >
+      > :: type type ;
+
+  typedef typename
+    std::conditional
+      < form < T > :: level == 0 ,
+        T ,
+        typename form < T > :: atom_t
+      > :: type atom_t ;
+
+  static const std::size_t level = form < T > :: level + 1 ;
+  static const std::size_t size = N ;
+} ;
+
 // free function templates for deinterleave and interleave, which can
 // be overridden for specific vec_t - e.g. zimt::vc_simd_type. The
 // fallback, general case uses a regular gather/scatter, which is
@@ -105,11 +147,105 @@ struct xel_t
   typedef T value_type ;
   static const std::size_t nch = N ;
 
-#define XEL xel_t
-
 #include "xel_inner.h"
 
-#undef XEL
+// binary operators (used to be in xel_inner.h)
+
+// we use a simple scheme for type promotion: the promoted type
+// of two values should be the same as the type we would receive
+// when adding the two values. That's standard C semantics, but
+// it won't widen the result type to avoid overflow or increase
+// precision - such conversions have to be made by user code if
+// necessary.
+
+#define PROMOTE(A,B)  \
+decltype ( std::declval < A > () + std::declval < B > () )
+
+// with the restrictions below, we avoid the pitfalls of directly
+// accepting xel_t or value_type arguments (with the unwanted
+// implicit type conversions).
+// But we're limited to RHS which are 'one level down'. simd_t
+// and other simdized types are at the same level as fundamentals
+// (because we've said so in class 'form'), so this restriction
+// is less of an issue than one might think. I even feel that
+// the restriction is sensible, to avoid hard-to-comprehend code
+// using complicated broadcasting constructs. In a way a xel_t of
+// several simdized values is as far as we want to go, requiring
+// explicit user code for 'deeper' constructs. With the binary
+// operator code as it stands we can interoperate such values with
+// both xel_t of the same number of fundamentals and single simdized
+// values, both with 'C semantics' type promotion.
+
+#define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_same \
+                           < typename form < T > :: type , \
+                             typename form < RHST > :: type \
+                           > :: value \
+                       > :: type \
+           > \
+  XEL < PROMOTE ( T , RHST ) , N > \
+  OPFUNC ( XEL < RHST , N > rhs ) const \
+  { \
+    CONSTRAINT \
+    XEL < PROMOTE ( T , RHST ) , N > help ; \
+    for ( size_type i = 0 ; i < N ; i++ ) \
+      help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
+    return help ; \
+  } \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_same \
+                           < typename form < T > :: type , \
+                             typename form < RHST > :: type \
+                           > :: value \
+                       > :: type \
+           > \
+  XEL < PROMOTE ( T , RHST ) , N > \
+  OPFUNC ( RHST rhs ) const \
+  { \
+    CONSTRAINT \
+    XEL < PROMOTE ( T , RHST ) , N > help ; \
+    for ( size_type i = 0 ; i < N ; i++ ) \
+      help [ i ] = (*this) [ i ] OP rhs ; \
+    return help ; \
+  } \
+  template < typename LHST , \
+             typename = typename std::enable_if \
+                       < std::is_same \
+                           < typename form < T > :: type , \
+                             typename form < LHST > :: type \
+                           > :: value \
+                       > :: type \
+           > \
+  friend XEL < PROMOTE ( T , LHST ) , N > \
+  OPFUNC ( LHST lhs , XEL rhs ) \
+  { \
+    CONSTRAINT \
+    XEL < PROMOTE ( T , LHST ) , N > help ; \
+    for ( size_type i = 0 ; i < N ; i++ ) \
+      help [ i ] = lhs OP rhs [ i ] ; \
+    return help ; \
+  }
+
+OP_FUNC(operator+,+,)
+OP_FUNC(operator-,-,)
+OP_FUNC(operator*,*,)
+OP_FUNC(operator/,/,)
+
+OP_FUNC(operator%,%,INTEGRAL_ONLY)
+OP_FUNC(operator&,&,INTEGRAL_ONLY)
+OP_FUNC(operator|,|,INTEGRAL_ONLY)
+OP_FUNC(operator^,^,INTEGRAL_ONLY)
+OP_FUNC(operator<<,<<,INTEGRAL_ONLY)
+OP_FUNC(operator>>,>>,INTEGRAL_ONLY)
+
+OP_FUNC(operator&&,&&,BOOL_ONLY)
+OP_FUNC(operator||,||,BOOL_ONLY)
+
+#undef OP_FUNC
+#undef PROMOTE
 
 // assignment from equally-sized container.
 // Note that the rhs can use any elementary type which can be legally
@@ -302,12 +438,11 @@ void bunch ( const xel_t < ET < value_type > , nch > * _src ,
   }
 }
 
+} ; // end of struct xel_t
 
-} ;
+} ; // end of namespace zimt
 
-#undef xel_t
+#undef XEL
 
-} ;
-
-#endif // #define VSPLINE_xel_t_H
+#endif // #define ZIMT_xel_t_H
 

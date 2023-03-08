@@ -99,6 +99,8 @@ const value_type * data() const
   return _store ;
 }
 
+static const std::size_t level = form < XEL > :: level ;
+
 // assignment from a value_type. The assignment is coded as a loop,
 // but it should be obvious to the compiler's loop vectorizer that
 // the loop is a 'SIMD operation in disguise', so here we have the
@@ -298,57 +300,92 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
 
 #undef OPEQ_FUNC
 
-// binary operators and left and right scalar operations with
-// value_type, unary operators -, ! and ~
-
-// TODO: add type promotion: as is, the code will accept e.g. float
-// rhs and convert it to int lhs, producing int rather than float.
-// Alternatively, enforce equal lhs and rhs type
-
-#define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
-  XEL OPFUNC ( XEL rhs ) const \
-  { \
-    CONSTRAINT \
-    XEL help ; \
-    for ( size_type i = 0 ; i < N ; i++ ) \
-      help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
-    return help ; \
-  } \
-  XEL OPFUNC ( value_type rhs ) const \
-  { \
-    CONSTRAINT \
-    XEL help ; \
-    for ( size_type i = 0 ; i < N ; i++ ) \
-      help [ i ] = (*this) [ i ] OP rhs ; \
-    return help ; \
-  } \
-  friend XEL OPFUNC ( value_type lhs , \
-                            XEL rhs ) \
-  { \
-    CONSTRAINT                                   \
-    XEL help ; \
-    for ( size_type i = 0 ; i < N ; i++ ) \
-      help [ i ] = lhs OP rhs [ i ] ; \
-    return help ; \
-  }
-
-OP_FUNC(operator+,+,)
-OP_FUNC(operator-,-,)
-OP_FUNC(operator*,*,)
-OP_FUNC(operator/,/,)
-
-OP_FUNC(operator%,%,INTEGRAL_ONLY)
-OP_FUNC(operator&,&,INTEGRAL_ONLY)
-OP_FUNC(operator|,|,INTEGRAL_ONLY)
-OP_FUNC(operator^,^,INTEGRAL_ONLY)
-OP_FUNC(operator<<,<<,INTEGRAL_ONLY)
-OP_FUNC(operator>>,>>,INTEGRAL_ONLY)
-
-OP_FUNC(operator&&,&&,BOOL_ONLY)
-OP_FUNC(operator||,||,BOOL_ONLY)
-
-#undef OP_FUNC
-
+// // binary operators and left and right scalar operations with
+// // value_type, unary operators -, ! and ~
+//
+// // we use a simple scheme for type promotion: the promoted type
+// // of two values fed to a binary operator should be the same as
+// // the type we would receive when adding the two values.
+//
+// #define PROMOTE(A,B)  \
+// XEL < decltype (   std::declval < A::value_type > () \
+//                  + std::declval < B > () ) , N >
+//
+// // with the restrictions below, we avoid the pitfalls of accepting
+// // value_type arguments (with the unwanted implicit type conversions)
+// // but we're limited to 'one level down', and we'd like to go further,
+// // especially binary operations with a fundamental would be great.
+//
+// #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
+//   template < typename RHST , \
+//              typename = typename std::enable_if \
+//                        < std::is_same \
+//                            < typename form < value_type > :: type , \
+//                              typename form < RHST > :: type \
+//                            > :: value \
+//                        > :: type \
+//            > \
+//   PROMOTE(XEL,RHST) \
+//   OPFUNC ( XEL < RHST , N > rhs ) const \
+//   { \
+//     CONSTRAINT \
+//     PROMOTE(XEL,RHST) help ; \
+//     for ( size_type i = 0 ; i < N ; i++ ) \
+//       help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
+//     return help ; \
+//   } \
+//   template < typename RHST , \
+//              typename = typename std::enable_if \
+//                        < std::is_same \
+//                            < typename form < value_type > :: type , \
+//                              typename form < RHST > :: type \
+//                            > :: value \
+//                        > :: type \
+//            > \
+//   PROMOTE(XEL,RHST) \
+//   OPFUNC ( RHST rhs ) const \
+//   { \
+//     CONSTRAINT \
+//     PROMOTE(XEL,RHST) help ; \
+//     for ( size_type i = 0 ; i < N ; i++ ) \
+//       help [ i ] = (*this) [ i ] OP rhs ; \
+//     return help ; \
+//   } \
+//   template < typename LHST , \
+//              typename = typename std::enable_if \
+//                        < std::is_same \
+//                            < typename form < value_type > :: type , \
+//                              typename form < LHST > :: type \
+//                            > :: value \
+//                        > :: type \
+//            > \
+//   friend PROMOTE(XEL,LHST) OPFUNC ( LHST lhs , XEL rhs ) \
+//   { \
+//     CONSTRAINT \
+//     PROMOTE(XEL,LHST) help ; \
+//     for ( size_type i = 0 ; i < N ; i++ ) \
+//       help [ i ] = lhs OP rhs [ i ] ; \
+//     return help ; \
+//   }
+//
+// OP_FUNC(operator+,+,)
+// OP_FUNC(operator-,-,)
+// OP_FUNC(operator*,*,)
+// OP_FUNC(operator/,/,)
+//
+// OP_FUNC(operator%,%,INTEGRAL_ONLY)
+// OP_FUNC(operator&,&,INTEGRAL_ONLY)
+// OP_FUNC(operator|,|,INTEGRAL_ONLY)
+// OP_FUNC(operator^,^,INTEGRAL_ONLY)
+// OP_FUNC(operator<<,<<,INTEGRAL_ONLY)
+// OP_FUNC(operator>>,>>,INTEGRAL_ONLY)
+//
+// OP_FUNC(operator&&,&&,BOOL_ONLY)
+// OP_FUNC(operator||,||,BOOL_ONLY)
+//
+// #undef OP_FUNC
+// #undef PROMOTE
+//
 #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
   XEL OPFUNC() const \
   { \
