@@ -66,7 +66,7 @@ struct pass_through
 // where the 'act' functor does nothing but route it's input to it's
 // output, it actually does all the 'work'.
 // This example may seem trivial, but it should hint at the flexibility
-// of minz::process and how to use it. And linspace_t can serve as
+// of zimt::process and how to use it. And linspace_t can serve as
 // a template for more elaborate 'get_t' classes.
 
 template < typename T ,     // elementary type
@@ -145,9 +145,9 @@ int main ( int argc , char * argv[] )
     linspace_t < float , 1 , 4 > l ( start , step , 0 ) ;
     typedef pass_through < float , 1 , 4 > act_t ;
     zimt::array_t < 1 , delta_t > a ( 7 ) ;
-    minz::norm_put_t < act_t , 1 > p ( a , 0 ) ;
+    zimt::norm_put_t < act_t , 1 > p ( a , 0 ) ;
 
-    minz::process ( act_t() , a , bill , l , p ) ;
+    zimt::process ( act_t() , a , bill , l , p ) ;
 
     std::cout << "********** 1D:" << std::endl << std::endl ;
 
@@ -165,9 +165,9 @@ int main ( int argc , char * argv[] )
     linspace_t < float , 2 , 4 > l ( start , step , 0 ) ;
     typedef pass_through < float , 2 , 4 > act_t ;
     zimt::array_t < 2 , delta_t > a ( { 7 , 5 } ) ;
-    minz::norm_put_t < act_t , 2 > p ( a , 0 ) ;
+    zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
 
-    minz::process ( act_t() , a , bill , l , p ) ;
+    zimt::process ( act_t() , a , bill , l , p ) ;
 
     std::cout << "********** 2D:" << std::endl << std::endl ;
 
@@ -189,11 +189,11 @@ int main ( int argc , char * argv[] )
     linspace_t < float , 3 , 4 > l ( start , step , 0 ) ;
     typedef pass_through < float , 3 , 4 > act_t ;
     zimt::array_t < 3 , delta_t > a ( { 2 , 3 , 4 } ) ;
-    minz::norm_put_t < act_t , 3 > p ( a , 0 ) ;
+    zimt::norm_put_t < act_t , 3 > p ( a , 0 ) ;
 
     std::cout << "********** 3D:" << std::endl << std::endl ;
 
-    minz::process ( act_t() , a , bill , l , p ) ;
+    zimt::process ( act_t() , a , bill , l , p ) ;
     for ( std::size_t z = 0 ; z < 4; z++ )
     {
       for ( std::size_t y = 0 ; y < 3 ; y++ )

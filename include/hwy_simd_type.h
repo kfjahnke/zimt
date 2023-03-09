@@ -604,9 +604,10 @@ void convert ( const simd_t < src_t , vsize > & src ,
 
 // the remainder of the conversions uses three highway functions
 // only, so we write macros for the three types of conversion to
-// make it easier to see the big picture
+// make it easier to see the big picture. We use CV_PROMOTE here
+// so as not to clash with the macro PROMOTE in common.h
 
-#define PROMOTE(SRC,TRG) \
+#define CV_PROMOTE(SRC,TRG) \
 template < std::size_t vsize > \
 void convert ( const simd_t < SRC , vsize > & src , \
                      simd_t < TRG , vsize > & trg ) \
@@ -622,7 +623,7 @@ void convert ( const simd_t < SRC , vsize > & src , \
   } \
 }
 
-#define CONVERT(SRC,TRG) \
+#define CV_CONVERT(SRC,TRG) \
 template < std::size_t vsize > \
 void convert ( const simd_t < SRC , vsize > & src , \
                      simd_t < TRG , vsize > & trg ) \
@@ -632,7 +633,7 @@ void convert ( const simd_t < SRC , vsize > & src , \
                                    src.yield ( i ) ) ) ; \
 }
 
-#define DEMOTE(SRC,TRG) \
+#define CV_DEMOTE(SRC,TRG) \
 template < std::size_t vsize > \
 void convert ( const simd_t < SRC , vsize > & src , \
                      simd_t < TRG , vsize > & trg ) \
@@ -650,52 +651,56 @@ void convert ( const simd_t < SRC , vsize > & src , \
 // specific overloads for conversions between two 64 bit types.
 // with ulong, long and double, there are six possible conversions.
 
-CONVERT(double,long)
-// CONVERT(long,double) // using ConvertTo fails for me...
-CONVERT(double,unsigned long)
-CONVERT(unsigned long,double) // TODO: needs testing
-CONVERT(long,unsigned long) // TODO: needs testing
-CONVERT(unsigned long,long) // TODO: needs testing
+CV_CONVERT(double,long)
+// CV_CONVERT(long,double) // using ConvertTo fails for me...
+CV_CONVERT(double,unsigned long)
+CV_CONVERT(unsigned long,double) // TODO: needs testing
+CV_CONVERT(long,unsigned long) // TODO: needs testing
+CV_CONVERT(unsigned long,long) // TODO: needs testing
 
 // specific conversion from double source to float target
 
-DEMOTE(double,float)
-PROMOTE(float,double)
+CV_DEMOTE(double,float)
+CV_PROMOTE(float,double)
 
 // specific conversion from int source to long target
 
-PROMOTE(int,long)
-// DEMOTE(long,int) // surprise! there is no DemoteTo for this one
+CV_PROMOTE(int,long)
+// CV_DEMOTE(long,int) // surprise! there is no DemoteTo for this one
 
 // specific conversion from unsigned int source to unsigned long target
 
-PROMOTE(unsigned int,unsigned long)
+CV_PROMOTE(unsigned int,unsigned long)
 
 // conversion between float and int
 
-CONVERT(float,int)
-CONVERT(int,float)
+CV_CONVERT(float,int)
+CV_CONVERT(int,float)
 
 // conversions from int to smaller integral types
 
-DEMOTE(int,short)
-DEMOTE(int,unsigned short)
-DEMOTE(int,signed char)
-DEMOTE(int,unsigned char)
-DEMOTE(short,signed char)
-DEMOTE(short,unsigned char)
+CV_DEMOTE(int,short)
+CV_DEMOTE(int,unsigned short)
+CV_DEMOTE(int,signed char)
+CV_DEMOTE(int,unsigned char)
+CV_DEMOTE(short,signed char)
+CV_DEMOTE(short,unsigned char)
 
-PROMOTE(short,int)
-PROMOTE(signed char,int)
-PROMOTE(unsigned short,int)
-PROMOTE(unsigned char,int)
-PROMOTE(unsigned char,short)
+CV_PROMOTE(short,int)
+CV_PROMOTE(signed char,int)
+CV_PROMOTE(unsigned short,int)
+CV_PROMOTE(unsigned char,int)
+CV_PROMOTE(unsigned char,short)
 
-PROMOTE(short,unsigned int)
-PROMOTE(signed char,unsigned int)
-PROMOTE(unsigned short,unsigned int)
-PROMOTE(unsigned char,unsigned int)
-PROMOTE(unsigned char,unsigned short)
+CV_PROMOTE(short,unsigned int)
+CV_PROMOTE(signed char,unsigned int)
+CV_PROMOTE(unsigned short,unsigned int)
+CV_PROMOTE(unsigned char,unsigned int)
+CV_PROMOTE(unsigned char,unsigned short)
+
+#undef CV_PROMOTE
+#undef CV_DEMOTE
+#undef CV_CONVERT
 
 // template for conversions from double to other types which are
 // not covered by the overloads above. For now we ignore half floats
@@ -1734,29 +1739,46 @@ public:
   // binary operators and left and right scalar operations with
   // value_type, unary operators -, ! and ~
 
-  #define OP_FUNC(OPFUNC,OPEQ,CONSTRAINT) \
-    simd_t OPFUNC ( const simd_t & rhs ) const \
-    { \
-      CONSTRAINT \
-      simd_t help ( *this ) ; \
-      help OPEQ rhs ; \
-      return help ; \
-    } \
-    simd_t OPFUNC ( const T & rhs ) const \
-    { \
-      CONSTRAINT \
-      simd_t help ( *this ) ; \
-      help OPEQ rhs ; \
-      return help ; \
-    } \
-    friend simd_t OPFUNC ( const value_type & lhs , \
-                              const simd_t & rhs ) \
-    { \
-      CONSTRAINT                                   \
-      simd_t help ( lhs ) ; \
-      help OPEQ rhs ; \
-      return help ; \
-    }
+#define OP_FUNC(OPFUNC,OPEQ,CONSTRAINT) \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  simd_t < PROMOTE ( T , RHST ) , vsize > \
+  OPFUNC ( simd_t < RHST , vsize > rhs ) const \
+  { \
+    CONSTRAINT \
+    simd_t < PROMOTE ( T , RHST ) , vsize > help ( *this ) ; \
+    help OPEQ rhs ; \
+    return help ; \
+  } \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  simd_t < PROMOTE ( T , RHST ) , vsize > \
+  OPFUNC ( RHST rhs ) const \
+  { \
+    CONSTRAINT \
+    simd_t < PROMOTE ( T , RHST ) , vsize > help ( *this ) ; \
+    help OPEQ rhs ; \
+    return help ; \
+  } \
+  template < typename LHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < LHST > :: value \
+                       > :: type \
+           > \
+  friend simd_t < PROMOTE ( LHST , T ) , vsize > \
+  OPFUNC ( LHST lhs , simd_t rhs ) \
+  { \
+    CONSTRAINT \
+    simd_t < PROMOTE ( LHST , T ) , vsize > help ( lhs ) ; \
+    help OPEQ rhs ; \
+    return help ; \
+  }
 
   OP_FUNC(operator+,+=,)
   OP_FUNC(operator-,-=,)

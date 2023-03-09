@@ -41,10 +41,13 @@
     \brief nD array and view classes
 
     classes view_t and array_t provide code to handle n-dimensional
-    arrays with arbitrary striding. The strides are given as
-    multiples of the value_type held in the array. Apart from that,
-    the types are similar to NumPy's ndarray and vigra's
-    Multiarray(View). The dimensionality and value_type are
+    arrays with arbitrary striding. The strides are given in units
+    of the value_type held in the array. This is vigra's convention
+    and it differs from other schemes - e.g. strides in units of the
+    fundamental type involved, or even bytes.
+
+    Apart from that, the types are similar to NumPy's ndarray and
+    vigra's Multiarray(View). The dimensionality and value_type are
     template arguments, shape and strides are run-time arguments,
     but const and fixed at construction time.
 
@@ -65,6 +68,14 @@
     This header also has two simple iterators, one random-access
     iterator producing an nD index from a sequence number, and one
     sequential operator, producing nD indexes rising from {n*0}
+
+    Note here that I don't care much about keeping class mebers
+    hidden by making them private. I do so now and then when there is
+    no obvious use for class member code to be used outside, but apart
+    from that, you're free to 'look into' the objects and to mess with
+    them at your own risk. Coding this way saves writing a lot of
+    getters, setters, and parameter checkers, but at times it's
+    walking a thin line.
 */
 
 #include "xel.h"

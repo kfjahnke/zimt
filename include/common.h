@@ -183,89 +183,6 @@ using is_element_expandable = typename
       > :: value
   > :: type ;
 
-// class no_type_promotion_defined_t
-// { } ;
-//
-// template < typename A , typename B , typename E = void >
-// struct promote_traits
-// {
-//   typedef no_type_promotion_defined_t type ;
-//   static const bool value = false ;
-// } ;
-//
-// template < typename A , typename B >
-// struct promote_traits < A ,
-//                         B ,
-//                         typename std::enable_if
-//                            <    std::is_fundamental < A > :: value
-//                              && std::is_fundamental < B > :: value
-//                            > :: type
-//                       >
-// {
-//   typedef decltype (   std::declval < A > () \
-//                      + std::declval < B > () ) type ;
-//   static const bool value = true ;
-// } ;
-
-/*
-// for mathematics, we use a few using declarations. First we have
-// promote_type, which yields a type an arithmetic operation between
-// a T1 and a T2 should yield. We use zimt's PromoteTraits to obtain
-// this type. Note how, by starting out with the formation of the
-// Promote type, we silently enforce that T1 and T2 have equal channel
-// count or are both fundamental types.
-
-template < class T1 , class T2 >
-using promote_type
-      = typename zimt::PromoteTraits < T1 , T2 > :: Promote ;
-
-// using zimt's RealPromote on the promote_type gives us a real type
-// suitable for real arithmetics involving T1 and T2. We'll use this
-// type in template argument lists where T1 and T2 are given already,
-// as default value for 'math_type', which is often user-selectable in
-// zimt. With this 'sensible' default, which is what one would
-// 'usually' pick 'anyway', oftentimes the whole template argument
-// list of a specific zimt function can be fixed by ATD, making it
-// easy for the users: they merely have to pass, say, an input and output
-// array (fixing T1 and T2), and the arithmetics will be done in a suitable
-// type derived from these types. This allows users to stray from the
-// 'normal' path (by, for example, stating they want the code to perform
-// arithemtics in double precision even if T1 and T2 are merely float),
-// but makes 'normal' use of the code concise and legible, requiring
-// no explicit template arguments.
-
-template < class T1 , class T2 >
-using common_math_type
-      = typename zimt::NumericTraits
-                 < promote_type < T1 , T2 > > :: RealPromote ;
-
-// while most of the T1, T2 we'll be dealing with will be small aggregates
-// of fundametal types - like xel_ts of float - we also want a
-// convenient way to get the fundamental type involved - or the 'ele_type'
-// in zimt parlance. Again we use zimt to obtain this value. The
-// elementary type can be obtained by using zimt's get_ele_t
-// mechanism, which, as a traits class, can easily be extended to any
-// type holding an aggregate of equally typed fundamentals. Note that we might
-// start out with the elementary types of T1 and T2 and take their Promote,
-// yielding the same resultant type. If promote_type<T1,T2> is fundamental,
-// the get_ele_t mechanism passes it through unchanged.
-
-template < class T1 , class T2 >
-using promote_ele_type
-      = typename zimt::get_ele_t
-                 < promote_type < T1 , T2 > > :: type ;
-
-// when doing arithmetic in zimt, typically we use real fundametal types
-// which 'suit' the data types we want to put into the calculations. Again we
-// use zimt to determine an apprpriate fundamental type by obtaining the
-// RealPromote of the promote_ele_type. 
-
-template < class T1 , class T2 >
-using common_math_ele_type
-      = typename zimt::NumericTraits
-                 < promote_ele_type < T1 , T2 > > :: RealPromote ;
-*/
-
 /// produce the 'canonical type' for a given type T. If T is
 /// single-channel, this will be the elementary type itself,
 /// otherwise it's a xel_t of the elementary type.
@@ -320,7 +237,17 @@ using scalar =
       invalid_scalar < T , sz >
     > :: type ;
 
-/// zimt creates zimt::MultiArrays of vectorized types. As long as
+// we use a simple scheme for type promotion: the promoted type
+// of two values should be the same as the type we would receive
+// when adding the two values. That's standard C semantics, but
+// it won't widen the result type to avoid overflow or increase
+// precision - such conversions have to be made by user code if
+// necessary.
+
+#define PROMOTE(A,B)  \
+decltype ( std::declval < A > () + std::declval < B > () )
+
+/// zimt creates views/arrays of vectorized types. As long as
 /// the vectorized types are Vc::SimdArray or zimt::simd_type, using
 /// std::allocator is fine, but when using other types, using a specific
 /// allocator may be necessary. Currently this is never the case, but I

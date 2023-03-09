@@ -151,16 +151,6 @@ struct xel_t
 
 // binary operators (used to be in xel_inner.h)
 
-// we use a simple scheme for type promotion: the promoted type
-// of two values should be the same as the type we would receive
-// when adding the two values. That's standard C semantics, but
-// it won't widen the result type to avoid overflow or increase
-// precision - such conversions have to be made by user code if
-// necessary.
-
-#define PROMOTE(A,B)  \
-decltype ( std::declval < A > () + std::declval < B > () )
-
 // with the restrictions below, we avoid the pitfalls of directly
 // accepting xel_t or value_type arguments (with the unwanted
 // implicit type conversions).
@@ -219,11 +209,11 @@ decltype ( std::declval < A > () + std::declval < B > () )
                            > :: value \
                        > :: type \
            > \
-  friend XEL < PROMOTE ( T , LHST ) , N > \
+  friend XEL < PROMOTE ( LHST , T ) , N > \
   OPFUNC ( LHST lhs , XEL rhs ) \
   { \
     CONSTRAINT \
-    XEL < PROMOTE ( T , LHST ) , N > help ; \
+    XEL < PROMOTE ( LHST , T ) , N > help ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = lhs OP rhs [ i ] ; \
     return help ; \
@@ -245,7 +235,6 @@ OP_FUNC(operator&&,&&,BOOL_ONLY)
 OP_FUNC(operator||,||,BOOL_ONLY)
 
 #undef OP_FUNC
-#undef PROMOTE
 
 // assignment from equally-sized container.
 // Note that the rhs can use any elementary type which can be legally

@@ -59,7 +59,7 @@
 // where the 'act' functor does nothing but route it's input to it's
 // output, it actually does all the 'work'.
 // This example may seem trivial, but it should hint at the flexibility
-// of minz::process and how to use it. And linspace_t can serve as
+// of zimt::process and how to use it. And linspace_t can serve as
 // a template for more elaborate 'get_t' classes.
 
 template < typename T ,     // elementary type
@@ -281,7 +281,7 @@ int main ( int argc , char * argv[] )
 
   // now we're ready to go!
 
-  minz::process ( act_t ( yield ) , a , zimt::bill_t() , l , p ) ;
+  zimt::process ( act_t ( yield ) , a , zimt::bill_t() , l , p ) ;
 
   // here's the final result over ca. 1e9 pixels:
 

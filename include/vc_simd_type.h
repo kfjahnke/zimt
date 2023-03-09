@@ -587,23 +587,43 @@ struct vc_simd_type
   // binary operators and left and right scalar operations with
   // value_type, unary operators -, ! and ~
 
-  #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
-    vc_simd_type OPFUNC ( const vc_simd_type & rhs ) const \
-    { \
-      CONSTRAINT \
-      return to_base() OP rhs.to_base() ; \
-    } \
-    vc_simd_type OPFUNC ( const value_type & rhs ) const \
-    { \
-      CONSTRAINT \
-      return to_base() OP rhs ; \
-    } \
-    friend vc_simd_type OPFUNC ( const value_type & lhs , \
-                                 const vc_simd_type & rhs ) \
-    { \
-      CONSTRAINT \
-      return lhs OP rhs.to_base() ; \
-    }
+#define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  vc_simd_type < PROMOTE ( value_type , RHST ) , size() > \
+  OPFUNC ( vc_simd_type < RHST , vsize > rhs ) const \
+  { \
+    CONSTRAINT \
+    vc_simd_type < PROMOTE ( value_type , RHST ) , vsize > help ( *this ) ; \
+    return help.to_base() OP rhs.to_base() ; \
+  } \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  vc_simd_type < PROMOTE ( value_type , RHST ) , vsize > \
+  OPFUNC ( RHST rhs ) const \
+  { \
+    CONSTRAINT \
+    vc_simd_type < PROMOTE ( value_type , RHST ) , vsize > help ( *this ) ; \
+    return help.to_base() OP rhs ; \
+  } \
+  template < typename LHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < LHST > :: value \
+                       > :: type \
+           > \
+  friend vc_simd_type < PROMOTE ( LHST , value_type ) , vsize > \
+  OPFUNC ( LHST lhs , vc_simd_type rhs ) \
+  { \
+    CONSTRAINT \
+    vc_simd_type < PROMOTE ( LHST , value_type ) , vsize > help ( lhs ) ; \
+    return help.to_base() OP rhs->to_base() ; \
+  }
 
   OP_FUNC(operator+,+,)
   OP_FUNC(operator-,-,)

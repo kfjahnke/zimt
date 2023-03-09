@@ -486,7 +486,11 @@ struct simd_type
   // to specific data types, which is enforced by 'CONSTRAINT'.
   // One might consider widening the scope by making these operator
   // functions templates and accepting arbitrary indexable types.
-  // Only value_type and simd_type itto_base() are taken as rhs arguments.
+  // Only value_type and simd_type are taken as rhs arguments,
+  // where differently-typed arguments will be subject to implicit
+  // conversions where applicable. Since we modify the target datum,
+  // this is correct - the binary operators (below) require more
+  // effort and use type promotion.
 
   #define OPEQ_FUNC(OPFUNC,OPEQ,CONSTRAINT) \
     simd_type & OPFUNC ( value_type rhs ) \
@@ -518,24 +522,53 @@ struct simd_type
 
   // binary operators and left and right scalar operations with
   // value_type, unary operators -, ! and ~
+  // std::simd does not allow differently-typed arguments to
+  // it's binary operators, so we promote both arguments to a
+  // common type and then invoke the operator function. Most of
+  // the time the argument types and the promoted types will be
+  // the same, and the helper object will be optimized away due
+  // to copy elision.
 
-  #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
-    simd_type OPFUNC ( simd_type rhs ) const \
-    { \
-      CONSTRAINT \
-      return this->to_base() OP rhs.to_base() ; \
-    } \
-    simd_type OPFUNC ( value_type rhs ) const \
-    { \
-      CONSTRAINT \
-      return this->to_base() OP rhs ; \
-    } \
-    friend simd_type OPFUNC ( value_type lhs , \
-                              simd_type rhs ) \
-    { \
-      CONSTRAINT \
-      return lhs OP rhs.to_base() ; \
-    }
+#define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  simd_type < PROMOTE ( value_type , RHST ) , size() > \
+  OPFUNC ( simd_type < RHST , vsize > _rhs ) const \
+  { \
+    CONSTRAINT \
+    simd_type < PROMOTE ( value_type , RHST ) , vsize > lhs ( *this ) ; \
+    simd_type < PROMOTE ( value_type , RHST ) , vsize > rhs ( _rhs ) ; \
+    return lhs.to_base() OP rhs.to_base() ; \
+  } \
+  template < typename RHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < RHST > :: value \
+                       > :: type \
+           > \
+  simd_type < PROMOTE ( value_type , RHST ) , vsize > \
+  OPFUNC ( RHST _rhs ) const \
+  { \
+    CONSTRAINT \
+    simd_type < PROMOTE ( value_type , RHST ) , vsize > lhs ( *this ) ; \
+    PROMOTE ( value_type , RHST ) rhs ( _rhs ) ; \
+    return lhs.to_base() OP rhs ; \
+  } \
+  template < typename LHST , \
+             typename = typename std::enable_if \
+                       < std::is_fundamental < LHST > :: value \
+                       > :: type \
+           > \
+  friend simd_type < PROMOTE ( LHST , value_type ) , vsize > \
+  OPFUNC ( LHST _lhs , simd_type _rhs ) \
+  { \
+    CONSTRAINT \
+    PROMOTE ( value_type , LHST ) lhs ( _lhs ) ; \
+    simd_type < PROMOTE ( LHST , value_type ) , vsize > rhs ( _rhs ) ; \
+    return lhs OP rhs->to_base() ; \
+  }
 
   OP_FUNC(operator+,+,)
   OP_FUNC(operator-,-,)

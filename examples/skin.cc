@@ -131,7 +131,7 @@ struct pass_through
 // where the 'act' functor does nothing but route it's input to it's
 // output, it actually does all the 'work'.
 // This example may seem trivial, but it should hint at the flexibility
-// of minz::process and how to use it. And rect3d_t can serve as
+// of zimt::process and how to use it. And rect3d_t can serve as
 // a template for more elaborate 'get_t' classes.
 
 template < typename T ,     // elementary type
@@ -230,9 +230,9 @@ int main ( int argc , char * argv[] )
   rect_t l ( start , step , 0 ) ;
   typedef pass_through < float , 3 , 4 > act_t ;
   zimt::array_t < 2 , value_t > a ( { 17 , 15 } ) ;
-  minz::norm_put_t < act_t , 2 > p ( a , 0 ) ;
+  zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
 
-  minz::process < act_t , 2 > ( act_t() , a , bill , l , p ) ;
+  zimt::process < act_t , 2 > ( act_t() , a , bill , l , p ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {
@@ -246,10 +246,10 @@ int main ( int argc , char * argv[] )
   // is different, but the result is the same.
 
   rect_t l1 ( start , step , 1 ) ;
-  minz::norm_put_t < act_t , 2 > p1 ( a , 1 ) ;
+  zimt::norm_put_t < act_t , 2 > p1 ( a , 1 ) ;
   bill.axis = 1 ;
 
-  minz::process < act_t , 2 > ( act_t() , a , bill , l1 , p1 ) ;
+  zimt::process < act_t , 2 > ( act_t() , a , bill , l1 , p1 ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {

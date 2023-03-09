@@ -172,14 +172,6 @@ using tag_t::backend ;
 
 // binary operators (used to be in xel_inner.h)
 
-// we use a simple scheme for type promotion: the promoted type
-// of two values fed to a binary operator should be the same as
-// the type we would receive when adding the two values.
-
-#define PROMOTE(A,B)  \
-XEL < decltype (   std::declval < A::value_type > () \
-                 + std::declval < B > () ) , N >
-
 // for simd_type, we accept only other simd_type and fundamentals
 // as second operand. We code the three variants as templates, to
 // impose the desired type restrictions and to avoid the pitfall
@@ -192,11 +184,11 @@ XEL < decltype (   std::declval < A::value_type > () \
                        < std::is_fundamental < RHST > :: value \
                        > :: type \
            > \
-  PROMOTE(XEL,RHST) \
+  XEL < PROMOTE ( T , RHST ) , N > \
   OPFUNC ( XEL < RHST , N > rhs ) const \
   { \
     CONSTRAINT \
-    PROMOTE(XEL,RHST) help ; \
+    XEL < PROMOTE ( T , RHST ) , N > help ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
     return help ; \
@@ -206,11 +198,11 @@ XEL < decltype (   std::declval < A::value_type > () \
                        < std::is_fundamental < RHST > :: value \
                        > :: type \
            > \
-  PROMOTE(XEL,RHST) \
+  XEL < PROMOTE ( T , RHST ) , N > \
   OPFUNC ( RHST rhs ) const \
   { \
     CONSTRAINT \
-    PROMOTE(XEL,RHST) help ; \
+    XEL < PROMOTE ( T , RHST ) , N > help ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = (*this) [ i ] OP rhs ; \
     return help ; \
@@ -220,10 +212,11 @@ XEL < decltype (   std::declval < A::value_type > () \
                        < std::is_fundamental < LHST > :: value \
                        > :: type \
            > \
-  friend PROMOTE(XEL,LHST) OPFUNC ( LHST lhs , XEL rhs ) \
+  friend XEL < PROMOTE ( LHST , T ) , N > \
+  OPFUNC ( LHST lhs , XEL rhs ) \
   { \
     CONSTRAINT \
-    PROMOTE(XEL,LHST) help ; \
+    XEL < PROMOTE ( LHST , T ) , N > help ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
       help [ i ] = lhs OP rhs [ i ] ; \
     return help ; \
@@ -245,7 +238,6 @@ OP_FUNC(operator&&,&&,BOOL_ONLY)
 OP_FUNC(operator||,||,BOOL_ONLY)
 
 #undef OP_FUNC
-#undef PROMOTE
 
 // types used for masks and index vectors. In terms of 'true' SIMD
 // arithmetics, these definitions may not be optimal - especially the
