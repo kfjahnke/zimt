@@ -344,11 +344,11 @@ void transform ( const act_t & _act ,
   norm_get_crd < act_t , dimension > get ( bill.axis ) ;
   norm_put_t < act_t , dimension > put ( trg , bill.axis ) ;
 
-  process ( act , trg , bill , get , put ) ;
+  process ( act , trg , get , put , bill ) ;
 }
 
 // for 1D index-based transforms, we add an overload taking a naked
-// pointer, stride and length. Then we delegate to the vesion above.
+// pointer, stride and length. Then we delegate to the version above.
 
 template < class act_t >
 void transform ( const act_t & act ,

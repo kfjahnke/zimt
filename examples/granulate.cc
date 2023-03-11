@@ -44,9 +44,23 @@
 // along parallel 1D 'lines' or 'strands' which are all parallel to
 // one axis of the construct.
 // This example uses a get_t functor to put together RGBA pixels
-// from four separate float arrays, as you might get them 'natively'
-// from some image file formats which don't store the data interleaved.
-// The pixels are stored to an interleaved array.
+// from consecutive values in a 'small' dimension 0 of a float array
+// with one dimension more than the 'shape notion' of the 'process'
+// invocation. For simplicity's sake, we require a source array with
+// no strides in dimension zero (the one where the channels of the
+// xels are lined up) and dimension one. So with a pattern of ABC
+// for the xel's channels, memory holds ABCABCABC..., and higher
+// dimensions (two and up) may have arbitrary strides. The 'notion'
+// of the xels in the view which is processed is {ABC}{ABC}{ABC}...
+// What do we gain? We can feed 'process' with an appropriately
+// shaped and strided array of T, but use an 'act' functor which
+// processes xel_t of T instead. If we have a variety of different
+// input sources, we can nevertheless use the same act functor,
+// which may be a complex pixel pipeline which we don't want to
+// produce in different versions just to cater for the variety of
+// data sources we need to process. In this context, look at the
+// example 'join.cc' as well, which demonstrates yet another input
+// 'scenario' which can be routed to an act functor processing xel_t.
 
 #include <iomanip>
 #include <array>
@@ -71,95 +85,67 @@ struct pass_through
 
 // join_t is the 'get_t' we'll use for this example. This functor
 // generates the input values to the functor. In this example we'll
-// demonstrate how to use a get_t to put together RGBA pixels from
-// four separate float arrays holding the channels. We want the
-// get_t to do the job so that the act functor can work on rgba
-// pixels as input just as if the rgba pixels had been loaded from
-// an array of rgba pixels, not four separate channel arrays.
+// demonstrate how to use a get_t to use an adapted view, presenting
+// an array of T with a first 'short' dimension for the N channels
+// as an array of xel_t. The data don't have to be modified, we can
+// just create an 'alternative view'.
 
 template < typename T ,     // fundamental type
            std::size_t N ,  // channel count
-           std::size_t D ,  // dimensions
+           std::size_t D ,  // dimensions of the 'shape notion'
            std::size_t L >  // lane count
 struct join_t
+: public zimt::unstrided_loader < T , N , D , L >
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
 
-  // const std::size_t d ; // processing axis - 0 or 1 for a 2D array
+  // data source: D+1-dimensional view holding the fundamental type
 
-  // source of data: N D-dimensional views to the fundamental type
+  typedef zimt::view_t < D + 1 , T > src_t ;
 
-  typedef std::array < zimt::view_t < D , T > , N > src_t ;
-  src_t src ;
+  // adapted data source: D-dimensional view of value_t
 
-  zimt::xel_t < const T * , N > pickup ; // source pointers
-  zimt::xel_t < long , N > stride ;      // strides of source arrays
+  typedef zimt::view_t < D , value_t > in_t ;
 
-  join_t ( const src_t & _src )
-  : src ( _src )
+  // the c'tor of our base class (zimt::unstrided_loader) must be
+  // invoked with the array conforming with the desired 'notion':
+  // one dimension less, and value_t instead of T. We use a static
+  // member function:
+
+  static in_t convert ( const src_t & src )
   {
-    // copy out the strides of the source arrays
+    // for this example, we limit the scopy of input: the 'extra'
+    // dimension must be the first one, and it mustn't be strided.
 
-    for ( int ch = 0 ; ch < N ; ch++ )
+    assert ( N == src.shape[0] ) ;
+    assert ( src.strides[0] == 1 ) ;
+
+    // we also require that the second dimension is unstrided
+
+    assert ( src.strides[1] == N ) ;
+
+    // we calculate adapted shape and strides for the desired
+    // new view
+
+    zimt::xel_t < std::size_t , D > _shape ;
+    zimt::xel_t < long , D > _strides ;
+    for ( std::size_t i = 0 ; i < D ; i++ )
     {
-      stride [ ch ] = src [ ch ] . strides [ 0 ] ;
+      _shape [ i ] = src.shape [ i + 1 ] ;
+      _strides [ i ] = src.strides [ i + 1 ] / N ;
     }
+
+    // and create and return it
+
+    return in_t ( (value_t*) src.origin , _strides , _shape ) ;
   }
 
-  // init is used to initialize the vectorized value to the value
-  // it should hold at the beginning of the peeling run. The discrete
-  // coordinate 'crd' gives the location of the first value, and this
-  // function infers the start value from it. Here we set the pickup
-  // pointers and perform a 'regular gather' to get the first batch
-  // of values. Note how we could specialize the code to use load
-  // instructions instead of rgather if the stride is 1.
+  // with the static member function convert, all we need to do is
+  // pass the result of 'convert' to the base class c'tor.
 
-  void init ( value_v & v , const crd_t & crd )
-  {
-    for ( int ch = 0 ; ch < N ; ch++ )
-    {
-      pickup [ ch ] = & ( src [ ch ] [ crd ] ) ;
-      v [ ch ] . rgather ( pickup [ ch ] , stride [ ch ] ) ;
-    }
-  }
-
-  // initialize the scalar value using the discrete coordinate.
-  // This needs to be done once after peeling, the scalar value
-  // is not initialized before.
-
-  void init ( value_t & c , const crd_t & crd )
-  {
-    for ( int ch = 0 ; ch < N ; ch++ )
-    {
-      pickup [ ch ] = & ( src [ ch ] [ crd ] ) ;
-      c [ ch ] = * ( pickup [ ch ] ) ;
-    }
-  }
-
-  // increase modifies it's argument to contain the next value, or
-  // next vectorized value, respectively - first we increase the
-  // pickup pointers, then we get the data from that location.
-
-  void increase ( value_t & trg )
-  {
-    for ( int ch = 0 ; ch < N ; ch++ )
-    {
-      pickup [ ch ] += stride [ ch ] ;
-      trg [ ch ] = * ( pickup [ ch ] ) ;
-    }
-  }
-
-  void increase ( value_v & trg )
-  {
-    for ( int ch = 0 ; ch < N ; ch++ )
-    {
-      pickup [ ch ] += L * stride [ ch ] ;
-      trg [ ch ] . rgather ( pickup [ ch ] , stride [ ch ] ) ;
-    }
-  }
+  join_t ( const src_t & src )
+  : zimt::unstrided_loader < T , N , D , L > ( convert ( src ) )
+  { }
 } ;
 
 int main ( int argc , char * argv[] )
@@ -170,27 +156,34 @@ int main ( int argc , char * argv[] )
   typedef join_t < float , 4 , 2 , 16 > j_t ;
   typedef typename j_t::value_t value_t ;
 
-  zimt::array_t < 2 , float > r ( { 1024 , 1024 } ) ;
-  zimt::array_t < 2 , float > g ( { 1024 , 1024 } ) ;
-  zimt::array_t < 2 , float > b ( { 1024 , 1024 } ) ;
-  zimt::array_t < 2 , float > a ( { 1024 , 1024 } ) ;
+  // this is our input: an array of float
 
-  std::array < zimt::view_t < 2 , float > , 4 >
-    src ( { r , g , b , a } ) ;
+  zimt::array_t < 3 , float > src ( { 4 , 1024 , 1024 } ) ;
 
   j_t get_rgba ( src ) ;
 
+  // this is our output: an array of xel_t<float,4>
+
   zimt::array_t < 2 , value_t > rgba ( { 1024 , 1024 } ) ;
+
+  // we won't 'act' on the data and on the 'output side' all we do is
+  // store them in the target array
 
   typedef pass_through < float , 4 , 16 > act_t ;
   zimt::norm_put_t < act_t , 2 > p ( rgba , 0 ) ;
 
-  r [ { 101 , 203 } ] = 1.0f ;
-  g [ { 101 , 203 } ] = 2.0f ;
-  b [ { 101 , 203 } ] = 3.0f ;
-  a [ { 101 , 203 } ] = 4.0f ;
+  // just one sample
+
+  src [ { 0 , 101 , 203 } ] = 1.0f ;
+  src [ { 1 , 101 , 203 } ] = 2.0f ;
+  src [ { 2 , 101 , 203 } ] = 3.0f ;
+  src [ { 3 , 101 , 203 } ] = 4.0f ;
+
+  // let's go
 
   zimt::process < act_t , 2 > ( act_t() , rgba , get_rgba , p ) ;
+
+  // check that the sample made it to the output
 
   std::cout << rgba [ { 100 , 203 } ] << std::endl ;
   std::cout << rgba [ { 101 , 203 } ] << std::endl ;

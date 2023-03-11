@@ -101,6 +101,14 @@ COMPARE_FUNC(!=,operator!=) ;
 // Note that this does not have any effect on those values in 'whither'
 // for which the mask is false. They remain unchanged.
 
+#define INTEGRAL_ONLY \
+  static_assert ( std::is_integral < value_type > :: value , \
+                  "this operation is only allowed for integral types" ) ;
+
+#define BOOL_ONLY \
+  static_assert ( std::is_same < value_type , bool > :: value , \
+                  "this operation is only allowed for booleans" ) ;
+
 struct masked_type
 {
   mask_type whether ;   // if the mask is true at whether[i]

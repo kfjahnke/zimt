@@ -136,8 +136,6 @@ int main ( int argc , char * argv[] )
 {
   // let's start with a simple 1D linspace.
 
-  zimt::bill_t bill ;
-
   {
     typedef zimt::xel_t < float , 1 > delta_t ;
     delta_t start { .5 } ;
@@ -147,7 +145,7 @@ int main ( int argc , char * argv[] )
     zimt::array_t < 1 , delta_t > a ( 7 ) ;
     zimt::norm_put_t < act_t , 1 > p ( a , 0 ) ;
 
-    zimt::process ( act_t() , a , bill , l , p ) ;
+    zimt::process ( act_t() , a , l , p ) ;
 
     std::cout << "********** 1D:" << std::endl << std::endl ;
 
@@ -167,7 +165,7 @@ int main ( int argc , char * argv[] )
     zimt::array_t < 2 , delta_t > a ( { 7 , 5 } ) ;
     zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
 
-    zimt::process ( act_t() , a , bill , l , p ) ;
+    zimt::process ( act_t() , a , l , p ) ;
 
     std::cout << "********** 2D:" << std::endl << std::endl ;
 
@@ -193,7 +191,7 @@ int main ( int argc , char * argv[] )
 
     std::cout << "********** 3D:" << std::endl << std::endl ;
 
-    zimt::process ( act_t() , a , bill , l , p ) ;
+    zimt::process ( act_t() , a , l , p ) ;
     for ( std::size_t z = 0 ; z < 4; z++ )
     {
       for ( std::size_t y = 0 ; y < 3 ; y++ )

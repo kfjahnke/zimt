@@ -1367,6 +1367,84 @@ struct sink_functor
 
 } ;
 
+/// class uf_adapter 'bends' a unary functor to a zimt::unary_functor
+/// handling xel_t arguments. For now this is mainly to adapt vspline
+/// code and it blindly assumes that the arguments are binary-compatible.
+/// The resulting functor processes 'synthetic' arguments, which are
+/// always xel_t, also for fundamentals, which are accessed via a xel_t
+/// with one element. With this type of signature, the adapted functor
+/// is also immediately usable by the 'wielding code' which expects
+/// xel_t only arguments.
+
+template < typename W >
+struct uf_adapter
+{
+  // set up the type system zimt expects in a unary_functor
+
+  static const int vsize = W::vsize ;
+  static const int dim_in = W::dim_in ;
+  static const int dim_out = W::dim_out ;
+
+  typedef typename W::in_ele_type in_ele_type ;
+  typedef typename W::out_ele_type out_ele_type ;
+
+  typedef zimt::xel_t < in_ele_type , dim_in > in_nd_ele_type ;
+  typedef zimt::xel_t < out_ele_type , dim_out > out_nd_ele_type ;
+
+  typedef in_nd_ele_type in_type ;
+  typedef out_nd_ele_type out_type ;
+
+  typedef typename vector_traits < in_ele_type , vsize >
+                     :: ele_v in_ele_v ;
+  typedef typename vector_traits < out_ele_type , vsize >
+                     :: ele_v out_ele_v ;
+
+  typedef typename vector_traits < in_type , vsize >
+                     :: nd_ele_v in_nd_ele_v ;
+  typedef typename vector_traits < out_type , vsize >
+                     :: nd_ele_v out_nd_ele_v ;
+
+  typedef in_nd_ele_v in_v ;
+  typedef out_nd_ele_v out_v ;
+
+  // accomodate the wrappee
+
+  W inner ;
+
+  uf_adapter ( const W & _inner )
+  : inner ( _inner )
+  { }
+
+  // two eval overloads - we might look at the wrappee and only
+  // produce the scalar variant if the wrappee contains one, but
+  // for now - wrapping vspline code - the scalar variant is taken
+  // for granted, because vspline always provides it.
+
+  void eval ( const in_type & in ,
+                   out_type & out )
+  {
+    inner.eval
+      ( reinterpret_cast < const typename W::in_type & > ( in ) ,
+        reinterpret_cast < typename W::out_type & > ( out ) ) ;
+  }
+
+  void eval ( const in_v & in ,
+                   out_v & out )
+  {
+    inner.eval
+      ( reinterpret_cast < const typename W::in_v & > ( in ) ,
+        reinterpret_cast < typename W::out_v & > ( out ) ) ;
+  }
+} ;
+
+template < typename W >
+zimt::uf_adapter < W >
+uf_adapt ( const W & inner )
+{
+  return zimt::uf_adapter < W >
+    ( inner ) ;
+}
+
 } ; // end of namespace zimt
 
 #endif // ZIMT_UNARY_FUNCTOR_H

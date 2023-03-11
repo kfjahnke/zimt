@@ -232,7 +232,7 @@ int main ( int argc , char * argv[] )
   zimt::array_t < 2 , value_t > a ( { 17 , 15 } ) ;
   zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
 
-  zimt::process < act_t , 2 > ( act_t() , a , bill , l , p ) ;
+  zimt::process < act_t , 2 > ( act_t() , a , l , p ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {
@@ -249,7 +249,7 @@ int main ( int argc , char * argv[] )
   zimt::norm_put_t < act_t , 2 > p1 ( a , 1 ) ;
   bill.axis = 1 ;
 
-  zimt::process < act_t , 2 > ( act_t() , a , bill , l1 , p1 ) ;
+  zimt::process < act_t , 2 > ( act_t() , a , l1 , p1 , bill ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {

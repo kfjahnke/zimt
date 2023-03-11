@@ -166,6 +166,14 @@ struct xel_t
 // both xel_t of the same number of fundamentals and single simdized
 // values, both with 'C semantics' type promotion.
 
+#define INTEGRAL_ONLY \
+  static_assert ( std::is_integral < value_type > :: value , \
+                  "this operation is only allowed for integral types" ) ;
+
+#define BOOL_ONLY \
+  static_assert ( std::is_same < value_type , bool > :: value , \
+                  "this operation is only allowed for booleans" ) ;
+
 #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
   template < typename RHST , \
              typename = typename std::enable_if \
@@ -235,6 +243,8 @@ OP_FUNC(operator&&,&&,BOOL_ONLY)
 OP_FUNC(operator||,||,BOOL_ONLY)
 
 #undef OP_FUNC
+#undef INTEGRAL_ONLY
+#undef BOOL_ONLY
 
 // assignment from equally-sized container.
 // Note that the rhs can use any elementary type which can be legally

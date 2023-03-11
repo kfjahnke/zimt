@@ -281,7 +281,7 @@ int main ( int argc , char * argv[] )
 
   // now we're ready to go!
 
-  zimt::process ( act_t ( yield ) , a , zimt::bill_t() , l , p ) ;
+  zimt::process ( act_t ( yield ) , a , l , p ) ;
 
   // here's the final result over ca. 1e9 pixels:
 

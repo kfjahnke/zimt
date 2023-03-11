@@ -110,6 +110,12 @@ struct view_t
   const index_type strides ;
   const shape_type shape ;
 
+  view_t()
+  : origin ( nullptr ) ,
+    strides ( 0 ) ,
+    shape ( 0 )
+  { }
+
   // helper type six_t is used to construct slice_t. It is a xel_t
   // of one dimension less than 'dimension' - or a xel_t with one
   // channel if dimension == 1. six_t stands for 'slice index type'.
@@ -452,6 +458,8 @@ template < std::size_t D , typename T >
 class array_t
 : public view_t < D , T >
 {
+  array_t() = default ;
+
 public:
 
   typedef view_t < D , T > base_t ;

@@ -172,6 +172,14 @@ using tag_t::backend ;
 
 // binary operators (used to be in xel_inner.h)
 
+#define INTEGRAL_ONLY \
+  static_assert ( std::is_integral < value_type > :: value , \
+                  "this operation is only allowed for integral types" ) ;
+
+#define BOOL_ONLY \
+  static_assert ( std::is_same < value_type , bool > :: value , \
+                  "this operation is only allowed for booleans" ) ;
+
 // for simd_type, we accept only other simd_type and fundamentals
 // as second operand. We code the three variants as templates, to
 // impose the desired type restrictions and to avoid the pitfall
@@ -238,6 +246,8 @@ OP_FUNC(operator&&,&&,BOOL_ONLY)
 OP_FUNC(operator||,||,BOOL_ONLY)
 
 #undef OP_FUNC
+#undef INTEGRAL_ONLY
+#undef BOOL_ONLY
 
 // types used for masks and index vectors. In terms of 'true' SIMD
 // arithmetics, these definitions may not be optimal - especially the

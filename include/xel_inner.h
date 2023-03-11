@@ -300,92 +300,15 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
 
 #undef OPEQ_FUNC
 
-// // binary operators and left and right scalar operations with
-// // value_type, unary operators -, ! and ~
-//
-// // we use a simple scheme for type promotion: the promoted type
-// // of two values fed to a binary operator should be the same as
-// // the type we would receive when adding the two values.
-//
-// #define PROMOTE(A,B)  \
-// XEL < decltype (   std::declval < A::value_type > () \
-//                  + std::declval < B > () ) , N >
-//
-// // with the restrictions below, we avoid the pitfalls of accepting
-// // value_type arguments (with the unwanted implicit type conversions)
-// // but we're limited to 'one level down', and we'd like to go further,
-// // especially binary operations with a fundamental would be great.
-//
-// #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
-//   template < typename RHST , \
-//              typename = typename std::enable_if \
-//                        < std::is_same \
-//                            < typename form < value_type > :: type , \
-//                              typename form < RHST > :: type \
-//                            > :: value \
-//                        > :: type \
-//            > \
-//   PROMOTE(XEL,RHST) \
-//   OPFUNC ( XEL < RHST , N > rhs ) const \
-//   { \
-//     CONSTRAINT \
-//     PROMOTE(XEL,RHST) help ; \
-//     for ( size_type i = 0 ; i < N ; i++ ) \
-//       help [ i ] = (*this) [ i ] OP rhs [ i ] ; \
-//     return help ; \
-//   } \
-//   template < typename RHST , \
-//              typename = typename std::enable_if \
-//                        < std::is_same \
-//                            < typename form < value_type > :: type , \
-//                              typename form < RHST > :: type \
-//                            > :: value \
-//                        > :: type \
-//            > \
-//   PROMOTE(XEL,RHST) \
-//   OPFUNC ( RHST rhs ) const \
-//   { \
-//     CONSTRAINT \
-//     PROMOTE(XEL,RHST) help ; \
-//     for ( size_type i = 0 ; i < N ; i++ ) \
-//       help [ i ] = (*this) [ i ] OP rhs ; \
-//     return help ; \
-//   } \
-//   template < typename LHST , \
-//              typename = typename std::enable_if \
-//                        < std::is_same \
-//                            < typename form < value_type > :: type , \
-//                              typename form < LHST > :: type \
-//                            > :: value \
-//                        > :: type \
-//            > \
-//   friend PROMOTE(XEL,LHST) OPFUNC ( LHST lhs , XEL rhs ) \
-//   { \
-//     CONSTRAINT \
-//     PROMOTE(XEL,LHST) help ; \
-//     for ( size_type i = 0 ; i < N ; i++ ) \
-//       help [ i ] = lhs OP rhs [ i ] ; \
-//     return help ; \
-//   }
-//
-// OP_FUNC(operator+,+,)
-// OP_FUNC(operator-,-,)
-// OP_FUNC(operator*,*,)
-// OP_FUNC(operator/,/,)
-//
-// OP_FUNC(operator%,%,INTEGRAL_ONLY)
-// OP_FUNC(operator&,&,INTEGRAL_ONLY)
-// OP_FUNC(operator|,|,INTEGRAL_ONLY)
-// OP_FUNC(operator^,^,INTEGRAL_ONLY)
-// OP_FUNC(operator<<,<<,INTEGRAL_ONLY)
-// OP_FUNC(operator>>,>>,INTEGRAL_ONLY)
-//
-// OP_FUNC(operator&&,&&,BOOL_ONLY)
-// OP_FUNC(operator||,||,BOOL_ONLY)
-//
-// #undef OP_FUNC
-// #undef PROMOTE
-//
+// initially I had coded the binary operators here, sharing code between
+// xel.h and simd_type.h. But with the the introduction of type promotion
+// I found this was no longer feasible, and I moved copies of the binary
+// operator code to the two headers using xel_inner.h and modified them
+// separately.
+
+// left and right scalar operations with value_type,
+// unary operators -, ! and ~
+
 #define OP_FUNC(OPFUNC,OP,CONSTRAINT) \
   XEL OPFUNC() const \
   { \
@@ -400,6 +323,8 @@ OP_FUNC(operator!,!,BOOL_ONLY)
 OP_FUNC(operator~,~,INTEGRAL_ONLY)
 
 #undef OP_FUNC
+#undef INTEGRAL_ONLY
+#undef BOOL_ONLY
 
 // member functions at_least and at_most. These functions provide the
 // same functionality as max, or min, respectively. Given XEL X

@@ -2031,6 +2031,8 @@ public:
 
 } ; // namespace HWY_NAMESPACE
 
+HWY_AFTER_NAMESPACE();  // at file scope
+
 #endif // HWY_SIMD_TYPE_H
 
 namespace zimt
@@ -2193,10 +2195,12 @@ void deinterleave ( const zimt::xel_t < T , 4 > * const & src ,
 
 } ;
 
+#ifndef HWY_SIMD_ALLOCATOR
+#define HWY_SIMD_ALLOCATOR
 
 namespace std
 {
-  
+
 template < typename T , std::size_t N >
 struct allocator_traits < zimt::hwy_simd_type < T , N > >
 {
@@ -2204,8 +2208,9 @@ struct allocator_traits < zimt::hwy_simd_type < T , N > >
             < zimt::hwy_simd_type < T , N > > allocator_type ;
 } ;
 
-
 } ;
+
+#endif // HWY_SIMD_ALLOCATOR
 
 #ifndef ZIMT_VECTOR_NBYTES
 
@@ -2224,7 +2229,5 @@ struct allocator_traits < zimt::hwy_simd_type < T , N > >
 #define ZIMT_VECTOR_NBYTES (4*HWY_MAX_BYTES)
 
 #endif
-
-HWY_AFTER_NAMESPACE();  // at file scope
 
 #endif // #define ZIMT_HWY_SIMD_TYPE_H

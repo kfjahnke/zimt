@@ -137,9 +137,7 @@ int main ( int argc , char * argv[] )
   // now we apply the functor to the array, using as_view to
   // present the data.
 
-  zimt::apply < 2 > ( twice ,
-                      as_view ( a ) ,
-                      zimt::bill_t() ) ;
+  zimt::apply < 2 > ( twice , as_view ( a ) ) ;
 
   // let's see a sample of the result
 

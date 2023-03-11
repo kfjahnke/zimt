@@ -352,7 +352,7 @@ struct storer
   typedef zimt::xel_t < std::ptrdiff_t , L > sc_indexes_t ;
 
   const std::size_t d ;
-  zimt::view_t < M , value_t > & trg ;
+  zimt::view_t < M , value_t > trg ;
   value_t * p_trg ;
   const std::size_t stride ;
 
@@ -453,9 +453,9 @@ void process ( const act_t & _act ,
                zimt::view_t < dimension ,
                               typename act_t::out_type
                             > out_view ,
-               zimt::bill_t bill ,
                const get_t & co ,
-               const put_t & pt )
+               const put_t & pt ,
+               zimt::bill_t bill = zimt::bill_t() )
 {
   // we extract the act functor's type system and constants
 
@@ -770,7 +770,7 @@ struct loader
   typedef zimt::simdized_type < long , L > crd_v ;
 
   const std::size_t d ;
-  const zimt::view_t < M , value_t > & src ;
+  const zimt::view_t < M , value_t > src ;
   const value_t * p_src ;
   const std::size_t stride ;
 
@@ -893,13 +893,13 @@ void coupled_f ( const act_t & _act ,
   {
     unstrided_loader < in_ele_type , chn_in , dimension , vsize >
       ld ( in_view , axis ) ;
-    process ( _act , out_view , bill , ld , pt ) ;
+    process ( _act , out_view , ld , pt , bill ) ;
   }
   else
   {
     loader < in_ele_type , chn_in , dimension , vsize >
       ld ( in_view , axis ) ;
-    process ( _act , out_view , bill , ld , pt ) ;
+    process ( _act , out_view , ld , pt , bill ) ;
   }
 }
 
