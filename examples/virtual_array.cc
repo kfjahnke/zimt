@@ -204,28 +204,7 @@ struct crunch
 // pretty much everything - all we need is init() and save() as
 // empty functions, so that the code is formally correct to be
 // called - the optimizer will do away with the empty functions.
-
-template < typename T ,
-           std::size_t N ,
-           std::size_t M = N ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
-struct discard_result
-{
-  typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , M > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
-  typedef zimt::xel_t < std::ptrdiff_t , L > sc_indexes_t ;
-
-  void init ( const crd_t & crd )
-  { }
-
-  template < typename ... A >
-  void save ( A ... args )
-  { }
-} ;
-
+// The implementation is now in wielding.h
 
 int main ( int argc , char * argv[] )
 {
@@ -256,7 +235,7 @@ int main ( int argc , char * argv[] )
 
   // this is out put_t which simply discards the results.
 
-  discard_result < float , 3 , 3 , 16 > p ;
+  zimt::discard_result < float , 3 , 3 , 16 > p ;
 
   // we need a bit of infrastructure to cumulate the results from
   // per-thread copies of the 'act' functor to 'collect'

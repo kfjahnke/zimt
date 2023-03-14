@@ -46,23 +46,24 @@
     to feed vigra data to zimt::transform and relatives, allowing
     legacy code to use zimt for fast multihtreaded SIMD processing
     of vigra data rather than relying on vigra::transformMultiArray.
-    In this example, I demonstrate two simple factory functions to
+    In this example, I demonstrate use of simple factory functions to
     create zimt views of vigra arrays and show how they can be
     used to feed the data to a zimt transform with a given zimt
     functor.
 
 */
 
-#include <vigra/tinyvector.hxx>
-#include <vigra/multi_array.hxx>
-
-#include <zimt/zimt.h>
+#include "../include/zimt_vigra.h"
 
 // Type for typical xel datum consisting of three float values
 // and binary-compatible vigra::TinyVector
 
 typedef zimt::xel_t < float , 3 > f3_t ;
 typedef vigra::TinyVector < float , 3 > vf3_t ;
+
+typedef typename zimt::vector_traits < float > :: type fv_t ;
+typedef zimt::xel_t < fv_t , 3 > fv3_t ;
+typedef vigra::TinyVector < fv_t , 3 > vg_vf3_t ;
 
 // simple zimt functor, taking some type T as input and
 // producing f3_t as output.
@@ -84,40 +85,6 @@ struct amp13_t
   }
 } ;
 
-// next we have a few adapter functions to make connecting to
-// vigra easier. First an adapter to convert a const reference
-// to a vigra::TinyVector to a zimt::xel_t. This will be used
-// to convert the strides and shape of the MultiArrayView.
-// TODO: this might be used to convert all TinyVectors to
-// corresponding xel_t, but may require narrowing the argument
-// spectrum.
-// TODO: might provide a zimt header for the purpose
-
-template < typename T , int N >
-zimt::xel_t < T , N > const &
-as_xel ( vigra::TinyVector < T , N > const & v )
-{
-  return reinterpret_cast < zimt::xel_t < T , N > const & > ( v ) ;
-}
-
-// next we have an adapter to produce a zimt::view_t from a
-// vigra::MultiArrayView of TinyVectors
-
-template < unsigned int D , typename T , int N >
-zimt::view_t < D , zimt::xel_t < T , N > >
-as_view
-  ( vigra::MultiArrayView < D , vigra::TinyVector < T , N > > & v )
-{
-  typedef zimt::xel_t < T , N > dtype ;
-
-  return zimt::view_t < D , dtype >
-    { (dtype*) v.data() ,
-      as_xel ( v.stride() ) ,
-      as_xel ( v.shape() ) } ;
-}
-
-// now we'll put the code to use
-
 int main ( int argc , char * argv[] )
 {
   // extent of the array we'll process (deliberately odd shape)
@@ -137,7 +104,7 @@ int main ( int argc , char * argv[] )
   // now we apply the functor to the array, using as_view to
   // present the data.
 
-  zimt::apply < 2 > ( twice , as_view ( a ) ) ;
+  zimt::apply < 2 > ( twice , zimt::as_view ( a ) ) ;
 
   // let's see a sample of the result
 

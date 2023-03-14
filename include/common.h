@@ -64,33 +64,33 @@
 
 namespace zimt
 {
-  // to mark all variations of SIMD data types, we'll derive them
-  // from simd_tag, and therefore also from simd_flag.
-
-  class simd_flag { } ;
-
-  // So far, we have four backends
-
-  enum backend_e { GOADING , VC , HWY , STDSIMD } ;
-
-  // For diagnostic output:
-
-  const std::string backend_name[] { "GOADING" ,
-                                     "Vc" ,
-                                     "highway" ,
-                                     "std::simd" } ;
-
-  // now we can code the tag:
-
-  template < typename T , std::size_t N , backend_e B >
-  struct simd_tag
-  : public simd_flag
-  {
-    typedef T value_type ;
-    static const std::size_t vsize = N ;
-    static const backend_e backend = B ;
-  } ;
-
+  // // to mark all variations of SIMD data types, we'll derive them
+  // // from simd_tag, and therefore also from simd_flag.
+  //
+  // class simd_flag { } ;
+  //
+  // // So far, we have four backends
+  //
+  // enum backend_e { GOADING , VC , HWY , STDSIMD } ;
+  //
+  // // For diagnostic output:
+  //
+  // const std::string backend_name[] { "GOADING" ,
+  //                                    "Vc" ,
+  //                                    "highway" ,
+  //                                    "std::simd" } ;
+  //
+  // // now we can code the tag:
+  //
+  // template < typename T , std::size_t N , backend_e B >
+  // struct simd_tag
+  // : public simd_flag
+  // {
+  //   typedef T value_type ;
+  //   static const std::size_t vsize = N ;
+  //   static const backend_e backend = B ;
+  // } ;
+  //
   // forward declaration of xel_t
 
   template < typename T , std::size_t > struct xel_t ;

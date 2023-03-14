@@ -73,7 +73,7 @@
     - The third option is to produce code which is designed to be
       easily recognized by the compiler as amenable to autovectorization.
       This option is implemented in simd_type.h, which defines an
-      arithmetic type 'zimt::simd_type' holding data in a C vector.
+      arithmetic type 'zimt::gen_simd_type' holding data in a C vector.
       This is a technique I call 'goading': data are processed in small
       aggregates of vector friendly size, resulting in inner loops
       which oftentimes are recognized by the autovectorization stage,
@@ -91,7 +91,7 @@
       remains an internal issue and you needn't concern yourself with
       with it beyond choosing whether you want zimt to use Vc or not,
       and choosing a suitable vectorization width if the default does
-      not suit you. Class zimt::simd_type can 'vectorize' every
+      not suit you. Class zimt::gen_simd_type can 'vectorize' every
       fundamental and is used as fallback type when Vc use is allowed
       but Vc can't provide a vectorized data type, like for 'long double'
       data, so it will be used even with Vc active when the need arises.
@@ -121,7 +121,7 @@
     thesis: 'Extending C++ for explicit data-parallel programming via SIMD
     vector types'.
 
-    With zimt::simd_type 'in the back hand' zimt code can rely on
+    With zimt::gen_simd_type 'in the back hand' zimt code can rely on
     the presence of a vectorized type for every fundamental, and, by
     extension, vectorized 'xel' data - i.e. vectorized pixels, voxels
     etc. which are implemented as zimt::xel_ts of vectorized
@@ -152,24 +152,26 @@
 // back to it's own 'goading' implementation, which codes SIMD
 // operations as small loops, hoping that they will be autovectorized.
 
-#include "simd_type.h"
+#include "simd/gen_simd_type.h"
 
 #if defined USE_STDSIMD
 
-#include "std_simd_type.h"
+#include "simd/std_simd_type.h"
 
 #elif defined USE_VC
 
-#include "vc_simd_type.h"
+#include "simd/vc_simd_type.h"
 
 #elif defined USE_HWY
 
-#include "hwy_simd_type.h"
+#include "simd/hwy_simd_type.h"
 
 #endif
 
 namespace zimt
 {
+using namespace simd ;
+
 #ifndef ZIMT_VECTOR_NBYTES
 
 #if defined USE_VC
@@ -206,10 +208,10 @@ namespace zimt
 
 #else
 
-// otherwise, we define the template using zimt::simd_type as the
+// otherwise, we define the template using zimt::gen_simd_type as the
 // fallback type and specialize where the backend can provide.
 
-#define COMMON_SIMD_TYPE simd_type
+#define COMMON_SIMD_TYPE gen_simd_type
 
 #endif
 
@@ -236,7 +238,7 @@ struct simd_traits
 
 // next, for some SIMD backends, we specialize simd_traits for a given
 // set of fundamentals. fundamental T which we don't mark this way
-// will be routed to use zimt::simd_type, the 'goading' implementation.
+// will be routed to use zimt::gen_simd_type, the 'goading' implementation.
 
 #if defined USE_VC
 
@@ -289,7 +291,7 @@ template<> struct simd_traits<T> \
                typename std::conditional \
                < ( sz & ( sz - 1 ) ) == 0 , \
                  hwy_simd_type < T , sz > , \
-                 zimt::simd_type < T , sz > \
+                 zimt::gen_simd_type < T , sz > \
                > :: type \
              > :: type ; \
   enum { default_size =   sizeof ( T ) > ZIMT_VECTOR_NBYTES \
@@ -329,7 +331,7 @@ HWY_SIMD(unsigned char)
 /// - 'v' suffix indicates a 'simdized' type, zimt uses Vc::SimdArrays
 ///   and zimt::xel_ts of Vc::SimdArrays if Vc is used and the type
 ///   can be used with Vc::SimdArray, and the equivalent types using
-///   zimt::simd_type instead of Vc::SimdArray otherwise.
+///   zimt::gen_simd_type instead of Vc::SimdArray otherwise.
 /// the unspecialized definition of class vector_traits will vectorize
 /// by concatenating instances of T into the type simd_traits produces,
 /// taking, per default, as many T as the default_size given there.
@@ -420,7 +422,7 @@ struct vector_traits
   enum { hsize = simd_traits < T > :: hsize } ;
 
   // now we obtain the template for a vector of a given size. This will
-  // be either Vc::SimdArray or zimt::simd_type
+  // be either Vc::SimdArray or zimt::gen_simd_type
   
   template < typename U , size_t sz >
   using vector = typename simd_traits < U > :: template type < sz > ;

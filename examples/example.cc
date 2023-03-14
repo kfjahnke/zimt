@@ -252,22 +252,6 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   }
 } ;
 
-// to test index-based transforms, we add a simple pass-through
-// functor which produces its' input as output.
-
-template < typename T , std::size_t N , std::size_t S >
-struct pass_through
-: public zimt::unary_functor < zimt::xel_t < T , N > ,
-                               zimt::xel_t < T , N > ,
-                               S >
-{
-  template < typename I , typename O >
-  void eval ( const I & i , O & o )
-  {
-    o = i ;
-  }
-} ;
-
 // This function does the actual test, varying some parameters
 // via the 'bill' object which is varied in main().
 

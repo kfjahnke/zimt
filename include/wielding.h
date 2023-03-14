@@ -903,6 +903,48 @@ void coupled_f ( const act_t & _act ,
   }
 }
 
+template < typename T , std::size_t N , std::size_t L >
+struct pass_through
+: public zimt::unary_functor < zimt::xel_t < T , N > ,
+                               zimt::xel_t < T , N > ,
+                               L >
+{
+  template < typename I , typename O >
+  void eval ( const I & i , O & o , const std::size_t cap = 0 )
+  {
+    o = i ;
+  }
+} ;
+
+template < typename W >
+zimt::uf_adapter < W >
+uf_adapt ( const W & inner )
+{
+  return zimt::uf_adapter < W >
+    ( inner ) ;
+}
+
+template < typename T ,
+           std::size_t N ,
+           std::size_t M = N ,
+           std::size_t L = zimt::vector_traits < T > :: vsize >
+struct discard_result
+{
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef typename value_v::value_type value_ele_v ;
+  typedef zimt::xel_t < long , M > crd_t ;
+  typedef zimt::simdized_type < long , L > crd_v ;
+  typedef zimt::xel_t < std::ptrdiff_t , L > sc_indexes_t ;
+
+  void init ( const crd_t & crd )
+  { }
+
+  template < typename ... A >
+  void save ( A ... args )
+  { }
+} ;
+
 } ; // namespace wielding
 
 #define ZIMT_WIELDING_H

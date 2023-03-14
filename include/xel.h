@@ -42,8 +42,8 @@
     \brief arithmetic container type
 */
 
-#ifndef ZIMT_xel_t_H
-#define ZIMT_xel_t_H
+#ifndef ZIMT_XEL_T_H
+#define ZIMT_XEL_T_H
 
 #include <cmath>
 #include <limits>
@@ -51,6 +51,7 @@
 #include <iostream>
 #include <initializer_list>
 #include "common.h"
+#include "vector.h"
 
 #define XEL xel_t
 
@@ -147,9 +148,9 @@ struct xel_t
   typedef T value_type ;
   static const std::size_t nch = N ;
 
-#include "xel_inner.h"
+#include "simd/vector_common.h"
 
-// binary operators (used to be in xel_inner.h)
+// binary operators
 
 // with the restrictions below, we avoid the pitfalls of directly
 // accepting xel_t or value_type arguments (with the unwanted
@@ -443,5 +444,31 @@ void bunch ( const xel_t < ET < value_type > , nch > * _src ,
 
 #undef XEL
 
-#endif // #define ZIMT_xel_t_H
+// when Vc or highway are available, we have specialized
+// de/interleaving code which we can route to now that we have
+// the complete type definition for zimt::xel_t
+
+#define XEL zimt::xel_t
+
+#ifdef USE_VC
+#include "simd/vc_interleave.h"
+namespace zimt
+{
+  using simd::interleave ;
+  using simd::deinterleave ;
+} ;
+#endif
+
+#ifdef USE_HWY
+#include "simd/hwy_interleave.h"
+namespace zimt
+{
+  using simd::interleave ;
+  using simd::deinterleave ;
+} ;
+#endif
+
+#undef XEL
+
+#endif // #define ZIMT_XEL_T_H
 

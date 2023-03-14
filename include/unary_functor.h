@@ -1437,14 +1437,6 @@ struct uf_adapter
   }
 } ;
 
-template < typename W >
-zimt::uf_adapter < W >
-uf_adapt ( const W & inner )
-{
-  return zimt::uf_adapter < W >
-    ( inner ) ;
-}
-
 } ; // end of namespace zimt
 
 #endif // ZIMT_UNARY_FUNCTOR_H

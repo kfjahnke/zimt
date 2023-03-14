@@ -171,11 +171,20 @@ struct view_t
 
   // This c'tor creates a new view from the given arguments.
 
-  view_t ( value_type * _origin ,
+  view_t ( value_type * const _origin ,
            const index_type & _strides ,
            const shape_type & _shape )
   : origin ( _origin ) ,
     strides ( _strides ) ,
+    shape ( _shape )
+    { }
+
+  // special case producing a 'fake view' with invalid origin and
+  // strides, and only a valid shape
+
+  view_t ( const shape_type & _shape )
+  : origin ( nullptr ) ,
+    strides ( 0 ) ,
     shape ( _shape )
     { }
 
