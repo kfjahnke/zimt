@@ -148,17 +148,30 @@
 // generated with Vc (USE_VC), highway (USE_HWY) and std::simd
 // (USE_STDSIMD). Only one of these should be defined - it may be
 // possible to mix them, but this is uncharted territory. If none
-// of the 'proper' SIMD backends are specified, zimt will fall
+// of the 'proper' SIMD backends are specified, vspline will fall
 // back to it's own 'goading' implementation, which codes SIMD
 // operations as small loops, hoping that they will be autovectorized.
 
-#include "simd/gen_simd_type.h"
-
 #if defined USE_STDSIMD
+
+// std::simd provides a 'complete' SIMD type template accepting all
+// fundamentals and lane counts. So we use the type derived from the
+// fixed-size std::simd vector (std_simd_type) instead of gen_simd_type
 
 #include "simd/std_simd_type.h"
 
-#elif defined USE_VC
+#else
+
+// For the goading implementation and the Vc- and highway-based code,
+// we need the goading implementation of gen_simd_type - for the latter
+// two backends, it will serve as the fallback type if the SIMD library
+// does not provide a suitable type.
+
+#include "simd/gen_simd_type.h"
+
+#endif
+
+#if defined USE_VC
 
 #include "simd/vc_simd_type.h"
 
@@ -171,6 +184,13 @@
 namespace zimt
 {
 using namespace simd ;
+
+#ifdef USE_STDSIMD
+
+template < typename U , std::size_t M >
+using gen_simd_type = std_simd_type < U , M > ;
+
+#endif
 
 #ifndef ZIMT_VECTOR_NBYTES
 
@@ -199,29 +219,13 @@ using namespace simd ;
 /// datum as a template argument. Note that the type which simd_traits produces
 /// for sz == 1 is T itself, not a simd_type of one element.
 
-#if defined USE_STDSIMD
-
-// if USE_STDSIMD is defined, we route all types T to std_simd_type,
-// because there won't be any specializations of simd_traits.
-
-#define COMMON_SIMD_TYPE std_simd_type
-
-#else
-
-// otherwise, we define the template using zimt::gen_simd_type as the
-// fallback type and specialize where the backend can provide.
-
-#define COMMON_SIMD_TYPE gen_simd_type
-
-#endif
-
 template < typename T >
 struct simd_traits
 {
   template < size_t sz > using type =
     typename std::conditional < sz == 1 ,
                                 T ,
-                                COMMON_SIMD_TYPE < T , sz >
+                                gen_simd_type < T , sz >
                               > :: type ;
                               
   static const size_t hsize = 0 ;
@@ -234,13 +238,18 @@ struct simd_traits
                         : ZIMT_VECTOR_NBYTES / sizeof ( T ) } ;
 } ;
 
-#undef COMMON_SIMD_TYPE
-
 // next, for some SIMD backends, we specialize simd_traits for a given
 // set of fundamentals. fundamental T which we don't mark this way
-// will be routed to use zimt::gen_simd_type, the 'goading' implementation.
+// will be routed to use gen_simd_type, the 'goading' implementation.
 
 #if defined USE_VC
+
+template < typename T , std::size_t N >
+struct allocator_traits < vc_simd_type < T , N > >
+{
+  typedef Vc::Allocator < vc_simd_type < T , N > >
+    type ;
+} ;
 
 // in Vc ML discussion M. Kretz states that the set of types Vc can vectorize
 // (with 1.3) is consistent throughout all ABIs, so we can just list the 

@@ -120,7 +120,7 @@
 
 #include <iostream>
 #include <initializer_list>
-// #include "common.h"
+#include "simd_tag.h"
 
 // we'll include some headers with repetetive definitions where
 // we use 'XEL' for the types which are elaborated
@@ -129,33 +129,6 @@
 
 namespace simd
 {
-  // to mark all variations of SIMD data types, we'll derive them
-  // from simd_tag, and therefore also from simd_flag.
-
-  class simd_flag { } ;
-
-  // So far, we have four backends
-
-  enum backend_e { GOADING , VC , HWY , STDSIMD } ;
-
-  // For diagnostic output:
-
-  const std::string backend_name[] { "GOADING" ,
-                                     "Vc" ,
-                                     "highway" ,
-                                     "std::simd" } ;
-
-  // now we can code the tag:
-
-  template < typename T , std::size_t N , backend_e B >
-  struct simd_tag
-  : public simd_flag
-  {
-    typedef T value_type ;
-    static const std::size_t vsize = N ;
-    static const backend_e backend = B ;
-  } ;
-
 /// class gen_simd_type serves as fallback type to provide SIMD semantics
 /// without explicit SIMD code. It can be used throughout when use of
 /// the SIMD 'backends' is unwanted, or to 'fill the gap' where some
@@ -196,6 +169,14 @@ using tag_t::backend ;
 
 #include "vector_mask.h"
 #include "vector_common.h"
+
+template < typename U ,
+           template < typename , std::size_t > class X >
+gen_simd_type ( const X < U , N > & rhs )
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    (*this) [ i ] = T ( rhs [ i ] ) ;
+}
 
 // binary operators (used to be in xel_inner.h)
 
@@ -269,8 +250,10 @@ OP_FUNC(operator^,^,INTEGRAL_ONLY)
 OP_FUNC(operator<<,<<,INTEGRAL_ONLY)
 OP_FUNC(operator>>,>>,INTEGRAL_ONLY)
 
-OP_FUNC(operator&&,&&,BOOL_ONLY)
-OP_FUNC(operator||,||,BOOL_ONLY)
+// OP_FUNC(operator&&,&&,BOOL_ONLY)
+// OP_FUNC(operator||,||,BOOL_ONLY)
+OP_FUNC(operator&&,&&,)
+OP_FUNC(operator||,||,)
 
 #undef OP_FUNC
 #undef INTEGRAL_ONLY

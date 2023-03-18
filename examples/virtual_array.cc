@@ -102,26 +102,43 @@ struct linspace_t
     cv [ d ] += value_ele_v::iota() * step [ d ] ;
   }
 
-  // initialize the scalar value from the discrete coordinate.
-  // This needs to be done once after peeling, the scalar value
-  // is not initialized before.
+  // 'capped' variant. This is only needed if the current segment is
+  // so short that no vectors can be formed at all. We fill up the
+  // target value with the last valid datum.
 
-  void init ( value_t & c , const crd_t & crd )
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
   {
-    c = step * crd + start ;
+    trg = step * crd + start ;
+    for ( std::size_t e = 1 ; e < cap ; e++ )
+      trg [ d ] [ e ] += T ( e ) * step [ d ] ;
   }
 
   // increase modifies it's argument to contain the next value, or
   // next vectorized value, respectively
 
-  void increase ( value_t & trg )
-  {
-    trg [ d ] += step [ d ] ;
-  }
-
   void increase ( value_v & trg )
   {
     trg [ d ] += ( step [ d ] * L ) ;
+  }
+
+  // 'capped' variant. This is called after all vectors in the current
+  // segment have been processed, so the lanes in trg beyond the cap
+  // should hold valid data, and 'stuffing' them with the last datum
+  // before the cap is optional.
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool stuff = true )
+  {
+    for ( std::size_t e = 0 ; e < cap ; e++ )
+      trg [ d ] [ e ] += ( step [ d ] * L ) ;
+    if ( stuff )
+    {
+      for ( std::size_t e = cap ; e < L ; e++ )
+        trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
+    }
   }
 } ;
 

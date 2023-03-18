@@ -109,31 +109,28 @@ struct join_t
     }
   }
 
-  // initialize the scalar value using the discrete coordinate.
-  // This needs to be done once after peeling, the scalar value
-  // is not initialized before.
+  // 'capped' variant. This is only needed if the current segment is
+  // so short that no vectors can be formed at all. We fill up the
+  // target value with the last valid datum.
 
-  void init ( value_t & c , const crd_t & crd )
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
   {
     for ( int ch = 0 ; ch < N ; ch++ )
     {
       pickup [ ch ] = & ( src [ ch ] [ crd ] ) ;
-      c [ ch ] = * ( pickup [ ch ] ) ;
+      for ( std::size_t e = 0 ; e < cap ; e++ )
+        trg [ ch ] [ e ] = pickup [ ch ] [ e * stride [ ch ] ] ;
+      for ( std::size_t e = cap ; e < L ; e++ )
+        trg [ ch ] [ e ] = trg [ ch ] [ ( cap - 1 ) * stride [ ch ] ] ;
     }
   }
+
 
   // increase modifies it's argument to contain the next value, or
   // next vectorized value, respectively - first we increase the
   // pickup pointers, then we get the data from that location.
-
-  void increase ( value_t & trg )
-  {
-    for ( int ch = 0 ; ch < N ; ch++ )
-    {
-      pickup [ ch ] += stride [ ch ] ;
-      trg [ ch ] = * ( pickup [ ch ] ) ;
-    }
-  }
 
   void increase ( value_v & trg )
   {
@@ -141,6 +138,28 @@ struct join_t
     {
       pickup [ ch ] += L * stride [ ch ] ;
       trg [ ch ] . rgather ( pickup [ ch ] , stride [ ch ] ) ;
+    }
+  }
+
+  // 'capped' variant. This is called after all vectors in the current
+  // segment have been processed, so the lanes in trg beyond the cap
+  // should hold valid data, and 'stuffing' them with the last datum
+  // before the cap is optional.
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool stuff = true )
+  {
+    for ( int ch = 0 ; ch < N ; ch++ )
+    {
+      pickup [ ch ] += L * stride [ ch ] ;
+      for ( std::size_t e = 0 ; e < cap ; e++ )
+        trg [ ch ] [ e ] = pickup [ ch ] [ e * stride [ ch ] ] ;
+      if ( stuff )
+      {
+        for ( std::size_t e = cap ; e < L ; e++ )
+          trg [ ch ] [ e ] = trg [ ch ] [ ( cap - 1 ) * stride [ ch ] ] ;
+      }
     }
   }
 } ;

@@ -396,6 +396,21 @@ void fluff ( xel_t < ET < value_type > , nch > * _trg ,
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
+void fluff ( xel_t < ET < value_type > , nch > * trg ,
+             std::size_t stride ,
+             std::size_t cap ) const
+{
+  for ( std::size_t e = 0 ; e < cap ; e++ )
+  {
+    for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+    {
+      trg[e*stride][ch] = (*this)[ch][e] ;
+    }
+  }
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
 void bunch_contiguous ( const xel_t < ET < value_type > , nch > * src ,
                         std::true_type ) // multi-channel
 {
@@ -435,6 +450,32 @@ void bunch ( const xel_t < ET < value_type > , nch > * _src ,
   {
     for ( std::size_t i = 0 ; i < nch ; i++ , src++ )
       (*this)[i].gather ( src , indexes ) ;
+  }
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void bunch ( const xel_t < ET < value_type > , nch > * src ,
+             std::size_t stride ,
+             std::size_t cap ,
+             bool stuff = false )
+{
+  for ( std::size_t e = 0 ; e < cap ; e++ )
+  {
+    for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+    {
+      (*this)[ch][e] = src [ e * stride ] [ ch ] ;
+    }
+  }
+  if ( stuff )
+  {
+    for ( std::size_t e = cap ; e < value_type::vsize ; e++ )
+    {
+      for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+      {
+        (*this)[ch][e] = src [ (cap-1) * stride ] [ ch ] ;
+      }
+    }
   }
 }
 

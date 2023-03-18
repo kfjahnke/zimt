@@ -59,18 +59,14 @@
 #include <iostream>
 #include <experimental/simd>
 
-#include "gen_simd_type.h"
+#include "simd_tag.h"
 
 namespace simd
 {
-
 /// class template std_simd_type provides a fixed-size SIMD type.
 /// This implementation of zimt::std_simd_type uses std::simd as
-/// base class. This class is used as a stand-in for Vc::SimdArray
-/// - it does not cover the whole interface, but a reasonably
-/// large subset - my choice of SimdArray functionality is what
-/// I need in lux/zimt.
-/// Most of the 'loop variant' of std_simd_type has been ported to
+/// base class. This class is used as a stand-in for gen_simd_type.
+/// Most of the 'goading' code of gen_simd_type has been ported to
 /// use std::simd instead, making use of std::simd's
 /// - constructors
 /// - copy_from and copy_to
@@ -567,7 +563,7 @@ struct std_simd_type
     CONSTRAINT \
     PROMOTE ( value_type , LHST ) lhs ( _lhs ) ; \
     std_simd_type < PROMOTE ( LHST , value_type ) , vsize > rhs ( _rhs ) ; \
-    return lhs OP rhs->to_base() ; \
+    return lhs OP rhs.to_base() ; \
   }
 
   OP_FUNC(operator+,+,)

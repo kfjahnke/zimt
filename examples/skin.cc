@@ -151,40 +151,67 @@ struct rect3d_t
   // coordinate 'crd' gives the location of the first value, and this
   // function infers the start value from it. The scalar value will
   // not be used until peeling is done, so it isn't initialized here.
-  // Note how crd is 2D, whereas cv is 3D!
+  // Note how crd is 2D, whereas trg is 3D!
 
-  void init ( value_v & cv , const crd_t & crd )
+  void init ( value_v & trg , const crd_t & crd )
   {
-    cv = a + crd[0] * uv[0] + crd[1] * uv[1] ;
-    cv [ 0 ] += value_ele_v::iota() * uv [ d ] [ 0 ] ;
-    cv [ 1 ] += value_ele_v::iota() * uv [ d ] [ 1 ] ;
-    cv [ 2 ] += value_ele_v::iota() * uv [ d ] [ 2 ] ;
+    trg = a + crd[0] * uv[0] + crd[1] * uv[1] ;
+    trg [ 0 ] += value_ele_v::iota() * uv [ d ] [ 0 ] ;
+    trg [ 1 ] += value_ele_v::iota() * uv [ d ] [ 1 ] ;
+    trg [ 2 ] += value_ele_v::iota() * uv [ d ] [ 2 ] ;
   }
 
-  // initialize the scalar value from the discrete coordinate.
-  // This needs to be done once after peeling, the scalar value
-  // is not initialized before.
+  // 'capped' variant. This is only needed if the current segment is
+  // so short that no vectors can be formed at all. We fill up the
+  // target value with the last valid datum.
 
-  void init ( value_t & c , const crd_t & crd )
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
   {
-    c = a + crd [ 0 ] * uv [ 0 ] + crd [ 1 ] * uv [ 1 ] ;
+    trg = a + crd[0] * uv[0] + crd[1] * uv[1] ;
+    for ( std::size_t e = 1 ; e < cap ; e++ )
+    {
+      trg [ 0 ] [ e ] += T ( e ) * uv [ d ] [ 0 ] ;
+      trg [ 1 ] [ e ] += T ( e ) * uv [ d ] [ 1 ] ;
+      trg [ 2 ] [ e ] += T ( e ) * uv [ d ] [ 2 ] ;
+    }
   }
 
   // increase modifies it's argument to contain the next value, or
   // next vectorized value, respectively
-
-  void increase ( value_t & trg )
-  {
-    trg [ 0 ] += uv [ d ] [ 0 ] ;
-    trg [ 1 ] += uv [ d ] [ 1 ] ;
-    trg [ 2 ] += uv [ d ] [ 2 ] ;
-  }
 
   void increase ( value_v & trg )
   {
     trg [ 0 ] += ( uv [ d ] [ 0 ] * L ) ;
     trg [ 1 ] += ( uv [ d ] [ 1 ] * L ) ;
     trg [ 2 ] += ( uv [ d ] [ 2 ] * L ) ;
+  }
+
+  // 'capped' variant. This is called after all vectors in the current
+  // segment have been processed, so the lanes in trg beyond the cap
+  // should hold valid data, and 'stuffing' them with the last datum
+  // before the cap is optional.
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool stuff = true )
+  {
+    for ( std::size_t e = 0 ; e < cap ; e++ )
+    {
+      trg [ 0 ] [ e ] += ( uv [ d ] [ 0 ] * L ) ;
+      trg [ 1 ] [ e ] += ( uv [ d ] [ 1 ] * L ) ;
+      trg [ 2 ] [ e ] += ( uv [ d ] [ 2 ] * L ) ;
+    }
+    if ( stuff )
+    {
+      for ( std::size_t e = cap ; e < L ; e++ )
+      {
+        trg [ 0 ] [ e ] = trg [ 0 ] [ cap - 1 ] ;
+        trg [ 1 ] [ e ] = trg [ 1 ] [ cap - 1 ] ;
+        trg [ 2 ] [ e ] = trg [ 2 ] [ cap - 1 ] ;
+      }
+    }
   }
 } ;
 

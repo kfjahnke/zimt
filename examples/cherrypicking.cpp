@@ -49,7 +49,7 @@
 // atan2 up by a fair amount if we delegate to Vc's superior implementation.
 //
 // note that you can't use examples.sh for this file. compile like this:
-// g++ -Ofast -std=c++17 -march=native -ocherrypicking cherrypicking.cc -lVc
+// g++ -Ofast -std=c++17 -march=native -ocherrypicking cherrypicking.cpp -lVc
 
 #include <memory>
 #include <assert.h>
@@ -59,11 +59,12 @@
 // the backend headers - if we were to go through the usual motions
 // and #define USE_... already, we'd only have either header included.
 
-#include "../include/std_simd_type.h"
-#include "../include/vc_simd_type.h"
+#include "../include/common.h"
+#include "../include/simd/std_simd_type.h"
+#include "../include/simd/vc_simd_type.h"
 
-typedef zimt::std_simd_type < float , 16 > stdf16_t ;
-typedef zimt::vc_simd_type < float , 16 > vcf16_t ;
+typedef simd::std_simd_type < float , 16 > stdf16_t ;
+typedef simd::vc_simd_type < float , 16 > vcf16_t ;
 
 // first version: use std_simd_type's (inefficient) atan2 function
 
@@ -77,14 +78,24 @@ void f ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 // to corresponding vc_simd_type objects, Vc's atan2 function is used
 // to produce a vc_simd_type result which is moved to 'out'. Even
 // with the copying around of the values, this one is much faster.
+// The optimzer likely takes care of the unnecessary loads and stores
+// and keeps the arguments 'afloat' in registers.
 
 void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 {
   vcf16_t h_x , h_y , h_out ;
-  h_x = x ;
-  h_y = y ;
+  float help [ 16 ] ;
+
+  x.store ( help ) ;
+  h_x.load ( help ) ;
+
+  y.store ( help ) ;
+  h_y.load ( help ) ;
+
   h_out = atan2 ( h_y , h_x ) ;
-  out = h_out ;
+
+  h_out.store ( help ) ;
+  out.load ( help ) ;
 }
 
 // use std::simd backend as standard for the remainder.
@@ -97,10 +108,10 @@ void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 struct atan_f1
 : public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
 {
-  void eval ( const in_type & in , out_type & out ) const
-  {
-    out = std::atan2 ( in[1] , in[0] ) ;
-  }
+  // void eval ( const in_type & in , out_type & out ) const
+  // {
+  //   out = std::atan2 ( in[1] , in[0] ) ;
+  // }
   void eval ( const in_v & in , out_v & out ) const
   {
     f ( in[1] , in[0] , out ) ;
@@ -110,10 +121,10 @@ struct atan_f1
 struct atan_f2
 : public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
 {
-  void eval ( const in_type & in , out_type & out ) const
-  {
-    out = std::atan2 ( in[1] , in[0] ) ;
-  }
+  // void eval ( const in_type & in , out_type & out ) const
+  // {
+  //   out = std::atan2 ( in[1] , in[0] ) ;
+  // }
   void eval ( const in_v & in , out_v & out ) const
   {
     g ( in[1] , in[0] , out ) ;

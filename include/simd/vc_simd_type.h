@@ -60,6 +60,46 @@
 namespace simd
 {
 
+template < typename _value_type ,
+           std::size_t _vsize >
+struct vc_simd_type ;
+
+// conversion to and from gen_simd_type of equal T
+
+template < typename T , std::size_t vsize >
+void convert ( const gen_simd_type < T , vsize > & src ,
+                     vc_simd_type < T , vsize > & trg )
+{
+  trg.load ( src.data() ) ;
+}
+
+template < typename T , std::size_t vsize >
+void convert ( const vc_simd_type < T , vsize > & src ,
+                     gen_simd_type < T , vsize > & trg )
+{
+  src.store ( trg.data() ) ;
+}
+
+// conversion to and from gen_simd_type of different T
+// This uses goading, because we can't be sure that src_t can be
+// handled by Vc.
+
+template < typename src_t , typename trg_t , std::size_t vsize >
+void convert ( const gen_simd_type < src_t , vsize > & src ,
+                     vc_simd_type < trg_t , vsize > & trg )
+{
+  for ( std::size_t i = 0 ; i < vsize ; i++ )
+    trg[i] = src[i] ;
+}
+
+template < typename src_t , typename trg_t , std::size_t vsize >
+void convert ( const vc_simd_type < src_t , vsize > & src ,
+                     gen_simd_type < trg_t , vsize > & trg )
+{
+  for ( std::size_t i = 0 ; i < vsize ; i++ )
+    trg[i] = src[i] ;
+}
+
 /// class template vc_simd_type provides a fixed-size SIMD type.
 /// This implementation of zimt::vc_simd_type uses Vc::SimdArray
 /// The 'acrobatics' may seem futile - why inherit privately from
@@ -192,6 +232,7 @@ struct vc_simd_type
   vc_simd_type ( const vc_simd_type < U , vsize > & ini )
   : base_t ( ini.to_base() )
   { }
+
   template < typename U >
   vc_simd_type ( const vc_simd_type < U , vsize > && ini )
   : base_t ( ini.to_base() )
@@ -211,69 +252,6 @@ struct vc_simd_type
     return *this ;
   }
 
-  // special c'tor for gen_simd_type of unsigned char as rhs
-
-  vc_simd_type & operator=
-    ( const gen_simd_type < unsigned char , vsize > & rhs )
-  {
-    to_base().load ( ( unsigned char * ) ( & rhs ) ) ;
-    return *this ;
-  }
-
-  vc_simd_type & operator=
-    ( const gen_simd_type < unsigned char , vsize > && rhs )
-  {
-    to_base().load ( ( unsigned char * ) ( & rhs ) ) ;
-    return *this ;
-  }
-
-  vc_simd_type ( const gen_simd_type < unsigned char , vsize > & ini )
-  {
-    *this = ini ;
-  }
-
-  vc_simd_type ( const gen_simd_type < unsigned char , vsize > && ini )
-  {
-    *this = ini ;
-  }
-
-  // assignment from equally-sized container. Most containers use std::size_t
-  // for the template argument defining the number of elements they hold,
-  // but some (notably vigra::TinyVector) use int, which is probably a relic
-  // from times when non-type template arguments were of a restricted type
-  // set only. By providing a specialization for SIZE_TYPE int, we make
-  // equally-sized vigra::TinyVectors permitted initializers.
-  // the c'tor from an equally-sized container also uses the corresponding
-  // operator= overload, so we use one macro for both.
-  // we also need two different variants of vsize for g++; clang++ accepts
-  // size_type vsize for both places where VSZ is used, but g++ requires
-  // an integer.
-  // Note that the rhs can use any elementary type which can be legally
-  // assigned to value_type. This allows transport of information from
-  // differently typed objects, but there are no further constraints on
-  // the types involved, which may degrade precision. It's the user's
-  // responsibility to make sure such assignments have the desired effect
-  // and overload them if necessary.
-
-  #define BUILD_FROM_CONTAINER(SIZE_TYPE,VSZ) \
-    template < typename U , template < typename , SIZE_TYPE > class V > \
-    vc_simd_type & operator= ( const V < U , VSZ > & rhs ) \
-    { \
-      static_assert ( vsize == VSZ , "incompatible vector size" ) ; \
-      for ( size_type i = 0 ; i < vsize ; i++ ) \
-        (*this) [ i ] = rhs [ i ] ; \
-      return *this ; \
-    } \
-    template < typename U , template < typename , SIZE_TYPE > class V > \
-    vc_simd_type ( const V < U , VSZ > & ini ) \
-    { \
-      *this = ini ; \
-    }
-
-  BUILD_FROM_CONTAINER(std::size_t,vsize)
-
-  #undef BUILD_FROM_CONTAINER
-
   // because all vc_simd_type objects are of a distinct size
   // explicitly coded in template arg vsize, we can initialize
   // from an initializer_list. This is probably not very fast,
@@ -285,6 +263,31 @@ struct vc_simd_type
     std::size_t i = 0 ;
     for ( const auto & src : rhs )
       (*this) [ i++ ] = src ;
+  }
+
+  // assignment from a gen_simd_type on the rhs
+
+  template < typename U >
+  vc_simd_type & operator= ( const gen_simd_type < U , vsize > & rhs )
+  {
+    convert ( rhs , *this ) ;
+    return *this ;
+  }
+
+  template < typename U >
+  vc_simd_type ( const gen_simd_type < U , vsize > & rhs )
+  {
+    *this = rhs ;
+  }
+
+  // conversion to a gen_simd_type
+
+  template < typename U >
+  operator gen_simd_type < U , vsize > ()
+  {
+    gen_simd_type < U , vsize > result ;
+    convert ( *this , result ) ;
+    return result ;
   }
 
   // use Vc's IndexesFromZero, Zero and One.
@@ -618,7 +621,7 @@ struct vc_simd_type
   { \
     CONSTRAINT \
     vc_simd_type < PROMOTE ( LHST , value_type ) , vsize > help ( lhs ) ; \
-    return help.to_base() OP rhs->to_base() ; \
+    return help.to_base() OP rhs.to_base() ; \
   }
 
   OP_FUNC(operator+,+,)

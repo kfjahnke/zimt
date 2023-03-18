@@ -1421,7 +1421,7 @@ struct uf_adapter
   // for granted, because vspline always provides it.
 
   void eval ( const in_type & in ,
-                   out_type & out )
+                   out_type & out ) const
   {
     inner.eval
       ( reinterpret_cast < const typename W::in_type & > ( in ) ,
@@ -1429,7 +1429,7 @@ struct uf_adapter
   }
 
   void eval ( const in_v & in ,
-                   out_v & out )
+                   out_v & out ) const
   {
     inner.eval
       ( reinterpret_cast < const typename W::in_v & > ( in ) ,

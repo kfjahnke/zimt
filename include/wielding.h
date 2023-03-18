@@ -75,7 +75,7 @@
     This design widens the scope of possible operations considerably,
     and the implementation of the transform family of functions is
     merely a very specialized use case of the generalized code, which
-    resides in zimz::process. For the time being, if user code
+    resides in zimt::process. For the time being, if user code
     needs the extended features of the wieding code, it has to invoke
     the wielding functions directly; zimt::transform and relatives
     use the established signature.
@@ -281,9 +281,7 @@ struct get_crd
 
   const std::size_t d ;
 
-  // get_crd's c'tor receives the step witdh. Other similar
-  // classes might use other c'tor arguments. This get_crd
-  // holds no state apart from 'd' and 'step'.
+  // get_crd's c'tor receives the processing axis
 
   get_crd ( const std::size_t & _d = 0 )
   : d ( _d )
@@ -292,36 +290,54 @@ struct get_crd
   // init is used to initialize the vectorized value to the value
   // it should hold at the beginning of the peeling run. The discrete
   // coordinate 'crd' gives the location of the first value, and the
-  // get_crd infers the start value from it. The scalar value is
-  // not used until peeling is done, so it isn't initialized here.
+  // get_crd infers the start value from it.
 
-  void init ( value_v & cv , const crd_t & crd )
+  void init ( value_v & trg , const crd_t & crd ) const
   {
-    cv = crd ;
-    cv [ d ] += value_ele_v::iota() ;
+    trg = crd ;
+    trg [ d ] += value_ele_v::iota() ;
   }
 
-  // initialize the scalar value from the discrete coordinate.
-  // This needs to be done after peeling, the scalar value
-  // is not initialized before and not updated during peeling.
+  // 'capped' variant. This is only needed if the current segment is
+  // so short that no vectors can be formed at all. We fill up the
+  // target value with the last valid datum.
 
-  void init ( value_t & c , const crd_t & crd )
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
   {
-    c = crd ;
+    trg = crd ;
+    for ( std::size_t e = 1 ; e < cap ; e++ )
+      trg [ d ] [ e ] += T(e) ;
+    for ( std::size_t e = cap ; e < vsize ; e++ )
+      trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
   }
 
-  // increase modifies it's argument to contain the next value, or
-  // next vectorized value, respectively
+  // increase modifies it's argument to contain the next value
 
-  void increase ( value_t & trg )
-  {
-    ++ trg [ d ] ;
-  }
-
-  void increase ( value_v & trg )
+  void increase ( value_v & trg ) const
   {
     trg [ d ] += vsize ;
   }
+
+  // 'capped' variant. This is called after all vectors in the current
+  // segment have been processed, so the lanes in trg beyond the cap
+  // should hold valid data, and 'stuffing' them with the last datum
+  // before the cap is optional.
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool stuff = true )
+  {
+    for ( std::size_t e = 0 ; e < cap ; e++ )
+      trg [ d ] [ e ] += T(vsize) ;
+    if ( stuff )
+    {
+      for ( std::size_t e = cap ; e < vsize ; e++ )
+        trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
+    }
+  }
+
 } ;
 
 // class storer disposes of the results of calling eval. This
@@ -340,27 +356,26 @@ struct get_crd
 
 template < typename T ,
            std::size_t N ,
-           std::size_t M = N ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t D ,
+           std::size_t L >
 struct storer
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , M > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
-  typedef zimt::xel_t < std::ptrdiff_t , L > sc_indexes_t ;
+  typedef zimt::xel_t < long , D > crd_t ;
 
-  const std::size_t d ;
-  zimt::view_t < M , value_t > trg ;
-  value_t * p_trg ;
+  const std::size_t & d ;
+  zimt::view_t < D , value_t > & trg ;
   const std::size_t stride ;
 
-  // get_t's c'tor receives the step witdh. Other similar
-  // classes might use other c'tor arguments. This get_t
-  // holds no state apart from 'd' and 'step'.
+  value_t * p_trg ;
 
-  storer ( zimt::view_t < M , value_t > & _trg ,
+  // get_t's c'tor receives the target array and the processing
+  // axis. Similar classes might use other c'tor arguments. This
+  // get_t holds no variable state apart from p_trg.
+
+  storer ( zimt::view_t < D , value_t > & _trg ,
            const std::size_t & _d = 0 )
   : trg ( _trg ) , d ( _d ) , stride ( _trg.strides [ _d ] )
   { }
@@ -375,35 +390,18 @@ struct storer
   // save writes to the current taget pointer and increases the
   // pointer by the amount of value_t written
 
-  void save ( const value_t & v )
-  {
-    *p_trg = v ;
-    p_trg += stride ;
-  }
-
   void save ( const value_v & v )
   {
     v.fluff ( p_trg , stride ) ;
     p_trg += L * stride ;
   }
 
-  // note this 'save' overload: 'leftover' values which remain after
-  // 'peeling' are collected in a buffer until a full vector is ready.
-  // The data from this buffer need to be stored to the correct loci
-  // in memory, which are encoded in 'indexes' as a set of offsets
-  // from the view's/array's origin.
+  // capped save, used for the final batch of data which did not
+  // fill out an entire value_v
 
-  void save ( const value_v & v , const sc_indexes_t & indexes )
+  void save ( const value_v & v , std::size_t cap )
   {
-    auto po = (T*)(trg.origin) ;
-    auto ix = indexes * N ;
-
-    for ( int chn = 0 ; chn < N ; chn++ )
-    {
-      v[chn].scatter ( po + chn , ix ) ;
-    }
-
-    p_trg += L ;
+    v.fluff ( p_trg , stride , cap ) ;
   }
 } ;
 
@@ -469,6 +467,8 @@ void process ( const act_t & _act ,
   typedef typename act_t::out_v out_v ;
   typedef typename act_t::out_ele_v out_ele_v ;
 
+  typedef typename in_ele_v::mask_type in_mask_type ;
+
   static const std::size_t chn_in = act_t::dim_in ;
   static const std::size_t chn_out = act_t::dim_out ;
   static const std::size_t vsize = act_t::vsize ;
@@ -529,35 +529,19 @@ void process ( const act_t & _act ,
 
     act_t act ( _act ) ; // create per-thread copy of '_act'
 
-    // buffer for 'leftovers' from the end of the segment,
-    // scalar coordinate, target memory pointer and help
-    // pointer to beginning of array's data, set of scatter
-    // indexes to target locations of leftovers. Note that the
-    // scatter indexes are xel_t of ptrdiff_t, not index_type.
-    // The resulting scatter will use a goading loop rather than
-    // a 'true' hardware gather, but since this only has to be
-    // done once per thread (at conclusion), it's no big deal.
-
-    in_type tail [ vsize ] ;
-    std::size_t tail_index = 0 ;
-    in_type crd ;
-    out_type * trg ;
-    out_type * trg0 = out_view.origin ;
-    zimt::xel_t < std::ptrdiff_t , vsize > sc_indexes = 0 ;
-
     // these SIMD variables will hold one batch if input or
-    // output, respectively. Here, the SIMD input is a
-    // vectorized coordinate
+    // output, respectively.
 
-    in_v md_crd ;
-    out_v buffer ;
+    in_v md_in ;
+    out_v md_out ;
 
     auto c = co ;
     put_t p ( pt ) ;
 
     // loop as long as there are joblet indices left
 
-    while ( zimt::fetch_ascending ( indexes , nr_indexes , joblet_index ) )
+    while ( zimt::fetch_ascending
+             ( indexes , nr_indexes , joblet_index ) )
     {
       // terminate early on cancellation request - the effect is not
       // immediate, but reasonably granular: the check is once per
@@ -571,12 +555,6 @@ void process ( const act_t & _act ,
 
       std::size_t line = joblet_index / nr_segments ;
       std::size_t segment = joblet_index % nr_segments ;
-
-      // this gives us the target address - first we obtain the
-      // line's base address, then we add the segment's offset
-
-      trg = slice2.origin + slice2.offset ( out_mci [ line ] ) ;
-      trg += segment * out_stride * segment_size ;
 
       // how many values do we have in the current segment?
       // the last segment may be less than segment_size long
@@ -628,114 +606,67 @@ void process ( const act_t & _act ,
         }
       }
 
-      // we create a local copy of the get_t and call init on
-      // it, passing in the discrete coordinate of the beginning of
-      // the current line and receiving an initial value of md_crd,
-      // the vectorized datum suitable for processing with 'act'.
-
-      c.init ( md_crd , dcrd ) ;
       p.init ( dcrd ) ;
 
-      // first we perform a peeling run, processing data vectorized
-      // as long as there are enough data to fill the vectorized
-      // buffers (md_XXX_data_type).
-
-      if ( out_stride == 1 )
+      if ( nr_vectors == 0 )
       {
-        for ( ic_type a = 0 ; a < nr_vectors ; a++ )
+        if ( leftover )
         {
-          act.eval ( md_crd , buffer ) ;
-          p.save ( buffer ) ;
-          trg += vsize ;
-          if ( a < nr_vectors - 1 )
-            c.increase ( md_crd ) ;
+          // special case: there are no vectors, only leftover
+          // we need a special init which caps the result
+
+          c.init ( md_in , dcrd , leftover ) ;
+          act.eval ( md_in , md_out , leftover ) ;
+          p.save ( md_out , leftover ) ; // need partial save
         }
       }
       else
       {
-        for ( ic_type a = 0 ; a < nr_vectors ; a++ )
+        // we create a local copy of the get_t and call init on
+        // it, passing in the discrete coordinate of the beginning of
+        // the current line and receiving an initial value of md_in,
+        // the vectorized datum suitable for processing with 'act'.
+
+        c.init ( md_in , dcrd ) ;
+
+        // first we perform a peeling run, processing data vectorized
+        // as long as there are enough data to fill md_out
+
+        for ( std::size_t a = 0 ; a < nr_vectors ; a++ )
         {
-          act.eval ( md_crd , buffer ) ;
-          p.save ( buffer ) ;
-          trg += vsize * out_stride ;
+          act.eval ( md_in , md_out ) ;
+          p.save ( md_out ) ;
           if ( a < nr_vectors - 1 )
-            c.increase ( md_crd ) ;
+            c.increase ( md_in ) ;
         }
-      }
 
-      // peeling is done, any leftovers are cumulated in 'tail'
-      // until 'tail' has a full vector's worth of input.
+        // if there are any scalar values left over, we use 'capped'
+        // operations to process them, 'leftover' serving as cap value.
+        // These operations only affect part of the vectorized data,
+        // but the capped get_t takes care of filling md_in with valid
+        // data (last value before the cap), so the act functor can
+        // safely process it. Capped get and put operations are less
+        // efficient than uncapped ones, falling back to 'goading' code,
+        // but they occur only rarely if the lines along the processing
+        // axis are long. The capped processing is a recent design
+        // decision in favour of cumulating source data until a full
+        // vector's worth are available - this did not perform well,
+        // probably due to increased register pressure and detrimental
+        // memory access patterns. Here, the number of pipeline calls
+        // (invocations of the 'act' functor') is slightly larger, but
+        // the invocation occurs rlating to just the memory which is
+        // 'currently at hand' (in cache) and no buffer or scatter
+        // indexes are needed. The buffering etc. could only pay off if
+        // the pipeline were very long and expensive.
 
-      // update the scalar coordinate to point to the first
-      // unprocessed location
-
-      dcrd [ axis ] += nr_vectors * vsize ;
-      c.init ( crd , dcrd ) ;
-
-      for ( ic_type r = 0 ; r < leftover ; r++ )
-      {
-        // save the offset of the target pointer from the
-        // array's origin
-
-        sc_indexes [ tail_index ] = trg - trg0 ;
-
-        // save the current scalar coordinate to 'tail'
-
-        tail [ tail_index++ ] = crd ;
-
-        // let the get_t produce the next scalar value
-
-        c.increase ( crd ) ;
-
-        // update target pointer
-
-        trg += out_stride ;
-
-        // if we now have a full vector's worth of data to
-        // process, we call the vectorized eval
-
-        if ( tail_index == vsize )
+        if ( leftover )
         {
-          in_v in ;
-          in.bunch ( tail ) ;
-          act.eval ( in , buffer ) ;
-
-          // we can't do a simple 'fluff' because the target
-          // memory isn't 'regular', instead we have to do a
-          // set of scatter operations to the indexes we've
-          // saved in sc_indexes.
-
-          p.save ( buffer , sc_indexes ) ;
-
-          // finally we reset tail_index to start at the
-          // beginning of 'tail' with the next leftover
-
-          tail_index = 0 ;
+          c.increase ( md_in , leftover ) ;
+          act.eval ( md_in , md_out , leftover ) ;
+          p.save ( md_out , leftover ) ;
         }
       }
     }
-
-    // if we have any leftovers here (tail_index > 0) it
-    // can't be a full vector's worth, so now we pad 'tail'
-    // with the last 'genuine' value, call capped 'eval'
-    // and store the result.
-
-    if ( tail_index )
-    {
-      in_v in ;
-
-      for ( std::size_t i = tail_index ; i < vsize ; i++ )
-      {
-        tail [ i ] = tail [ tail_index - 1 ] ;
-        sc_indexes [ i ] = sc_indexes [ tail_index - 1 ] ;
-      }
-
-      in.bunch ( tail ) ;
-      act.eval ( in , buffer , tail_index ) ;
-
-      p.save ( buffer , sc_indexes ) ;
-    }
-
   } ; // end of payload code
 
   // with the atomic distributing joblet indexes and the payload code
@@ -789,35 +720,32 @@ struct loader
   // get_t infers the start value from it. The scalar value is
   // not used until peeling is done, so it isn't initialized here.
 
-  void init ( value_v & cv , const crd_t & crd )
+  void init ( value_v & trg , const crd_t & crd )
   {
     p_src = & ( src [ crd ] ) ;
-    cv.bunch ( p_src , stride ) ;
+    trg.bunch ( p_src , stride ) ;
+    p_src += L * stride ;
   }
 
-  // Initialize the scalar value from the discrete coordinate.
-  // This needs to be done after peeling, the scalar value
-  // is not initialized before and not updated during peeling.
-
-  void init ( value_t & c , const crd_t & crd )
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
   {
     p_src = & ( src [ crd ] ) ;
-    c = * p_src ;
-  }
-
-  // increase modifies it's argument to contain the next value, or
-  // next vectorized value, respectively
-
-  void increase ( value_t & trg )
-  {
-    ++ p_src ;
-    trg = *p_src ;
+    trg.bunch ( p_src , stride , cap , true ) ;
   }
 
   void increase ( value_v & trg )
   {
-    p_src += L ;
     trg.bunch ( p_src , stride ) ;
+    p_src += L * stride ;
+  }
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool stuff = true )
+  {
+    trg.bunch ( p_src , stride , cap , stuff ) ;
   }
 } ;
 
@@ -837,28 +765,32 @@ struct unstrided_loader
   using base_t::p_src ;
   using base_t::base_t ;
 
-  void init ( value_v & cv , const crd_t & crd )
+  void init ( value_v & trg , const crd_t & crd )
   {
     p_src = & ( src [ crd ] ) ;
-    cv.bunch ( p_src ) ;
+    trg.bunch ( p_src ) ;
+    p_src += L ;
   }
 
-  void init ( value_t & c , const crd_t & crd )
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
   {
     p_src = & ( src [ crd ] ) ;
-    c = * p_src ;
-  }
-
-  void increase ( value_t & trg )
-  {
-    ++ p_src ;
-    trg = *p_src ;
+    trg.bunch ( p_src , 1 , cap , true ) ;
   }
 
   void increase ( value_v & trg )
   {
-    p_src += L ;
     trg.bunch ( p_src ) ;
+    p_src += L ;
+  }
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool stuff = true )
+  {
+    trg.bunch ( p_src , 1 , cap , stuff ) ;
   }
 } ;
 

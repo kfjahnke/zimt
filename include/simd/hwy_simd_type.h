@@ -40,20 +40,20 @@
 
     \brief SIMD type using highway
 
-    This is a new, tentative implementation of simd::gen_simd_type
+    This is a new, tentative implementation of gen_simd_type
     using highway (https://github.com/google/highway). highway
     provides code to work with hardware SIMD in a portable way,
     but it's still very close to the hardware, and does not
     provide support for vectors larger than the hardware's register
-    size. simd::gen_simd_type, on the other hand, is a fixed-size
+    size. gen_simd_type, on the other hand, is a fixed-size
     construct which may well exceed the hardware size. The 'goading'
-    implementation of simd::gen_simd_type uses small loops over a
+    implementation of gen_simd_type uses small loops over a
     POD C vector to implement the functionality - hoping that the
     compiler will 'get it' and autovectorize the code. This here
     implementation is also based on a POD C vector, but the
     functionality is implemented (wherever this seems feasible or
     sensible) by using highway SIMD code. In a way it's enforcing
-    by explicit code what 'ordinary' simd::gen_simd_type hopes to
+    by explicit code what 'ordinary' gen_simd_type hopes to
     get from the compiler via autovectorization, and since the
     compiler's 'insight' into the code is limited, the explicit
     approach tends to come out on top, producing SIMD binary more
@@ -67,7 +67,7 @@
     because I haven't yet tackled writing 'proper' SIMD code for
     the functionality in question. This state of affairs also reflects
     my implementation strategy: I started out with the 'ordinary'
-    simd::gen_simd_type and replaced more and more of the goading
+    gen_simd_type and replaced more and more of the goading
     code by 'proper' SIMD code.
 
     'Backing' the SIMD vectors like that is only one way of handling
@@ -105,6 +105,8 @@ HWY_BEFORE_NAMESPACE();
 namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE ;
+
+using namespace simd ;
 
 /// mask type for simd_t. This is a type which holds a set of masks
 /// stored in uint8_t, as the highway mask storing function provides.
@@ -539,7 +541,7 @@ bool none_of ( const mchunk_t<D,N> & arg )
 /// class template simd_t provides a fixed-size container type for
 /// small-ish sets of fundamentals which are stored in a POD C vector.
 /// This implementation uses highway to code the loops more efficiently.
-/// It mimicks Vc::SimdArray, just like simd::gen_simd_type does, and
+/// It mimicks Vc::SimdArray, just like gen_simd_type does, and
 /// The code is derived from zimt::simd_array, changing the workhorse
 /// code from simple loops to the use of highway functions.
 /// The resulting type, with it's 'container-typical' interface, slots
@@ -552,7 +554,7 @@ bool none_of ( const mchunk_t<D,N> & arg )
 /// aren't performance-critical or because there is no highway code to be
 /// had for the purpose. Some methods are (currently) exclusive to this
 /// class, but may be ported to other SIMD interface classes; apart from
-/// the original 'goading' class simd::gen_simd_type, there is also an
+/// the original 'goading' class gen_simd_type, there is also an
 /// implementation using std::simd in pv/zimt/std_simd_type.h
 /// The lane count for a simd_t in this body of code should be a
 /// power of two, and it should be at least as large as the hardware lane
@@ -722,10 +724,10 @@ void convert ( const simd_t < T , vsize > & src ,
   convert ( l_src , trg ) ;
 }
 
-// conversion to and from simd::gen_simd_type of equal T
+// conversion to and from gen_simd_type of equal T
 
 template < typename T , std::size_t vsize >
-void convert ( const simd::gen_simd_type < T , vsize > & src ,
+void convert ( const gen_simd_type < T , vsize > & src ,
                      simd_t < T , vsize > & trg )
 {
   src.store ( trg.data() ) ;
@@ -733,17 +735,17 @@ void convert ( const simd::gen_simd_type < T , vsize > & src ,
 
 template < typename T , std::size_t vsize >
 void convert ( const simd_t < T , vsize > & src ,
-                     simd::gen_simd_type < T , vsize > & trg )
+                     gen_simd_type < T , vsize > & trg )
 {
   trg.load ( src.data() ) ;
 }
 
-// conversion to and from simd::gen_simd_type of different T
+// conversion to and from gen_simd_type of different T
 // This uses goading, because we can't be sure that src_t can be
 // handled by highway.
 
 template < typename src_t , typename trg_t , std::size_t vsize >
-void convert ( const simd::gen_simd_type < src_t , vsize > & src ,
+void convert ( const gen_simd_type < src_t , vsize > & src ,
                      simd_t < trg_t , vsize > & trg )
 {
   auto p_trg = trg.data() ;
@@ -753,7 +755,7 @@ void convert ( const simd::gen_simd_type < src_t , vsize > & src ,
 
 template < typename src_t , typename trg_t , std::size_t vsize >
 void convert ( const simd_t < src_t , vsize > & src ,
-                simd::gen_simd_type < trg_t , vsize > & trg )
+                gen_simd_type < trg_t , vsize > & trg )
 {
   auto p_src = src.data() ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
@@ -762,14 +764,14 @@ void convert ( const simd_t < src_t , vsize > & src ,
 
 // now comes the template class simd_t which implements the core
 // of the functionality, the SIMD data type 'standing in' for
-// simd::gen_simd_type when USE_HWY is defined.
+// gen_simd_type when USE_HWY is defined.
 
 template < typename _value_type ,
            std::size_t _vsize >
 struct HWY_ALIGN simd_t
-: public simd::simd_tag < _value_type , _vsize , simd::HWY >
+: public simd_tag < _value_type , _vsize , HWY >
 {
-  typedef simd::simd_tag < _value_type , _vsize , simd::HWY > tag_t ;
+  typedef simd_tag < _value_type , _vsize , HWY > tag_t ;
   using typename tag_t::value_type ;
   using tag_t::vsize ;
   using tag_t::backend ;
@@ -786,7 +788,7 @@ struct HWY_ALIGN simd_t
   static const int vbytes = sizeof ( value_type ) * vsize ;
 
   // we make sure vsize is a power of two - simd_traits in vector.h
-  // does route non-power-of-two sizes to simd::gen_simd_type, but
+  // does route non-power-of-two sizes to gen_simd_type, but
   // user code may not use simd_traits. Best to be safe!
 
   static_assert ( ( vsize & ( vsize - 1 ) ) == 0 ,
@@ -1055,7 +1057,7 @@ public:
   }
 
   // for conversions between different simd_types and to and from
-  // simd::gen_simd_type, we 'break out' to free functions.
+  // gen_simd_type, we 'break out' to free functions.
 
   // conversion from one simd_t to another
 
@@ -1066,21 +1068,22 @@ public:
     return *this ;
   }
 
-  // assignment from a simd::gen_simd_type on the rhs
+  // assignment from a gen_simd_type on the rhs
 
   template < typename U >
-  simd_t & operator= ( const simd::gen_simd_type < U , vsize > & rhs )
+  simd_t & operator= ( const gen_simd_type < U , vsize > & rhs )
   {
     convert ( rhs , *this ) ;
     return *this ;
   }
 
-  // conversion to a simd::gen_simd_type
+  // conversion to a gen_simd_type
+  // TODO: is this ever called?
 
   template < typename U >
-  operator simd::gen_simd_type < U , vsize > ()
+  operator gen_simd_type < U , vsize > ()
   {
-    simd::gen_simd_type < U , vsize > result ;
+    gen_simd_type < U , vsize > result ;
     convert ( *this , result ) ;
     return result ;
   }
@@ -1092,7 +1095,7 @@ public:
   }
 
   template < typename U >
-  simd_t ( const simd::gen_simd_type < U , vsize > & rhs )
+  simd_t ( const gen_simd_type < U , vsize > & rhs )
   {
     *this = rhs ;
   }
