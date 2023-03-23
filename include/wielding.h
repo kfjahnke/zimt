@@ -304,13 +304,12 @@ struct get_crd
 
   void init ( value_v & trg ,
               const crd_t & crd ,
-              std::size_t cap )
+              std::size_t cap ) const
   {
     trg = crd ;
     for ( std::size_t e = 1 ; e < cap ; e++ )
       trg [ d ] [ e ] += T(e) ;
-    for ( std::size_t e = cap ; e < vsize ; e++ )
-      trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
+    trg.stuff ( cap ) ;
   }
 
   // increase modifies it's argument to contain the next value
@@ -327,15 +326,12 @@ struct get_crd
 
   void increase ( value_v & trg ,
                   std::size_t cap ,
-                  bool stuff = true )
+                  bool _stuff = true ) const
   {
     for ( std::size_t e = 0 ; e < cap ; e++ )
       trg [ d ] [ e ] += T(vsize) ;
-    if ( stuff )
-    {
-      for ( std::size_t e = cap ; e < vsize ; e++ )
-        trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
-    }
+    if ( _stuff )
+      trg.stuff ( cap ) ;
   }
 
 } ;
@@ -572,26 +568,24 @@ void process ( const act_t & _act ,
       auto nr_vectors = nr_values / vsize ;
       auto leftover = nr_values % vsize ;
 
-      // initialize the vectorized coordinate. This coordinate will
+      // initialize the discrete coordinate. This coordinate will
       // remain constant except for the component indexing the
       // processing axis, which will be counted up as we go along.
       // This makes the index calculations very efficient: for one
       // vectorized evaluation, we only need a single vectorized
       // addition where the vectorized coordinate is increased by
       // vsize. As we go along, we also initialize a scalar coordinate
-      // which will be used for 'leftovers'
+      // which will be used for 'leftovers'. Note how these coordinates
+      // are only used indirectly by passing them to the get_t and put_t
+      // objects, which yield input to, and dispose of output from, the
+      // 'act' functor.
 
       auto scrd = out_mci [ line ] ;
       long ofs = segment * segment_size ;
 
       // initially, we calculate discrete coordinates in long.
 
-      typedef zimt::xel_t < long , dimension > dcrd_t ;
-      typedef zimt::simdized_type < dcrd_t , vsize > md_dcrd_t ;
-      typedef typename md_dcrd_t::value_type dcomp_t ;
-
-      dcrd_t dcrd ;
-      md_dcrd_t md_dcrd ;
+      zimt::xel_t < long , dimension > dcrd ;
 
       for ( long d = 0 , ds = 0 ; d < dimension ; d++ )
       {
@@ -613,7 +607,8 @@ void process ( const act_t & _act ,
         if ( leftover )
         {
           // special case: there are no vectors, only leftover
-          // we need a special init which caps the result
+          // we need a special init which caps the result, and
+          // applies 'stuffing' (see below)
 
           c.init ( md_in , dcrd , leftover ) ;
           act.eval ( md_in , md_out , leftover ) ;
@@ -630,7 +625,7 @@ void process ( const act_t & _act ,
         c.init ( md_in , dcrd ) ;
 
         // first we perform a peeling run, processing data vectorized
-        // as long as there are enough data to fill md_out
+        // as long as there are enough data to fill an entire md_out
 
         for ( std::size_t a = 0 ; a < nr_vectors ; a++ )
         {
@@ -642,26 +637,30 @@ void process ( const act_t & _act ,
 
         // if there are any scalar values left over, we use 'capped'
         // operations to process them, 'leftover' serving as cap value.
-        // These operations only affect part of the vectorized data,
-        // but the capped get_t takes care of filling md_in with valid
-        // data (last value before the cap), so the act functor can
-        // safely process it. Capped get and put operations are less
-        // efficient than uncapped ones, falling back to 'goading' code,
+        // These operations only affect part of the vectorized data.
+        // If there are no full vectors at all (see further up), the
+        // lanes from the cap up are padded with the last value before
+        // the cap (this is affected by passing 'stuff' true) - but
+        // this is a rare exception. Most of the time at least one
+        // full vectorized datum was processed, so all lanes hold valid
+        // data, and 'stuffing' isn't needed. Capped operations are less
+        // efficient than uncapped code, falling back to 'goading',
         // but they occur only rarely if the lines along the processing
-        // axis are long. The capped processing is a recent design
+        // axis are long, and not at all if the segments all divide by
+        // the lane count. The capped processing is a recent design
         // decision in favour of cumulating source data until a full
         // vector's worth are available - this did not perform well,
         // probably due to increased register pressure and detrimental
         // memory access patterns. Here, the number of pipeline calls
         // (invocations of the 'act' functor') is slightly larger, but
-        // the invocation occurs rlating to just the memory which is
+        // the invocation occurs relating to just the memory which is
         // 'currently at hand' (in cache) and no buffer or scatter
         // indexes are needed. The buffering etc. could only pay off if
         // the pipeline were very long and expensive.
 
         if ( leftover )
         {
-          c.increase ( md_in , leftover ) ;
+          c.increase ( md_in , leftover , false ) ;
           act.eval ( md_in , md_out , leftover ) ;
           p.save ( md_out , leftover ) ;
         }

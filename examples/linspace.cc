@@ -85,10 +85,10 @@ struct linspace_t
   // function infers the start value from it. The scalar value will
   // not be used until peeling is done, so it isn't initialized here.
 
-  void init ( value_v & cv , const crd_t & crd )
+  void init ( value_v & trg , const crd_t & crd )
   {
-    cv = step * crd + start ;
-    cv [ d ] += value_ele_v::iota() * step [ d ] ;
+    trg = step * crd + start ;
+    trg [ d ] += value_ele_v::iota() * step [ d ] ;
   }
 
   // 'capped' variant. This is only needed if the current segment is
@@ -100,12 +100,12 @@ struct linspace_t
               std::size_t cap )
   {
     trg = step * crd + start ;
-    for ( std::size_t e = 1 ; e < cap ; e++ )
+    for ( std::size_t e = 0 ; e < cap ; e++ )
       trg [ d ] [ e ] += T ( e ) * step [ d ] ;
+    trg.stuff ( cap ) ;
   }
 
-  // increase modifies it's argument to contain the next value, or
-  // next vectorized value, respectively
+  // increase modifies it's argument to contain the next value
 
   void increase ( value_v & trg )
   {
@@ -119,15 +119,12 @@ struct linspace_t
 
   void increase ( value_v & trg ,
                   std::size_t cap ,
-                  bool stuff = true )
+                  bool _stuff = true )
   {
     for ( std::size_t e = 0 ; e < cap ; e++ )
       trg [ d ] [ e ] += ( step [ d ] * L ) ;
-    if ( stuff )
-    {
-      for ( std::size_t e = cap ; e < L ; e++ )
-        trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
-    }
+    if ( _stuff )
+      trg.stuff ( cap ) ;
   }
 } ;
 

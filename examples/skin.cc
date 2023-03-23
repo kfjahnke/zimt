@@ -176,6 +176,7 @@ struct rect3d_t
       trg [ 1 ] [ e ] += T ( e ) * uv [ d ] [ 1 ] ;
       trg [ 2 ] [ e ] += T ( e ) * uv [ d ] [ 2 ] ;
     }
+    trg.stuff ( cap ) ;
   }
 
   // increase modifies it's argument to contain the next value, or
@@ -195,7 +196,7 @@ struct rect3d_t
 
   void increase ( value_v & trg ,
                   std::size_t cap ,
-                  bool stuff = true )
+                  bool _stuff = true )
   {
     for ( std::size_t e = 0 ; e < cap ; e++ )
     {
@@ -203,14 +204,9 @@ struct rect3d_t
       trg [ 1 ] [ e ] += ( uv [ d ] [ 1 ] * L ) ;
       trg [ 2 ] [ e ] += ( uv [ d ] [ 2 ] * L ) ;
     }
-    if ( stuff )
+    if ( _stuff )
     {
-      for ( std::size_t e = cap ; e < L ; e++ )
-      {
-        trg [ 0 ] [ e ] = trg [ 0 ] [ cap - 1 ] ;
-        trg [ 1 ] [ e ] = trg [ 1 ] [ cap - 1 ] ;
-        trg [ 2 ] [ e ] = trg [ 2 ] [ cap - 1 ] ;
-      }
+      trg.stuff ( cap ) ;
     }
   }
 } ;

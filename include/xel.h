@@ -455,10 +455,21 @@ void bunch ( const xel_t < ET < value_type > , nch > * _src ,
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
+void stuff ( std::size_t cap )
+{
+  auto mask = ! ( value_type::IndexesFromZero() < int(cap) ) ;
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+  {
+    (*this)[ch] ( mask ) = (*this)[ch][cap-1] ;
+  }
+}
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
 void bunch ( const xel_t < ET < value_type > , nch > * src ,
              std::size_t stride ,
              std::size_t cap ,
-             bool stuff = false )
+             bool _stuff = false )
 {
   for ( std::size_t e = 0 ; e < cap ; e++ )
   {
@@ -467,15 +478,9 @@ void bunch ( const xel_t < ET < value_type > , nch > * src ,
       (*this)[ch][e] = src [ e * stride ] [ ch ] ;
     }
   }
-  if ( stuff )
+  if ( _stuff )
   {
-    for ( std::size_t e = cap ; e < value_type::vsize ; e++ )
-    {
-      for ( std::size_t ch = 0 ; ch < nch ; ch++ )
-      {
-        (*this)[ch][e] = src [ (cap-1) * stride ] [ ch ] ;
-      }
-    }
+    stuff ( cap ) ;
   }
 }
 

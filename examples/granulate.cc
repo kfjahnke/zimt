@@ -97,7 +97,7 @@ struct join_t
 
   static in_t convert ( const src_t & src )
   {
-    // for this example, we limit the scopy of input: the 'extra'
+    // for this example, we limit the scope of input: the 'extra'
     // dimension must be the first one, and it mustn't be strided.
 
     assert ( N == src.shape[0] ) ;

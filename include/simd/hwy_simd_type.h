@@ -2036,4 +2036,58 @@ namespace simd
   using hwy_simd_type = HWY_NAMESPACE::simd_t < T , N > ;
 } ;
 
+#ifndef HWY_SIMD_ALLOCATOR
+#define HWY_SIMD_ALLOCATOR
+
+namespace simd
+{
+  // for highway data, vspline needs an allocator, which is in turn
+  // required by vigra::MultiArray to allocate vector-aligned storage.
+  // Initially I coded the allocation using aligned_alloc, but this
+  // function is not available on msys2, so I'm now using highway
+  // functions.
+
+  template < typename T >
+  struct simd_allocator
+  : public std::allocator < T >
+  {
+    typedef std::allocator < T > base_t ;
+    using typename base_t::pointer ;
+    pointer allocate ( std::size_t n )
+    {
+      return (pointer) hwy::AllocateAlignedBytes
+        ( n * sizeof(T) , nullptr , nullptr ) ;
+    }
+    void deallocate ( T* p , std::size_t n )
+    {
+      hwy::FreeAlignedBytes ( p , nullptr , nullptr ) ;
+    }
+    using base_t::base_t ;
+  } ;
+
+  // // Im fixing this allocator via std::allocator_traits, but it
+  // // does not seem to be picked for all allocations - I had, e.g.
+  // // a std::vector of hwy_simd_type which contained unaligned
+  // // memory and caused a crash (only with c++11, 17 is okay)
+  // // - I worked around it in lux, but the problem is not solved.
+  //
+  // template < typename T , std::size_t N >
+  // struct allocator_traits < hwy_simd_type < T , N > >
+  // {
+  //   typedef simd_allocator < hwy_simd_type < T , N > > type ;
+  // } ;
+} ;
+
+namespace std
+{
+  template < typename T , std::size_t N >
+  struct allocator_traits < simd::hwy_simd_type < T , N > >
+  {
+    typedef simd::simd_allocator
+              < simd::hwy_simd_type < T , N > > allocator_type ;
+  } ;
+} ;
+
+#endif // HWY_SIMD_ALLOCATOR
+
 #endif // #define HWY_SIMD_TYPE_H

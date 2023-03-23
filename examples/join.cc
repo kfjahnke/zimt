@@ -122,8 +122,7 @@ struct join_t
       pickup [ ch ] = & ( src [ ch ] [ crd ] ) ;
       for ( std::size_t e = 0 ; e < cap ; e++ )
         trg [ ch ] [ e ] = pickup [ ch ] [ e * stride [ ch ] ] ;
-      for ( std::size_t e = cap ; e < L ; e++ )
-        trg [ ch ] [ e ] = trg [ ch ] [ ( cap - 1 ) * stride [ ch ] ] ;
+      trg.stuff ( cap ) ;
     }
   }
 
@@ -148,18 +147,15 @@ struct join_t
 
   void increase ( value_v & trg ,
                   std::size_t cap ,
-                  bool stuff = true )
+                  bool _stuff = true )
   {
     for ( int ch = 0 ; ch < N ; ch++ )
     {
       pickup [ ch ] += L * stride [ ch ] ;
       for ( std::size_t e = 0 ; e < cap ; e++ )
         trg [ ch ] [ e ] = pickup [ ch ] [ e * stride [ ch ] ] ;
-      if ( stuff )
-      {
-        for ( std::size_t e = cap ; e < L ; e++ )
-          trg [ ch ] [ e ] = trg [ ch ] [ ( cap - 1 ) * stride [ ch ] ] ;
-      }
+      if ( _stuff )
+        trg.stuff ( cap ) ;
     }
   }
 } ;
