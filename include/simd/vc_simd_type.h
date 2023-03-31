@@ -509,12 +509,23 @@ struct vc_simd_type
 
   BROADCAST_STD_FUNC(sin)
   BROADCAST_STD_FUNC(cos)
-  BROADCAST_STD_FUNC(tan)
+  // BROADCAST_STD_FUNC(tan)
   BROADCAST_STD_FUNC(asin)
   BROADCAST_STD_FUNC(acos)
   BROADCAST_STD_FUNC(atan)
 
   #undef BROADCAST_STD_FUNC
+
+  // Vc doesn't offer tan(), but it has sincos.
+
+  friend vc_simd_type tan ( const vc_simd_type & arg )
+  {
+    base_t sin , cos ;
+    Vc::sincos ( arg.to_base() , &sin , &cos ) ;
+    auto result = sin / cos ;
+    result ( cos == 0 ) = M_PI_2 ;
+    return result ;
+  }
 
   #define BROADCAST_STD_FUNC2(FUNC) \
     friend vc_simd_type FUNC ( const vc_simd_type & arg1 , \

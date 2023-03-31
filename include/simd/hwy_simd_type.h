@@ -644,55 +644,79 @@ void convert ( const simd_t < SRC , vsize > & src , \
   } \
 }
 
-// specific overloads for conversions between two 64 bit types.
-// with ulong, long and double, there are six possible conversions.
+// I've 'scraped' the highway quick reference for the possible
+// type combinations to be used with PromoteTo, DemoteTo and
+// ConvertTo. I ignore half floats for now. Here's the 'scrape':
 
-CV_CONVERT(double,long)
-CV_CONVERT(long,double) // using ConvertTo fails for me...
-CV_CONVERT(double,unsigned long)
-CV_CONVERT(unsigned long,double) // TODO: needs testing
-CV_CONVERT(long,unsigned long) // TODO: needs testing
-CV_CONVERT(unsigned long,long) // TODO: needs testing
+// PromoteTo: (bf16,f32) (f16,f32) (f32,f64) (i16,i32) (i32,i64)
+//            (i8,i16) (i8,i32) (u16,i32) (u16,u32) (u32,u64)
+//            (u8,i16), (u8,i32) (u8,u16) (u8,u32)
+//
+// DemoteTo: (f32,bf16) (f32,f16) (f64,f32) (f64,i32) (i16,i8)
+//           (i16,u8) (i32,i16) (i32,i8) (i32,u16) (i32,u8)
+//           (i64,i16) (i64,i32) (i64,i8) (i64,u16) (i64,u32)
+//           (i64,u8) (u16,i8) (u16,u8) (u32,i16) (u32,i8)
+//           (u32,u16) (u32,u8) (u64,i16) (u64,i32) (u64,i8)
+//           (u64,u16) (u64,u32) (u64,u8)
+//
+// ConvertTo: (f32,i32) (f64,i64) (i32,f32) (i64,f64)
 
-// specific conversion from double source to float target
+// Converted to my macros, here are the specialized functions:
 
-CV_DEMOTE(double,float)
+// PromoteTo
+
+// PROMOTE(bfloat16,float)
+// PROMOTE(float16,float)
 CV_PROMOTE(float,double)
-
-// specific conversion from int source to long target
-
-CV_PROMOTE(int,long)
-CV_DEMOTE(long,int) // surprise! there is no DemoteTo for this one
-
-// specific conversion from unsigned int source to unsigned long target
-
-CV_PROMOTE(unsigned int,unsigned long)
-
-// conversion between float and int
-
-CV_CONVERT(float,int)
-CV_CONVERT(int,float)
-
-// conversions from int to smaller integral types
-
-CV_DEMOTE(int,short)
-CV_DEMOTE(int,unsigned short)
-CV_DEMOTE(int,signed char)
-CV_DEMOTE(int,unsigned char)
-CV_DEMOTE(short,signed char)
-CV_DEMOTE(short,unsigned char)
-
 CV_PROMOTE(short,int)
+CV_PROMOTE(int,long)
+CV_PROMOTE(signed char,short)
 CV_PROMOTE(signed char,int)
 CV_PROMOTE(unsigned short,int)
-CV_PROMOTE(unsigned char,int)
-CV_PROMOTE(unsigned char,short)
-
-CV_PROMOTE(short,unsigned int)
-CV_PROMOTE(signed char,unsigned int)
 CV_PROMOTE(unsigned short,unsigned int)
-CV_PROMOTE(unsigned char,unsigned int)
+CV_PROMOTE(unsigned int,unsigned long)
+CV_PROMOTE(unsigned char,short)
+CV_PROMOTE(unsigned char,int)
 CV_PROMOTE(unsigned char,unsigned short)
+CV_PROMOTE(unsigned char,unsigned int)
+
+// DemoteTo
+
+// DEMOTE(float,bfloat16)
+// DEMOTE(float,float16)
+CV_DEMOTE(double,float)
+CV_DEMOTE(double,int)
+CV_DEMOTE(short,signed char)
+CV_DEMOTE(short,unsigned char)
+CV_DEMOTE(int,short)
+CV_DEMOTE(int,signed char)
+CV_DEMOTE(int,unsigned short)
+CV_DEMOTE(int,unsigned char)
+CV_DEMOTE(long,short)
+CV_DEMOTE(long,int)
+CV_DEMOTE(long,signed char)
+CV_DEMOTE(long,unsigned short)
+CV_DEMOTE(long,unsigned int)
+CV_DEMOTE(long,unsigned char)
+CV_DEMOTE(unsigned short,signed char)
+CV_DEMOTE(unsigned short,unsigned char)
+CV_DEMOTE(unsigned int,short)
+CV_DEMOTE(unsigned int,signed char)
+CV_DEMOTE(unsigned int,unsigned short)
+CV_DEMOTE(unsigned int,unsigned char)
+CV_DEMOTE(unsigned long,short)
+CV_DEMOTE(unsigned long,int)
+CV_DEMOTE(unsigned long,signed char)
+CV_DEMOTE(unsigned long,unsigned short)
+CV_DEMOTE(unsigned long,unsigned int)
+CV_DEMOTE(unsigned long,unsigned char)
+
+// ConvertTo
+
+CV_CONVERT(float,int)
+CV_CONVERT(double,long)
+CV_CONVERT(int,float)
+CV_CONVERT(long,double)
 
 #undef CV_PROMOTE
 #undef CV_DEMOTE
@@ -1212,40 +1236,9 @@ public:
     return index_type::iota() ;
   }
 
-  // variant which starts from a different starting point and optionally
-  // uses steps other than one. This is handy to generate gather/scatter
-  // indexes to access strided data. We need a bit of finessing because
-  // we can't multiply some integer data with hwy...
-
-  // int8 or int64: use a loop with additions.
-
-  static const index_type _IndexesFrom ( const std::size_t & start ,
-                                         const std::size_t & step ,
-                                         std::true_type )
-  {
-    typedef typename index_type::value_type v_t ;
-    v_t ix = v_t ( start ) ;
-    index_type indexes ;
-    v_t * target = indexes.data() ;
-
-    for ( std::size_t i = 0 ; i < vsize ; ++i )
-    {
-      indexes[i] = ix ;
-      ix += v_t ( step ) ;
-    }
-
-    return indexes ;
-  }
-
-  // int8 or int64, we can multiply the result of iota
-
-  static const index_type _IndexesFrom ( const std::size_t & start ,
-                                         const std::size_t & step ,
-                                         std::false_type )
-  {
-    return ( index_type::iota() * step ) + start ;
-  }
-
+  // variant which starts from a different starting point and
+  // optionally uses steps other than one. This is handy to
+  // generate gather/scatter indexes to access strided data.
   // to avoid trouble, we look at the maximum index we can produce,
   // and add an assertion to make sure the indexes we expect will
   // fit the range.
@@ -1255,16 +1248,11 @@ public:
   {
     typedef typename index_type::value_type IT ;
     static const IT ceiling = std::numeric_limits < IT > :: max() ;
-    assert ( start + ( vsize - 1 ) * step <= std::size_t ( ceiling ) ) ;
 
-    static const bool is_int8 = std::is_same < IT , int8_t > :: value ;
-    static const bool is_int64 = std::is_same < IT , int64_t > :: value ;
-    static const bool is_uint8 = std::is_same < IT , uint8_t > :: value ;
-    static const bool is_uint64 = std::is_same < IT , uint64_t > :: value ;
-    static const bool no_multiply = is_int8 | is_int64 | is_uint8 | is_uint64 ;
+    assert (    start + ( vsize - 1 ) * step
+             <= std::size_t ( ceiling ) ) ;
 
-    typedef typename std::integral_constant < bool , no_multiply > :: type nm_t ;
-    return _IndexesFrom ( start , step , nm_t() ) ;
+    return ( index_type::iota() * IT(step) ) + IT(start) ;
   }
 
   // functions Zero and One produce simd_t objects filled with
