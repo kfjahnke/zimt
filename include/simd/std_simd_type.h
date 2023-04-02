@@ -344,18 +344,32 @@ struct std_simd_type
   // 'step' apart - in units of T. Might also be done with goading, the
   // loop should autovectorize.
 
-  void rgather ( const value_type * const p_src ,
+  void rgather ( const value_type * const & p_src ,
                  const std::size_t & step )
   {
-    auto indexes = IndexesFrom ( 0 , step ) ;
-    gather ( p_src , indexes ) ;
+    if ( step == 1 )
+    {
+      load ( p_src ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      gather ( p_src , indexes ) ;
+    }
   }
 
-  void rscatter ( value_type * p_trg ,
+  void rscatter ( value_type * const & p_trg ,
                   const std::size_t & step ) const
   {
-    auto indexes = IndexesFrom ( 0 , step ) ;
-    scatter ( p_trg , indexes ) ;
+    if ( step == 1 )
+    {
+      store ( p_trg ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      scatter ( p_trg , indexes ) ;
+    }
   }
 
   // apply functions from namespace std to each element in a vector,

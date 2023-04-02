@@ -361,19 +361,33 @@ void scatter ( value_type * const p_trg ,
 // 'step' apart - in units of T. Might also be done with goading, the
 // loop should autovectorize.
 
-void rgather ( const value_type * const p_src ,
-                const int & step )
-{
-  index_type indexes ( IndexesFrom ( 0 , step ) ) ;
-  gather ( p_src , indexes ) ;
-}
+  void rgather ( const value_type * const & p_src ,
+                 const std::size_t & step )
+  {
+    if ( step == 1 )
+    {
+      load ( p_src ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      gather ( p_src , indexes ) ;
+    }
+  }
 
-void rscatter ( value_type * p_trg ,
-                const int & step ) const
-{
-  index_type indexes ( IndexesFrom ( 0 , step ) ) ;
-  scatter ( p_trg , indexes ) ;
-}
+  void rscatter ( value_type * const & p_trg ,
+                  const std::size_t & step ) const
+  {
+    if ( step == 1 )
+    {
+      store ( p_trg ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      scatter ( p_trg , indexes ) ;
+    }
+  }
 
 // use 'indexes' to perform a gather from the data held in '(*this)'
 // and return the result of the gather operation.

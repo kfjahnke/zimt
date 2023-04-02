@@ -312,13 +312,6 @@ struct vc_simd_type
     return ( ( IndexesFromZero() * step ) + start ) ;
   }
 
-  // overload staring from zero, but with steps != 1
-
-  static const index_type IndexesFrom ( const index_ele_type & step )
-  {
-    return ( ( IndexesFromZero() * step ) ) ;
-  }
-
   // echo the vector to a std::ostream, read it from an istream
 
   friend std::ostream & operator<< ( std::ostream & osr ,
@@ -389,16 +382,32 @@ struct vc_simd_type
   // 'step' apart - in units of T. Might also be done with goading, the
   // loop should autovectorize.
 
-  void rgather ( const value_type * const p_src ,
-                 const index_ele_type & step )
+  void rgather ( const value_type * const & p_src ,
+                 const std::size_t & step )
   {
-    gather ( p_src , IndexesFrom ( step ) ) ;
+    if ( step == 1 )
+    {
+      load ( p_src ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      gather ( p_src , indexes ) ;
+    }
   }
 
-  void rscatter ( value_type * p_trg ,
-                  const index_ele_type & step ) const
+  void rscatter ( value_type * const & p_trg ,
+                  const std::size_t & step ) const
   {
-    scatter ( p_trg , IndexesFrom ( step ) ) ;
+    if ( step == 1 )
+    {
+      store ( p_trg ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      scatter ( p_trg , indexes ) ;
+    }
   }
 
   // broadcasting functions processing single value_type

@@ -1461,15 +1461,29 @@ public:
   void rgather ( const value_type * const & p_src ,
                  const std::size_t & step )
   {
-    auto indexes = IndexesFrom ( 0 , step ) ;
-    gather ( p_src , indexes ) ;
+    if ( step == 1 )
+    {
+      load ( p_src ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      gather ( p_src , indexes ) ;
+    }
   }
 
   void rscatter ( value_type * const & p_trg ,
                   const std::size_t & step ) const
   {
-    auto indexes = IndexesFrom ( 0 , step ) ;
-    scatter ( p_trg , indexes ) ;
+    if ( step == 1 )
+    {
+      store ( p_trg ) ;
+    }
+    else
+    {
+      auto indexes = IndexesFrom ( 0 , step ) ;
+      scatter ( p_trg , indexes ) ;
+    }
   }
 
 //   // use 'indexes' to perform a gather from the data held in 'inner'

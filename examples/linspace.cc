@@ -43,91 +43,6 @@
 
 #include "../zimt.h"
 
-// linspace_t is the 'get_t' we'll use for this example. This functor
-// generates the input values to the functor - and for this example,
-// where the 'act' functor does nothing but route it's input to it's
-// output, it actually does all the 'work'.
-// This example may seem trivial, but it should hint at the flexibility
-// of zimt::process and how to use it. And linspace_t can serve as
-// a template for more elaborate 'get_t' classes.
-
-template < typename T ,     // elementary type
-           std::size_t N ,  // number of channels
-           std::size_t L >  // lane count
-struct linspace_t
-{
-  typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , N > crd_t ;
-  typedef zimt::simdized_type < crd_t , L > crd_v ;
-  typedef typename crd_v::value_type crd_ele_v ;
-
-  const std::size_t d ;
-  const value_t start ;
-  const value_t step ;
-
-  // linspace_t's c'tor receives start, step and axis. Note how
-  // start and step are N-dimensional; each component gives the
-  // intended value for the corresponding axis.
-
-  linspace_t ( const value_t & _start ,
-               const value_t & _step ,
-               const std::size_t & _d )
-  : start ( _start ) ,
-    step ( _step ) ,
-    d ( _d )
-  { }
-
-  // init is used to initialize the vectorized value to the value
-  // it should hold at the beginning of the peeling run. The discrete
-  // coordinate 'crd' gives the location of the first value, and this
-  // function infers the start value from it. The scalar value will
-  // not be used until peeling is done, so it isn't initialized here.
-
-  void init ( value_v & trg , const crd_t & crd )
-  {
-    trg = step * crd + start ;
-    trg [ d ] += value_ele_v::iota() * step [ d ] ;
-  }
-
-  // 'capped' variant. This is only needed if the current segment is
-  // so short that no vectors can be formed at all. We fill up the
-  // target value with the last valid datum.
-
-  void init ( value_v & trg ,
-              const crd_t & crd ,
-              std::size_t cap )
-  {
-    trg = step * crd + start ;
-    for ( std::size_t e = 0 ; e < cap ; e++ )
-      trg [ d ] [ e ] += T ( e ) * step [ d ] ;
-    trg.stuff ( cap ) ;
-  }
-
-  // increase modifies it's argument to contain the next value
-
-  void increase ( value_v & trg )
-  {
-    trg [ d ] += ( step [ d ] * L ) ;
-  }
-
-  // 'capped' variant. This is called after all vectors in the current
-  // segment have been processed, so the lanes in trg beyond the cap
-  // should hold valid data, and 'stuffing' them with the last datum
-  // before the cap is optional.
-
-  void increase ( value_v & trg ,
-                  std::size_t cap ,
-                  bool _stuff = true )
-  {
-    for ( std::size_t e = 0 ; e < cap ; e++ )
-      trg [ d ] [ e ] += ( step [ d ] * L ) ;
-    if ( _stuff )
-      trg.stuff ( cap ) ;
-  }
-} ;
-
 int main ( int argc , char * argv[] )
 {
   // let's start with a simple 1D linspace.
@@ -136,7 +51,7 @@ int main ( int argc , char * argv[] )
     typedef zimt::xel_t < float , 1 > delta_t ;
     delta_t start { .5 } ;
     delta_t step { .1 } ;
-    linspace_t < float , 1 , 4 > l ( start , step , 0 ) ;
+    zimt::linspace_t < float , 1 , 4 > l ( start , step , 0 ) ;
     typedef zimt::pass_through < float , 1 , 4 > act_t ;
     zimt::array_t < 1 , delta_t > a ( 7 ) ;
     zimt::norm_put_t < act_t , 1 > p ( a , 0 ) ;
@@ -156,7 +71,7 @@ int main ( int argc , char * argv[] )
     typedef zimt::xel_t < float , 2 > delta_t ;
     delta_t start { .5 , 0.7 } ;
     delta_t step { .1 , .2 } ;
-    linspace_t < float , 2 , 4 > l ( start , step , 0 ) ;
+    zimt::linspace_t < float , 2 , 4 > l ( start , step , 0 ) ;
     typedef zimt::pass_through < float , 2 , 4 > act_t ;
     zimt::array_t < 2 , delta_t > a ( { 7 , 5 } ) ;
     zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
@@ -180,7 +95,7 @@ int main ( int argc , char * argv[] )
     typedef zimt::xel_t < float , 3 > delta_t ;
     delta_t start { .5 , 0.7 , -.9 } ;
     delta_t step { .1 , .2 , -.4 } ;
-    linspace_t < float , 3 , 4 > l ( start , step , 0 ) ;
+    zimt::linspace_t < float , 3 , 4 > l ( start , step , 0 ) ;
     typedef zimt::pass_through < float , 3 , 4 > act_t ;
     zimt::array_t < 3 , delta_t > a ( { 2 , 3 , 4 } ) ;
     zimt::norm_put_t < act_t , 3 > p ( a , 0 ) ;

@@ -115,6 +115,9 @@
 // This example may seem trivial, but it should hint at the flexibility
 // of zimt::process and how to use it. And rect3d_t can serve as
 // a template for more elaborate 'get_t' classes.
+// TODO: this might be abstracted to arbitrary channel counts and
+// put into get_t.h - but maybe it's too specific to be part of the
+// library.
 
 template < typename T ,     // elementary type
            std::size_t L >  // lane count

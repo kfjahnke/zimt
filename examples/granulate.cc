@@ -72,6 +72,8 @@
 // an array of T with a first 'short' dimension for the N channels
 // as an array of xel_t. The data don't have to be modified, we can
 // just create an 'alternative view'.
+// TODO: this class could be fleshed out (remove the constraints)
+// and put into get_t.h
 
 template < typename T ,     // fundamental type
            std::size_t N ,  // channel count
