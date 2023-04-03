@@ -668,6 +668,39 @@ struct mcs_t
   }
 } ;
 
+// get_vector_buffer produces an array which can be used to store
+// xel_t of simdized data. The 'slots' for the content of the
+// data packets are in dimension zero.
+
+template < std::size_t D ,
+           typename T ,
+           std::size_t N >
+array_t < D + 1 , T > get_vector_buffer
+  ( view_t < D , xel_t < T , N > > v ,
+    std::size_t d ,
+    std::size_t L )
+{
+  xel_t < std::size_t , D + 1 > shape ;
+  std::size_t hot_extent = v.shape [ d ] ;
+  shape [ 0 ] = L * N ;
+
+  for ( std::size_t i = 0 ; i < D ; i++ )
+  {
+    if ( i == d )
+    {
+      auto nvectors = hot_extent / L ;
+      if ( hot_extent % L )
+        nvectors++ ;
+      shape [ i + 1 ] = nvectors ;
+    }
+    else
+    {
+      shape [ i + 1 ] = v.shape [ i ] ;
+    }
+  }
+  return array_t < D + 1 , T > ( shape ) ;
+}
+
 } ;
 
 #define ZIMT_ARRAY_H

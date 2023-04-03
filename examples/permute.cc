@@ -128,23 +128,25 @@ void test ( std::size_t a , std::size_t x , std::size_t y , std::size_t z )
 
   zimt::process < act_t , 3 > ( act_t() , trg , get_abc , p , bill ) ;
 
-#ifndef EXCLUDE
-  std::size_t L = 16 ;
+  // a little flourish (TODO: factor out): repeat the operation,
+  // but store to a vbuffer object, then retrieve from same.
 
-  if ( a == 0 )
-    x = x / L + ( ( x % L ) ? 1 : 0 ) ;
-  if ( a == 1 )
-    y = y / L + ( ( y % L ) ? 1 : 0 ) ;
-  if ( a == 2 )
-    z = z / L + ( ( z % L ) ? 1 : 0 ) ;
+  // get the vbuffer array
 
-  zimt::array_t < 3 , value_v > av  ( { x , y , z } ) ;
-  zimt::vstorer < int , 3 , 3 , 16 > vs ( av , a ) ;
+  auto vbuffer = zimt::get_vector_buffer ( trg , a , 16 ) ;
+
+  // set up and use a vstorer object as put_t for zimt::process
+
+  zimt::vstorer < int , 3 , 3 , 16 > vs ( vbuffer , a ) ;
   zimt::process < act_t , 3 > ( act_t() , trg , get_abc , vs , bill ) ;
-  zimt::vloader < int , 3 , 3 , 16 > vl ( av , a ) ;
+
+  // the data are now in the vbuffer array. now set up and use
+  // a vloader object as get_t for zimt::process - as put_t we
+  // use a norm_put_t storing to 'trg2'
+
+  zimt::vloader < int , 3 , 3 , 16 > vl ( vbuffer , a ) ;
   zimt::norm_put_t < act_t , 3 > pp ( trg2 , a ) ;
   zimt::process < act_t , 3 > ( act_t() , trg2 , vl , pp , bill ) ;
-#endif
 
   // let's look at the result
 
@@ -153,9 +155,7 @@ void test ( std::size_t a , std::size_t x , std::size_t y , std::size_t z )
   {
     auto crd = it() ;
     assert ( trg [ crd ] == ( crd + 1 ) ) ;
-#ifndef EXCLUDE
     assert ( trg2 [ crd ] == ( crd + 1 ) ) ;
-#endif
   }
 }
 

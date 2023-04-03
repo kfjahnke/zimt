@@ -47,9 +47,9 @@
     look at it's input as an nD entity and not be aware of the fact
     that only one of the input's components is 'moving'.
     This header provides a set of classes which are meant to fit into
-    this slot. They follow a specific pattern which results from the
-    logic in zimt_process, namely the two init and two increase
-    overloads.
+    the slot of generating input to the 'act' functor. They follow a
+    specific pattern which results from the logic in zimt_process,
+    namely the two init and two increase overloads.
 */
 
 #ifndef ZIMT_GET_T_H
@@ -305,8 +305,8 @@ struct unstrided_loader
   }
 } ;
 
-// vloader loads vectorized data from a zimt::view_t of vectorized
-// values. This is a good option for storing intermediate results,
+// vloader loads vectorized data from a zimt::view_t of fundamental
+// values (T). This is a good option for storing intermediate results,
 // because it can use efficient SIMD load operations rather than
 // having to deinterleave the data from memory holding xel of T.
 // To store data so they can be loaded from vectorized storage,
@@ -314,7 +314,11 @@ struct unstrided_loader
 // The design is so that vloader can operate within the logic used
 // by zimt::process: the discrete coordinate taken by 'init' refers
 // to 'where the datum would be in an array of value_t'. The array
-// of value_v which the data are stored to has to be suitably sized:
+// of T which the data are stored to has to be suitably sized;
+// this is best dne with the factory function zimt::get_vector_buffer.
+// The array produces with this factory function has an added dimension
+// zero of extent N*L, precisely of the length needed to store one
+// simdized datum (of type 'value_v')
 // along the 'hot' axis, the size should be so that, multiplied with
 // the lane count, it will be greater or equal the 'notional' size
 // of the unvectorized array - for efficiency reasons, class vstorer
@@ -324,34 +328,54 @@ struct unstrided_loader
 
 template < typename T ,
            std::size_t N ,
-           std::size_t M = N ,
+           std::size_t D ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
 struct vloader
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , M > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
+
+  // type of coordinate passed by the caller (zimt::process)
+
+  typedef zimt::xel_t < long , D > crd_t ;
+
+  // axis of the storage array which corresponds to the 'hot' axis
+  // of the 'notional' array (so, d + 1 ), we'll refer to this axis
+  // as the 'hot' axis of the storage array as well.
 
   const std::size_t d ;
-  const zimt::view_t < M , value_v > src ;
-  const value_v * p_src ;
+
+  // the array serving as storage space for the vectorized data,
+  // with the additional dimension zero with extent N * L
+
+  const zimt::view_t < D + 1 , T > & src ;
+
+  // stride along the 'hot' axis of the storage array
+
   const std::size_t stride ;
-  const std::size_t shift ;
+
+  // current source of the load operation
+
+  const T * p_src ;
 
   // get_t's c'tor receives the zimt::view providing data and the
   // 'hot' axis. It extracts the strides from the source view.
 
-  vloader ( const zimt::view_t < M , value_v > & _src ,
-            const std::size_t & _d = 0 )
-  : src ( _src ) , d ( _d ) , stride ( _src.strides [ _d ] ) ,
-    shift ( std::log2 ( L ) )
-  {
-    assert ( ( 1 << shift ) == L ) ;
-  }
+  // vloader's c'tor receives the source array and the processing
+  // axis. Here, the sourcearray is an array of T with an added
+  // dimension zero with extent N * L. The template argument 'D'
+  // is the dimensionality of the 'notional' array. The argument _d
+  // refers to the 'hot' axis of the 'notional' array
 
-  // init is used to initialize the 'target'' value to the value
+  vloader ( zimt::view_t < D + 1 , T > & _src ,
+            const std::size_t & _d = 0 )
+  : src ( _src ) ,
+    d ( _d + 1 ) ,
+    stride ( _src.strides [ _d + 1 ] )
+  { }
+
+
+  // init is used to initialize the 'target' value to the value
   // it should hold at the beginning of the run. The discrete
   // coordinate 'crd' gives the location of the first value, and the
   // 'loader' fills it's target (the intended input for the 'act'
@@ -360,12 +384,35 @@ struct vloader
   // to data in the source view and it varies with the progess along
   // the current 'run'.
 
-  void init ( value_v & trg , const crd_t & crd , std::size_t cap = 0 )
+  void init ( value_v & v , const crd_t & _crd , std::size_t cap = 0 )
   {
-    auto crdv = crd ;
-    crdv [ d ] <<= shift ;
-    p_src = & ( src [ crdv ] ) ;
-    trg = *p_src ;
+    // calculate the D+1-dimensional coordinate into 'src'.
+    // This coordinate's first component is zero.
+
+    xel_t < std::size_t , D + 1 > crd ;
+    crd [ 0 ] = 0 ;
+
+    for ( std::size_t i = 0 ; i < D ; i++ )
+    {
+      // the coordinate's component along the 'hot' axis is
+      // divided by the lane count, the other components remain
+      // the same, but all components are 'one axis further up'.
+
+      if ( i == ( d - 1 ) )
+      {
+        crd [ i + 1 ] = _crd [ i ] / L ;
+      }
+      else
+      {
+        crd [ i + 1 ] = _crd [ i ] ;
+      }
+    }
+
+    // with the coordinate into 'src' we can figure out the
+    // initial source address
+
+    p_src = & ( src [ crd ] ) ;
+    v.load ( p_src ) ;
     p_src += stride ;
   }
 
@@ -373,10 +420,10 @@ struct vloader
   // and increments the pointer to the data in the view to the next
   // position.
 
-  void increase ( value_v & trg , std::size_t cap = 0 ,
+  void increase ( value_v & v , std::size_t cap = 0 ,
                   bool stuff = false )
   {
-    trg = *p_src ;
+    v.load ( p_src ) ;
     p_src += stride ;
   }
 } ;

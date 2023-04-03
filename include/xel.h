@@ -484,6 +484,38 @@ void bunch ( const xel_t < ET < value_type > , nch > * src ,
   }
 }
 
+// The next to member functions are for stashing and unstashing
+// simdized data. This is used e.g. by class vstorer and vloader
+// (see get_t.h and put_t.h)
+
+// load operation from contiguous memory of the elementary
+// type of a simdized datum.
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void load ( const ET < value_type > * src )
+{
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+  {
+    (*this)[ch].load ( src ) ;
+    src += value_type::size() ;
+  }
+}
+
+// store operation of a simdized datum to contiguous memory
+// of the elementary type
+
+template < typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void store ( ET < value_type > * trg ) const
+{
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+  {
+    (*this)[ch].store ( trg ) ;
+    trg += value_type::size() ;
+  }
+}
+
 } ; // end of struct xel_t
 
 } ; // end of namespace zimt

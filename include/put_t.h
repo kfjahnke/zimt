@@ -124,22 +124,13 @@ struct storer
   }
 } ;
 
-// vstorer stores vectorized data to a zimt::view_t of vectorized
-// values. This is a good option for storing intermediate results,
+// vstorer stores vectorized data to a zimt::view_t of fundamental
+// values (T). This is a good option for storing intermediate results,
 // because it can use efficient SIMD store operations rather than
 // having to interleave the data to store them as xel of T. To
 // retrieve the data from such a vectorized storage array, use
-// class vloader (see get_t.h).
-// The design is so that vstorer can operate within the logic used
-// by zimt::process: the discrete coordinate taken by 'init' refers
-// to 'where the datum would be in an array of value_t'. The array
-// of value_v which the data are stored to has to be suitably sized:
-// along the 'hot' axis, the size should be so that, multiplied with
-// the lane count, it will be greater or equal the 'notional' size
-// of the unvectorized array - for efficiency reasons, class vstorer
-// will only store 'full' simdized values, as they are produced by
-// the 'act' functor. Along the other axes, the size must be the same
-// as the 'notional' size of the equivalent unvectorized array.
+// class vloader (see get_t.h). The target view should refer to an
+// array obtained via zimt::get_vector_buffer.
 
 template < typename T ,
            std::size_t N ,
@@ -149,35 +140,74 @@ struct vstorer
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
+
+  // type of coordinate passed by the caller (zimt::process)
+
   typedef zimt::xel_t < long , D > crd_t ;
 
-  const std::size_t & d ;
-  zimt::view_t < D , value_v > & trg ;
+  // axis of the storage array which corresponds to the 'hot' axis
+  // of the 'notional' array (so, d + 1 ), we'll refer to this axis
+  // as the 'hot' axis of the storage array as well.
+
+  const std::size_t d ;
+
+  // the array serving as storage space for the vectorized data,
+  // with the additional dimension zero with extent N * L
+
+  zimt::view_t < D + 1 , T > & trg ;
+
+  // stride along the 'hot' axis of the storage array
+
   const std::size_t stride ;
-  const std::size_t shift ;
 
-  value_v * p_trg ;
+  // current target of the store operation
 
-  // get_t's c'tor receives the target array and the processing
-  // axis. Similar classes might use other c'tor arguments. This
-  // get_t holds no variable state apart from p_trg.
+  T * p_trg ;
 
-  vstorer ( zimt::view_t < D , value_v > & _trg ,
+  // vstorer's c'tor receives the target array and the processing
+  // axis. Here, the target array is an array of T with an added
+  // dimension zero with extent N * L. The template argument 'D'
+  // is the dimensionality of the 'notional' array. The argument _d
+  // refers to the 'hot' axis of the 'notional' array
+
+  vstorer ( zimt::view_t < D + 1 , T > & _trg ,
             const std::size_t & _d = 0 )
-  : trg ( _trg ) , d ( _d ) , stride ( _trg.strides [ _d ] ) ,
-    shift ( std::log2 ( L ) )
-  {
-    assert ( ( 1 << shift ) == L ) ;
-  }
+  : trg ( _trg ) ,
+    d ( _d + 1 ) ,
+    stride ( _trg.strides [ _d + 1 ] )
+  { }
 
-  // init is used to initialize the target pointer
+  // init is used to initialize the target pointer. We receive a
+  // coordinate referring to a D-dimensional array of xel<T,N>
 
-  void init ( const crd_t & crd )
+  void init ( const crd_t & _crd )
   {
-    auto crdv = crd ;
-    crdv [ d ] <<= shift ;
-    p_trg = & ( trg [ crdv ] ) ;
+    // calculate the D+1-dimensional coordinate into 'trg'.
+    // This coordinate's first component is zero.
+
+    xel_t < std::size_t , D + 1 > crd ;
+    crd [ 0 ] = 0 ;
+
+    for ( std::size_t i = 0 ; i < D ; i++ )
+    {
+      // the coordinate's component along the 'hot' axis is
+      // divided by the lane count, the other components remain
+      // the same, but all components are 'one axis further up'.
+
+      if ( i == ( d - 1 ) )
+      {
+        crd [ i + 1 ] = _crd [ i ] / L ;
+      }
+      else
+      {
+        crd [ i + 1 ] = _crd [ i ] ;
+      }
+    }
+
+    // with the coordinate into 'trg' we can figure out the
+    // initial target address
+
+    p_trg = & ( trg [ crd ] ) ;
   }
 
   // save writes to the current taget pointer and increases the
@@ -185,7 +215,7 @@ struct vstorer
 
   void save ( const value_v & v , std::size_t cap = 0 )
   {
-    *p_trg = v ;
+    v.store ( p_trg ) ;
     p_trg += stride ;
   }
 } ;
