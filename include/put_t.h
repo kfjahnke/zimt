@@ -59,29 +59,17 @@
 namespace zimt
 {
 
-// class storer disposes of the results of calling eval. This
-// functionality is realized with separate 'put_t' classes to
-// increase flexibility, just as the get_t classes with get_crd
-// above as an example. Here, init only receives the starting
-// coordinate of the 'run', and the c'tor receives a reference
-// to a target view and the axis of the run.
-// Other put_t classes might dispose of values differently; the
-// most extreme would be to ignore the values (e.g. when the
-// 'act' functor implements a reduction and the single result
-// values are not needed). Such a scenario would allow the code
-// to generate reductions from very large 'virtual' arrays, if
-// the get_t class generates values without having to load them
-// from memory.
+// class storer disposes of the results of calling the 'act'
+// functor by storing the data to a view/array.
 
-template < typename T ,
-           std::size_t N ,
-           std::size_t D ,
-           std::size_t L >
+template < typename T ,    // elementary/fundamental type
+           std::size_t N , // number of channels
+           std::size_t D , // dimension of the view/array
+           std::size_t L = zimt::vector_traits < T > :: vsize >
 struct storer
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   const std::size_t & d ;
@@ -124,6 +112,76 @@ struct storer
   }
 } ;
 
+// split_t encodes the reverse operation of join_t: The content of
+// simdized data is distributed to N arrays of T which will contain
+// per-channel data, e.g. a red, a green and a blue array to store
+// RGB data.
+
+template < typename T ,    // elementary/fundamental type
+           std::size_t N , // number of channels
+           std::size_t D , // dimension of the view/array
+           std::size_t L = zimt::vector_traits < T > :: vsize >
+struct split_t
+{
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef zimt::xel_t < long , D > crd_t ;
+
+  typedef std::array < zimt::view_t < D , T > , N > trg_t ;
+  trg_t & trg ;
+
+  zimt::xel_t < T* , N > p_trg ;   // target pointers
+  zimt::xel_t < long , N > stride ; // strides of target arrays
+  const std::size_t d ;             // 'hot' axis
+
+  // the c'tor receives the set of target arrays and the 'hot' axis
+
+  split_t ( trg_t & _trg , const std::size_t & _d = 0 )
+  : trg ( _trg ) , d ( _d )
+  {
+    // copy out the strides of the target arrays
+
+    for ( int ch = 0 ; ch < N ; ch++ )
+    {
+      stride [ ch ] = trg [ ch ] . strides [ d ] ;
+    }
+  }
+
+  // init is used to initialize the target pointers
+
+  void init ( const crd_t & crd )
+  {
+    for ( int ch = 0 ; ch < N ; ch++ )
+    {
+      p_trg [ ch ] = & ( trg [ ch ] [ crd ] ) ;
+    }
+  }
+
+  // save writes to the current taget pointers and increases the
+  // pointers by the amount of value_t written
+
+  void save ( const value_v & v )
+  {
+    for ( int ch = 0 ; ch < N ; ch++ )
+    {
+      v [ ch ] . rscatter ( p_trg [ ch ] , stride [ ch ] ) ;
+      p_trg [ ch ] += L * stride [ ch ] ;
+    }
+  }
+
+  // capped save, used for the final batch of data which did not
+  // fill out an entire value_v
+
+  void save ( const value_v & v , std::size_t cap )
+  {
+    for ( int ch = 0 ; ch < N ; ch++ )
+    {
+      for ( std::size_t e = 0 ; e < cap ; e++ )
+        p_trg [ ch ] [ e * stride [ ch ] ] = v [ ch ] [ e ] ;
+    }
+  }
+} ;
+
 // vstorer stores vectorized data to a zimt::view_t of fundamental
 // values (T). This is a good option for storing intermediate results,
 // because it can use efficient SIMD store operations rather than
@@ -132,10 +190,10 @@ struct storer
 // class vloader (see get_t.h). The target view should refer to an
 // array obtained via zimt::get_vector_buffer.
 
-template < typename T ,
-           std::size_t N ,
-           std::size_t D ,
-           std::size_t L >
+template < typename T ,    // elementary/fundamental type
+           std::size_t N , // number of channels
+           std::size_t D , // dimension of the view/array
+           std::size_t L = zimt::vector_traits < T > :: vsize >
 struct vstorer
 {
   typedef zimt::xel_t < T , N > value_t ;
@@ -228,38 +286,16 @@ struct vstorer
 // but only it's performance is of interest and the cost of saving
 // it's output should be avoided.
 
-template < typename T ,
-           std::size_t N ,
-           std::size_t M = N ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
 struct discard_result
 {
-  typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , M > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
-  typedef zimt::xel_t < std::ptrdiff_t , L > sc_indexes_t ;
-
-  void init ( const crd_t & crd )
+  template < typename T >
+  void init ( const T & crd )
   { }
 
   template < typename ... A >
   void save ( A ... args )
   { }
 } ;
-
-// For brevity, here's a using declaration deriving the default
-// put_t from the actor's type and the array's/view's dimension.
-
-template < typename act_t , std::size_t dimension >
-using norm_put_t
-  = storer
-  < typename act_t::out_ele_type ,
-    act_t::dim_out ,
-    dimension ,
-    act_t::vsize > ;
-
 
 } ; // namespace zimt
 

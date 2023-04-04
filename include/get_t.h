@@ -63,7 +63,7 @@ namespace zimt
 /// receives the 'hot' axis along which the coordinate will vary,
 /// the other components remain constant.
 
-template < typename T ,    // elementary type
+template < typename T ,    // elementary/fundamental type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array
            std::size_t vsize = zimt::vector_traits < T > :: vsize >
@@ -557,7 +557,6 @@ struct join_t
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   // const std::size_t d ; // processing axis - 0 or 1 for a 2D array
@@ -569,15 +568,16 @@ struct join_t
 
   zimt::xel_t < const T * , N > pickup ; // source pointers
   zimt::xel_t < long , N > stride ;      // strides of source arrays
+  const std::size_t d ;
 
-  join_t ( const src_t & _src )
-  : src ( _src )
+  join_t ( const src_t & _src , const std::size_t & _d = 0 )
+  : src ( _src ) , d ( _d )
   {
     // copy out the strides of the source arrays
 
     for ( int ch = 0 ; ch < N ; ch++ )
     {
-      stride [ ch ] = src [ ch ] . strides [ 0 ] ;
+      stride [ ch ] = src [ ch ] . strides [ d ] ;
     }
   }
 
@@ -684,7 +684,7 @@ struct linspace_t
 
   linspace_t ( const value_t & _start ,
                const value_t & _step ,
-               const std::size_t & _d )
+               const std::size_t & _d = 0 )
   : start ( _start ) ,
     step ( _step ) ,
     d ( _d )
@@ -738,17 +738,6 @@ struct linspace_t
       trg.stuff ( cap ) ;
   }
 } ;
-
-// For brevity, here's a using declaration deriving the default
-// get_t from the actor's type and the array's/view's dimension.
-
-template < typename act_t , std::size_t dimension >
-using norm_get_crd
-  = get_crd
-  < typename act_t::in_ele_type ,
-    act_t::dim_in ,
-    dimension ,
-    act_t::vsize > ;
 
 } ; // namespace zimt
 

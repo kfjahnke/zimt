@@ -73,14 +73,14 @@ int main ( int argc , char * argv[] )
   zimt::array_t < 2 , value_t > rgba ( { 1024 , 1024 } ) ;
 
   typedef zimt::pass_through < float , 4 , 16 > act_t ;
-  zimt::norm_put_t < act_t , 2 > p ( rgba , 0 ) ;
+  zimt::storer < float , 4 , 2 , 16 > p ( rgba , 0 ) ;
 
   r [ { 101 , 203 } ] = 1.0f ;
   g [ { 101 , 203 } ] = 2.0f ;
   b [ { 101 , 203 } ] = 3.0f ;
   a [ { 101 , 203 } ] = 4.0f ;
 
-  zimt::process < act_t , 2 > ( act_t() , rgba , get_rgba , p ) ;
+  zimt::process ( rgba.shape , get_rgba , act_t() , p ) ;
 
   std::cout << rgba [ { 100 , 203 } ] << std::endl ;
   std::cout << rgba [ { 101 , 203 } ] << std::endl ;

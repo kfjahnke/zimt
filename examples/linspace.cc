@@ -54,9 +54,9 @@ int main ( int argc , char * argv[] )
     zimt::linspace_t < float , 1 , 4 > l ( start , step , 0 ) ;
     typedef zimt::pass_through < float , 1 , 4 > act_t ;
     zimt::array_t < 1 , delta_t > a ( 7 ) ;
-    zimt::norm_put_t < act_t , 1 > p ( a , 0 ) ;
+    zimt::storer < float , 1 , 1 , 4 > p ( a , 0 ) ;
 
-    zimt::process ( act_t() , a , l , p ) ;
+    zimt::process ( a.shape , l , act_t() ,  p ) ;
 
     std::cout << "********** 1D:" << std::endl << std::endl ;
 
@@ -74,9 +74,9 @@ int main ( int argc , char * argv[] )
     zimt::linspace_t < float , 2 , 4 > l ( start , step , 0 ) ;
     typedef zimt::pass_through < float , 2 , 4 > act_t ;
     zimt::array_t < 2 , delta_t > a ( { 7 , 5 } ) ;
-    zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
+    zimt::storer < float , 2 , 2 , 4 > p ( a , 0 ) ;
 
-    zimt::process ( act_t() , a , l , p ) ;
+    zimt::process ( a.shape , l , act_t() ,  p ) ;
 
     std::cout << "********** 2D:" << std::endl << std::endl ;
 
@@ -98,11 +98,11 @@ int main ( int argc , char * argv[] )
     zimt::linspace_t < float , 3 , 4 > l ( start , step , 0 ) ;
     typedef zimt::pass_through < float , 3 , 4 > act_t ;
     zimt::array_t < 3 , delta_t > a ( { 2 , 3 , 4 } ) ;
-    zimt::norm_put_t < act_t , 3 > p ( a , 0 ) ;
+    zimt::storer < float , 3 , 3 , 4 > p ( a , 0 ) ;
 
     std::cout << "********** 3D:" << std::endl << std::endl ;
 
-    zimt::process ( act_t() , a , l , p ) ;
+    zimt::process ( a.shape , l , act_t() ,  p ) ;
     for ( std::size_t z = 0 ; z < 4; z++ )
     {
       for ( std::size_t y = 0 ; y < 3 ; y++ )

@@ -316,7 +316,14 @@ void transform ( const act_t & _act ,
   // compatible with the wrapped functor above.
 
   typedef typename aact_t::in_type src_type ;
+  typedef typename src_type::value_type src_ele_type ;
+  static const std::size_t nch_in = src_type::size() ;
+
   typedef typename aact_t::out_type trg_type ;
+  typedef typename trg_type::value_type trg_ele_type ;
+  static const std::size_t nch_out = trg_type::size() ;
+
+  static const std::size_t vsize = aact_t::vsize ;
 
   typedef zimt::view_t < act_t::dim_in , trg_type > trg_view_type ;
 
@@ -341,10 +348,13 @@ void transform ( const act_t & _act ,
   // in the type act takes as input. So, act can take, e.g.
   // float coordinates and 'get' will provide.
 
-  norm_get_crd < act_t , dimension > get ( bill.axis ) ;
-  norm_put_t < act_t , dimension > put ( trg , bill.axis ) ;
+  get_crd < src_ele_type , nch_in , dimension , vsize >
+    get ( bill.axis ) ;
 
-  process ( act , trg , get , put , bill ) ;
+  storer < trg_ele_type , nch_out , dimension , vsize >
+    put ( trg , bill.axis ) ;
+
+  process ( trg.shape , get , act , put , bill ) ;
 }
 
 // for 1D index-based transforms, we add an overload taking a naked

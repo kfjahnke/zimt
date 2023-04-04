@@ -162,10 +162,6 @@ int main ( int argc , char * argv[] )
 
   zimt::view_t < 3 , delta_t > a ( nullptr , strides , shape ) ;
 
-  // this is out put_t which simply discards the results.
-
-  zimt::discard_result < float , 3 , 3 , 16 > p ;
-
   // we need a bit of infrastructure to cumulate the results from
   // per-thread copies of the 'act' functor to 'collect'
 
@@ -189,7 +185,8 @@ int main ( int argc , char * argv[] )
 
   // now we're ready to go!
 
-  zimt::process ( act_t ( yield ) , a , l , p ) ;
+  zimt::process ( a.shape , l , act_t ( yield ) ,
+                  zimt::discard_result() ) ;
 
   // here's the final result over ca. 1e9 pixels:
 

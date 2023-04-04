@@ -267,11 +267,11 @@ public:
 
 } ;
 
-/// process is now the central function in the wielding namespace
+/// 'process' is the central function in the wielding namespace
 /// and used to implement all 'transform-like' operations. It is
 /// a generalization of the 'transform' concept, adding choosable
-/// 'get' and 'put' methods which generate input for the functor
-/// and dispose of it's output. By factoring these two activities
+/// 'get' and 'put' methods generating input for the 'act' functor
+/// and disposing of it's output. By factoring these two activities
 /// out, the code becomes much more flexible, and by selecting
 /// simple appropriate 'get' and 'put' objects, zimt::transform
 /// can easily be implemented as a specialized application of the
@@ -279,22 +279,37 @@ public:
 /// So 'process' uses a three-step process: the 'get' object
 /// produces data the 'act' functor can process, the 'act'
 /// functor produces output data from this input, and the 'put'
-/// object disposes of the output.
+/// object disposes of the output. The sequence implies that
+/// the type of data the get_t object provides is the same which
+/// the act functor expects as input. The same holds true for the
+/// act functor's output, which has to agree with the type of datum
+/// the put_t object can dispose of.
+/// Some uses of 'process' will not need the entire set of three
+/// processing elements, but 'process' nevertheless expects them;
+/// they may be 'dunnies', though, which will be optimized away.
 /// 'process' 'aggregates' the data so that all of the input will
 /// be processed by vector code (unless the data themselves are not
 /// vectorizable), so the 'act' functor may omit a scalar eval
-/// member function and provide vectorized only.
+/// member function and provide vectorized eval only.
+/// The template signature could make an attempt to be more specific,
+/// but as it is it's nice and clear and works well with ATD, so that
+/// invocations of zimt::process can typically invoke it without
+/// specifying any template arguments. I moved the 'notional' shape
+/// to the front of the argument list, because it provides the
+/// 'scaffolding' for the entire operation, which relies on discrete
+/// coordinates to initialize the get_t and put_t objects, calculate
+/// the number of full vectors and 'leftovers' etc. - followed by the
+/// three 'active' elements, and finally the 'loading bill' which is
+/// often left at the default.
 
-template < class act_t ,
-           std::size_t dimension = act_t::dim_in , // default is dodgy
-           class get_t = norm_get_crd < act_t , dimension > ,
-           class put_t = norm_put_t < act_t , dimension > >
-void process ( const act_t & _act ,
-               zimt::view_t < dimension ,
-                              typename act_t::out_type
-                            > out_view ,
-               const get_t & co ,
-               const put_t & pt ,
+template < std::size_t dimension ,
+           class get_t ,
+           class act_t ,
+           class put_t >
+void process ( zimt::xel_t < std::size_t , dimension > shape ,
+               const get_t & _get ,
+               const act_t & _act ,
+               const put_t & _put ,
                zimt::bill_t bill = zimt::bill_t() )
 {
   // we extract the act functor's type system and constants
@@ -318,12 +333,10 @@ void process ( const act_t & _act ,
   const auto & axis ( bill.axis ) ; // short notation
   const auto & segment_size ( bill.segment_size ) ; // ditto
 
-  // extract the strides of the target view
-
-  auto out_stride = out_view.strides [ axis ] ;
-
   // create a slice holding the start position of the lines
+  // TODO: avoid detour via a view, calc. slice directly
 
+  zimt::view_t < dimension , out_type > out_view ( shape ) ;
   auto slice2 = out_view.slice ( axis , 0 ) ;
 
   // and a multi-coordinate iterator over the slice
@@ -369,16 +382,18 @@ void process ( const act_t & _act ,
     // notice if the copy is unnecessary (copy elision). With the
     // copy, reductions can use the same code as ordinary transforms
 
-    act_t act ( _act ) ; // create per-thread copy of '_act'
+    act_t act ( _act ) ; // create per-thread copy of 'act'
+
+    // we need per-thread copies of the get_t and put_t objects:
+
+    get_t get ( _get ) ;
+    put_t put ( _put ) ;
 
     // these SIMD variables will hold one batch if input or
     // output, respectively.
 
     in_v md_in ;
     out_v md_out ;
-
-    auto c = co ;
-    put_t p ( pt ) ;
 
     // loop as long as there are joblet indices left
 
@@ -446,7 +461,7 @@ void process ( const act_t & _act ,
         }
       }
 
-      p.init ( dcrd ) ;
+      put.init ( dcrd ) ;
 
       if ( nr_vectors == 0 )
       {
@@ -456,9 +471,9 @@ void process ( const act_t & _act ,
           // we need a special init which caps the result, and
           // applies 'stuffing' (see below)
 
-          c.init ( md_in , dcrd , leftover ) ;
+          get.init ( md_in , dcrd , leftover ) ;
           act.eval ( md_in , md_out , leftover ) ;
-          p.save ( md_out , leftover ) ; // need partial save
+          put.save ( md_out , leftover ) ;
         }
       }
       else
@@ -468,17 +483,17 @@ void process ( const act_t & _act ,
         // the current line and receiving an initial value of md_in,
         // the vectorized datum suitable for processing with 'act'.
 
-        c.init ( md_in , dcrd ) ;
+        get.init ( md_in , dcrd ) ;
 
         // first we perform a peeling run, processing data vectorized
         // as long as there are enough data to fill an entire md_out
 
-        for ( std::size_t a = 0 ; a < nr_vectors ; a++ )
+        for ( std::size_t v = 0 ; v < nr_vectors ; v++ )
         {
           act.eval ( md_in , md_out ) ;
-          p.save ( md_out ) ;
-          if ( a < nr_vectors - 1 )
-            c.increase ( md_in ) ;
+          put.save ( md_out ) ;
+          if ( v < nr_vectors - 1 )
+            get.increase ( md_in ) ;
         }
 
         // if there are any scalar values left over, we use 'capped'
@@ -506,9 +521,9 @@ void process ( const act_t & _act ,
 
         if ( leftover )
         {
-          c.increase ( md_in , leftover , false ) ;
+          get.increase ( md_in , leftover , false ) ;
           act.eval ( md_in , md_out , leftover ) ;
-          p.save ( md_out , leftover ) ;
+          put.save ( md_out , leftover ) ;
         }
       }
     }
@@ -526,7 +541,7 @@ void process ( const act_t & _act ,
   zimt::multithread ( worker , bill.njobs ) ;
 }
 
-// wielding code to co-process two equally shaped views, which is
+// wielding code to get-process two equally shaped views, which is
 // also used for 'apply', passing the same view as in- and output.
 // The calling code (zimt::transform) has already wrapped 'act',
 // the functor converting input values to output values, with
@@ -536,7 +551,7 @@ void process ( const act_t & _act ,
 // this function:
 
 template < class act_t , std::size_t dimension >
-void coupled_f ( const act_t & _act ,
+void coupled_f ( const act_t & act ,
                  zimt::view_t < dimension ,
                                 typename act_t::in_type
                               > in_view ,
@@ -546,24 +561,25 @@ void coupled_f ( const act_t & _act ,
                  const zimt::bill_t & bill )
 {
   typedef typename act_t::in_ele_type in_ele_type ;
-
   static const std::size_t chn_in = act_t::dim_in ;
+  static const std::size_t chn_out = act_t::dim_out ;
   static const std::size_t vsize = act_t::vsize ;
 
   const auto & axis ( bill.axis ) ;
-  norm_put_t < act_t , dimension > pt ( out_view , axis ) ;
+  storer < in_ele_type , chn_out , dimension , vsize >
+    put ( out_view , axis ) ;
 
   if ( in_view.strides [ axis ] == 1 )
   {
     unstrided_loader < in_ele_type , chn_in , dimension , vsize >
-      ld ( in_view , axis ) ;
-    process ( _act , out_view , ld , pt , bill ) ;
+      get ( in_view , axis ) ;
+    process ( out_view.shape , get , act , put , bill ) ;
   }
   else
   {
     loader < in_ele_type , chn_in , dimension , vsize >
-      ld ( in_view , axis ) ;
-    process ( _act , out_view , ld , pt , bill ) ;
+      get ( in_view , axis ) ;
+    process ( out_view.shape , get , act , put , bill ) ;
   }
 }
 

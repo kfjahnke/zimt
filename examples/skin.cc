@@ -238,9 +238,9 @@ int main ( int argc , char * argv[] )
   rect_t l ( start , step , 0 ) ;
   typedef zimt::pass_through < float , 3 , 4 > act_t ;
   zimt::array_t < 2 , value_t > a ( { 17 , 15 } ) ;
-  zimt::norm_put_t < act_t , 2 > p ( a , 0 ) ;
+  zimt::storer < float , 3 , 2 , 4 > p ( a , 0 ) ;
 
-  zimt::process < act_t , 2 > ( act_t() , a , l , p ) ;
+  zimt::process ( a.shape , l , act_t() , p ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {
@@ -254,10 +254,10 @@ int main ( int argc , char * argv[] )
   // is different, but the result is the same.
 
   rect_t l1 ( start , step , 1 ) ;
-  zimt::norm_put_t < act_t , 2 > p1 ( a , 1 ) ;
+  zimt::storer < float , 3 , 2 , 4 > p1 ( a , 1 ) ;
   bill.axis = 1 ;
 
-  zimt::process < act_t , 2 > ( act_t() , a , l1 , p1 , bill ) ;
+  zimt::process ( a.shape , l1 , act_t() , p1 , bill ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {

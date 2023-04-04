@@ -50,15 +50,6 @@
 #include <array>
 #include "../zimt.h"
 
-// currently, part of this example can't be used with Vc and highway,
-// because class zimt::array_t does not work with allocators for the
-// vectorized data, so vectorized storage using vstorer and vloader
-// fails.
-
-#if defined USE_VC or defined USE_HWY
-#define EXCLUDE
-#endif
-
 void test ( std::size_t a , std::size_t x , std::size_t y , std::size_t z )
 {
   // p_t will be the type of get_t for this example: a zimt::permute
@@ -108,25 +99,28 @@ void test ( std::size_t a , std::size_t x , std::size_t y , std::size_t z )
 
   p_t get_abc ( grid , a ) ;
 
-  // and a target array, receiving the output of zimt::process
+  // the shape of the arrays we'll be working on
 
-  zimt::array_t < 3 , value_t > trg ( { x , y , z } ) ;
-  zimt::array_t < 3 , value_t > trg2 ( { x , y , z } ) ;
+  zimt::xel_t < std::size_t , 3 > shape ( { x , y , z } ) ;
 
   // the 'act' functor merely passes it's input to it's output
 
   typedef zimt::pass_through < int , 3 , 16 > act_t ;
 
+  // and a target array, receiving the output of zimt::process
+
+  zimt::array_t < 3 , value_t > trg ( shape ) ;
+
   // and the put_t object stores it to the target array
 
-  zimt::norm_put_t < act_t , 3 > p ( trg , a ) ;
+  zimt::storer < int , 3 , 3 , 16 > p ( trg , a ) ;
 
   zimt::bill_t bill ;
   bill.axis = a ;
 
   // showtime!
 
-  zimt::process < act_t , 3 > ( act_t() , trg , get_abc , p , bill ) ;
+  zimt::process ( shape , get_abc , act_t() , p , bill ) ;
 
   // a little flourish (TODO: factor out): repeat the operation,
   // but store to a vbuffer object, then retrieve from same.
@@ -138,24 +132,51 @@ void test ( std::size_t a , std::size_t x , std::size_t y , std::size_t z )
   // set up and use a vstorer object as put_t for zimt::process
 
   zimt::vstorer < int , 3 , 3 , 16 > vs ( vbuffer , a ) ;
-  zimt::process < act_t , 3 > ( act_t() , trg , get_abc , vs , bill ) ;
+  zimt::process ( shape , get_abc , act_t() , vs , bill ) ;
 
   // the data are now in the vbuffer array. now set up and use
   // a vloader object as get_t for zimt::process - as put_t we
-  // use a norm_put_t storing to 'trg2'
+  // use a storer storing to 'trg2'
 
   zimt::vloader < int , 3 , 3 , 16 > vl ( vbuffer , a ) ;
-  zimt::norm_put_t < act_t , 3 > pp ( trg2 , a ) ;
-  zimt::process < act_t , 3 > ( act_t() , trg2 , vl , pp , bill ) ;
+  zimt::array_t < 3 , value_t > trg2 ( shape ) ;
+  zimt::storer < int , 3 , 3 , 16 > pp ( trg2 , a ) ;
+  zimt::process ( shape , vl , act_t() , pp , bill ) ;
+
+  // a second flourish: store to, load from three separate arrays
+
+  zimt::array_t < 3 , int > trg3a ( shape ) ;
+  zimt::array_t < 3 , int > trg3b ( shape ) ;
+  zimt::array_t < 3 , int > trg3c ( shape ) ;
+
+  // to pass the three arrays to the split_t and join_t objects, they
+  // are packaged in a std::array
+
+  std::array < zimt::view_t < 3 , int > , 3 >
+    split_trg ( { trg3a , trg3b , trg3c } ) ;
+
+  // first we store to the three arrays with a split_t object
+
+  zimt::split_t < int , 3 , 3 , 16 > sps ( split_trg , a ) ;
+  zimt::process ( shape , get_abc , act_t() , sps , bill ) ;
+
+  // now we load the data with a join_t object, storing the result
+  // to trg3, which should now hold the same content as trg and trg2.
+
+  zimt::join_t < int , 3 , 3 , 16 > spl ( split_trg , a ) ;
+  zimt::array_t < 3 , value_t > trg3 ( shape ) ;
+  zimt::storer < int , 3 , 3 , 16 > p3 ( trg3 , a ) ;
+  zimt::process ( shape , spl , act_t() , p3 , bill ) ;
 
   // let's look at the result
 
-  auto it = zimt::mcs_t < 3 > ( trg.shape ) ;
+  auto it = zimt::mcs_t < 3 > ( shape ) ;
   for ( int i = 0 ; i < trg.size() ; i++ )
   {
     auto crd = it() ;
     assert ( trg [ crd ] == ( crd + 1 ) ) ;
     assert ( trg2 [ crd ] == ( crd + 1 ) ) ;
+    assert ( trg3 [ crd ] == ( crd + 1 ) ) ;
   }
 }
 

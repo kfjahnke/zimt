@@ -155,7 +155,7 @@ int main ( int argc , char * argv[] )
   // store them in the target array
 
   typedef zimt::pass_through < float , 4 , 16 > act_t ;
-  zimt::norm_put_t < act_t , 2 > p ( rgba , 0 ) ;
+  zimt::storer < float , 4 , 2 , 16 > p ( rgba , 0 ) ;
 
   // just one sample
 
@@ -166,7 +166,7 @@ int main ( int argc , char * argv[] )
 
   // let's go
 
-  zimt::process < act_t , 2 > ( act_t() , rgba , get_rgba , p ) ;
+  zimt::process ( rgba.shape , get_rgba , act_t() , p ) ;
 
   // check that the sample made it to the output
 
