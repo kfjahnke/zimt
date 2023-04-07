@@ -55,7 +55,7 @@ void test ( std::size_t a , std::size_t x , std::size_t y , std::size_t z )
   // p_t will be the type of get_t for this example: a zimt::permute
   // object permuting three 1D arrays with int values.
 
-  typedef zimt::permute < int , 3 , 16 > p_t ;
+  typedef zimt::permute < int , 3 , 3 , 16 > p_t ;
 
   // this permute object produces values which are passed to the 'act'
   // functor. In this example, these values are xel_t of three vectors

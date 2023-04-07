@@ -62,6 +62,12 @@ struct crunch
                                zimt::xel_t < T , N > ,
                                L >
 {
+  typedef zimt::unary_functor < zimt::xel_t < T , N > ,
+                                zimt::xel_t < T , N > ,
+                                L > base_t ;
+  using typename base_t::in_v ;
+  using typename base_t::out_v ;
+
   typedef zimt::xel_t < double , N > score_t ;
   score_t score ;
 
@@ -92,9 +98,15 @@ struct crunch
   // These two versions only differ in how the 'score' is updated.
   // Note that the score is in double precision - 1e9 values are
   // already large enough to be problematic in SP float.
+  // Note also that - at least for now - we can'T code the eval
+  // member functions as templates (which is commonly done in
+  // vspline) because the signature test fails to detect the
+  // capped eval overload if the capped eval is coded as a template.
+  // For zimt code this should be less of an issue, because there
+  // is no scalar eval overload, so there is no reason not to pass
+  // in_v and out_v expressis verbis.
 
-  template < typename I , typename O >
-  void eval ( const I & i , O & o , const std::size_t cap )
+  void eval ( const in_v & i , out_v & o , const std::size_t & cap )
   {
     _eval ( i , o ) ;
     for ( int ch = 0 ; ch < N ; ch++ )
@@ -104,8 +116,7 @@ struct crunch
     }
   }
 
-  template < typename I , typename O >
-  void eval ( const I & i , O & o )
+  void eval ( const in_v & i , out_v & o )
   {
     _eval ( i , o ) ;
     for ( int ch = 0 ; ch < N ; ch++ )
@@ -144,7 +155,7 @@ int main ( int argc , char * argv[] )
   typedef zimt::xel_t < float , 3 > delta_t ;
   delta_t start { 0.0 , 0.0 , 0.0 } ;
   delta_t step { .01 , .01 , .01 } ;
-  zimt::linspace_t < float , 3 , 16 > l ( start , step , 0 ) ;
+  zimt::linspace_t < float , 3 , 3 , 16 > l ( start , step , 0 ) ;
 
   // this is our 'act' functor's type
 
@@ -185,12 +196,15 @@ int main ( int argc , char * argv[] )
 
   // now we're ready to go!
 
-  zimt::process ( a.shape , l , act_t ( yield ) ,
+  auto gk = zimt::grok ( act_t ( yield ) ) ;
+
+  zimt::process ( a.shape , l , gk + gk ,
                   zimt::discard_result() ) ;
 
   // here's the final result over ca. 1e9 pixels:
 
   std::cout << "collect: " << collect << std::endl ;
+  std::cout << "array size: " << a.size() << std::endl ;
 
   // if you'd like to arrive at the same result by a simple iteration
   // without any multithreading or SIMD, uncomment this code:

@@ -92,9 +92,4 @@ int main ( int argc , char * argv[] )
   auto ff = f + f ;
   ff.eval ( pxv1 , pxv2 ) ;
   std::cout << pxv1 << " -> " << pxv2 << std::endl ;
-
-  zimt::broadcast_type < pixel_t , pixel_t , 8 > halve_f ( halve ) ;
-  halve_f.eval ( pxv1 , pxv2 ) ;
-  std::cout << pxv1 << " -> " << pxv2 << std::endl ;
-
 }

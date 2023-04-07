@@ -56,7 +56,11 @@
 
 namespace zimt
 {
-
+// Here we have a collection of get_t objects to cover a set of
+// common data acquisition strategies, and to serve as templates
+// for your own creations. Note how all of these classes use the
+// same set of template arguments (even if at times not all of
+// them are actually used - this is for syntactic uniformity.
 /// class get_crd is an implementation of a 'get_t' class which the
 /// rolling-out code uses to produce input values to the functor 'act'.
 /// This specific class provides discrete nD coordinates. The c'tor
@@ -66,11 +70,11 @@ namespace zimt
 template < typename T ,    // elementary/fundamental type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array
-           std::size_t vsize = zimt::vector_traits < T > :: vsize >
+           std::size_t L = zimt::vector_traits < T > :: vsize >
 struct get_crd
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , vsize > value_v ;
+  typedef zimt::simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
@@ -142,7 +146,7 @@ struct get_crd
 
   void increase ( value_v & trg ) const
   {
-    trg [ d ] += vsize ;
+    trg [ d ] += L ;
   }
 
   // 'capped' variant. This is called after all vectors in the current
@@ -158,7 +162,7 @@ struct get_crd
                   bool _stuff = true ) const
   {
     auto mask = ( value_ele_v::IndexesFromZero() < int(cap) ) ;
-    trg [ d ] ( mask ) += T(vsize) ;
+    trg [ d ] ( mask ) += T(L) ;
     if ( _stuff )
     {
       trg [ d ] ( ! mask ) = trg [ d ] [ cap - 1 ] ;
@@ -175,25 +179,25 @@ struct get_crd
 
 template < typename T ,
            std::size_t N ,
-           std::size_t M = N ,
+           std::size_t D ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
 struct loader
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , M > crd_t ;
+  typedef zimt::xel_t < long , D > crd_t ;
   typedef zimt::simdized_type < long , L > crd_v ;
 
   const std::size_t d ;
-  const zimt::view_t < M , value_t > src ;
+  const zimt::view_t < D , value_t > src ;
   const value_t * p_src ;
   const std::size_t stride ;
 
   // get_t's c'tor receives the zimt::view providing data and the
   // 'hot' axis. It extracts the strides from the source view.
 
-  loader ( const zimt::view_t < M , value_t > & _src ,
+  loader ( const zimt::view_t < D , value_t > & _src ,
            const std::size_t & _d = 0 )
   : src ( _src ) , d ( _d ) , stride ( _src.strides [ _d ] )
   { }
@@ -256,12 +260,12 @@ struct loader
 
 template < typename T ,
            std::size_t N ,
-           std::size_t M = N ,
+           std::size_t D ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
 struct unstrided_loader
-: public loader < T , N , M , L >
+: public loader < T , N , D , L >
 {
-  typedef loader < T , N , M , L > base_t ;
+  typedef loader < T , N , D , L > base_t ;
 
   using typename base_t::crd_t ;
   using typename base_t::value_t ;
@@ -269,7 +273,7 @@ struct unstrided_loader
   using base_t::src ;
   using base_t::p_src ;
 
-  unstrided_loader ( const zimt::view_t < M , value_t > & _src ,
+  unstrided_loader ( const zimt::view_t < D , value_t > & _src ,
                      const std::size_t & _d = 0 )
   : base_t ( _src , _d )
   {
@@ -436,6 +440,7 @@ struct vloader
 
 template < typename T ,
            std::size_t N ,
+           std::size_t D ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
 struct permute
 {
@@ -535,7 +540,6 @@ struct permute
     for ( std::size_t e = cap ; e < L ; e++ )
       trg [ d ] [ e ] = trg [ d ] [ cap - 1 ] ;
   }
-
 } ;
 
 // join_t is a get_t which loads data from N arrays of T
@@ -662,8 +666,9 @@ struct join_t
 // simdized data more efficiently, by only modifying the
 // component of the simdized datum pertaining to the hot axis.
 
-template < typename T ,     // elementary type
-           std::size_t N ,  // number of channels
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
            std::size_t L >  // lane count
 struct linspace_t
 {
@@ -708,12 +713,19 @@ struct linspace_t
 
   void init ( value_v & trg ,
               const crd_t & crd ,
-              std::size_t cap )
+              const std::size_t & cap )
   {
-    trg = step * crd + start ;
-    for ( std::size_t e = 0 ; e < cap ; e++ )
-      trg [ d ] [ e ] += T ( e ) * step [ d ] ;
-    trg.stuff ( cap ) ;
+    if ( cap == L )
+    {
+      init ( trg , crd ) ;
+    }
+    else
+    {
+      trg = step * crd + start ;
+      for ( std::size_t e = 0 ; e < cap ; e++ )
+        trg [ d ] [ e ] += T ( e ) * step [ d ] ;
+      trg.stuff ( cap ) ;
+    }
   }
 
   // increase modifies it's argument to contain the next value
@@ -729,13 +741,20 @@ struct linspace_t
   // before the cap is optional.
 
   void increase ( value_v & trg ,
-                  std::size_t cap ,
-                  bool _stuff = true )
+                  const std::size_t & cap ,
+                  const bool & _stuff = true )
   {
-    for ( std::size_t e = 0 ; e < cap ; e++ )
-      trg [ d ] [ e ] += ( step [ d ] * L ) ;
-    if ( _stuff )
-      trg.stuff ( cap ) ;
+    if ( cap == L )
+    {
+      increase ( trg ) ;
+    }
+    else
+    {
+      for ( std::size_t e = 0 ; e < cap ; e++ )
+        trg [ d ] [ e ] += ( step [ d ] * L ) ;
+      if ( _stuff )
+        trg.stuff ( cap ) ;
+    }
   }
 } ;
 

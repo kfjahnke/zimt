@@ -333,7 +333,9 @@ void test ( zimt::bill_t bill )
 
   for ( int k = 0 ; k < 1000 ; k++ )
   {
-    assert ( v3 [ mci [ k ] ] == amp ( f3_t ( mci [ k ] ) ) ) ;
+    f3_t result ;
+    amp.eval ( f3_t ( mci [ k ] ) , result ) ;
+    assert ( v3 [ mci [ k ] ] == result ) ;
   }
 
   zimt::transform ( amp1 , v1 ) ;
@@ -359,14 +361,18 @@ void test ( zimt::bill_t bill )
 
   for ( int k = 0 ; k < 1000 ; k++ )
   {
-    assert ( data2 [ k ] == amp ( data [ k ] ) ) ;
+    f3_t result ;
+    amp.eval ( data [ k ] , result ) ;
+    assert ( data2 [ k ] == result ) ;
   }
 
   zimt::transform ( amp , v1 , v1b , bill ) ;
 
   for ( int k = 0 ; k < 1000 ; k++ )
   {
-    assert ( data2 [ k ] == amp ( data [ k ] ) ) ;
+    f3_t result ;
+    amp.eval ( data [ k ] , result ) ;
+    assert  ( data2 [ k ] == result ) ;
   }
 
   // let's try amp13_t
