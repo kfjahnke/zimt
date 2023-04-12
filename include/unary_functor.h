@@ -40,27 +40,57 @@
 
     \brief interface definition for unary functors
 
-    zimt's evaluation and remapping code relies on a unary functor template
-    which is used as the base for zimt::evaluator and also constitutes the
-    type of object accepted by most of the functions in transform.h.
+    The central element in zimt is the 'act' functor. This is the object
+    containing the SIMD code which is 'rolled out' over the data with
+    multiple threads. This functor is passed to the transform family of
+    zimt functions, which in turn pass it to zimt::process, the core
+    function of zimt.
 
-    This template produces functors which are meant to yield a single output
-    for a single input, where both the input and output types may be single
-    types or zimt::xel_ts, and their elementary types may be vectorized.
-    The functors are expected to provide methods named eval() which are capable
-    of performing the required functionality. These eval routines take both
-    their input and output by reference - the input is taken by const &, and the
-    output as plain &. The result type of the eval routines is void. While
-    such unary functors can be hand-coded, the class template 'unary_functor'
-    provides services to create such functors in a uniform way, with a specifc
-    system of associated types and some convenience code. Using unary_functor
-    is meant to facilitate the creation of the unary functors used in zimt.
-    
-    Using unary_functor generates objects which can be easily combined into
-    more complex unary functors, a typical use would be to 'chain' two
-    unary_functors, see class template 'chain_type' below, which also provides
-    an example for the use of unary_functor.
-    
+    The functionality of processing data is coded as a member function
+    called 'eval', taking it's input via a const& and yielding it's
+    output to a plain reference. There is no return value. This slightly
+    unusual construct has the advantage that both the input and the
+    output are arguments to eval, which makes type deduction easier than
+    with 'normal' functions taking input as argument and returning output
+    as return values.
+
+    A zimt::unary_functor processes 'simdized' arguments. In vspline,
+    where the code saw it's first iteration, I used what I call 'bimodal'
+    functors which had one simdized and one scalar overload, so that
+    they could process scalar arguments as well. In the vspline design,
+    this was necessary: After a 'peeling' run, which processed all data
+    that could form 'full' SIMD vectors, the 'leftover' was processed by
+    a small loop using the scalar evaluation function. zimt's design uses
+    another method to deal with 'leftovers': It puts them into a SIMD
+    vector and fills the vectors up with copies of previously used data
+    in order to make sure the filled-up part of the vectors hold valid
+    data, and subsequently processes the - now full - vectors with the
+    simdized eval function. Apart from functors which have side effects
+    this works just fine, but if there are side effects (think of
+    reductions) the functor must be aware of the 'stuffing' and ignore
+    these parts of the vectors. To handle such situations, 'act' functors
+    with side effects must provide an overload of the eval function taking
+    a size_t argument indicationg how many lanes are 'genuine'.
+    zimt::process calls this overload (if it's present) when processing
+    arrives at the point where stuffing happens. If no 'capped' overload
+    exists, processing is routed to the 'uncapped' eval.
+
+    zimt::unary_functors are made to process SIMD vectors of fundamentals
+    and 'simdized' 'xel' data. A xel is a small homogeneous aggregate of
+    fundamentals, like a pixel or a voxel, hence the 'xel'. Given a xel
+    of N fundamentals of type T (zimt::xel_t < T , N >), it's 'simdized'
+    form is a xel of SIMD vectors. If N == 1, there is no actual difference
+    between the 'naked' SIMD vector and the single-channel xel, and the
+    code accepts and processes both as equivalent.
+
+    To parametrize a zimt::unary_functor, you don't need to explicitly
+    specify the simdized arguments to 'eval', because they can be generated
+    form the scalar form of the xel data. All that is needed is the type of
+    the fundamental types of input and output, the respective channel counts,
+    and the number of lanes to be used for the SIMD vectors. The latter
+    datum can be chosen arbitrarily in zimt but should be a power of two;
+    it does not have to be the hardware lane count for the given fundamentals.
+
     class unary_functor takes three template arguments:
     
     - the argument type, IN
@@ -70,46 +100,25 @@
     - the number of fundamentals (float, int etc.) in a vector, _vsize
     
     The vectorized argument and result type are deduced from IN, OUT and
-    _vsize by querying zimt::vector_traits. When using Vc (-DUSE_VC),
-    these types will be Vc::SimdArrays if the elementary type can be used
-    to form a SimdArray. Otherwise zimt provides a fallback type emulating
-    vectorization: zimt::simd_type. This fallback type emulates just enough
-    of SimdArray's capabilities to function as a replacement inside zimt's
-    body of code.
-    
-    So where is eval() or operator()? Not in class unary_functor. The actual
-    functionality is provided by the derived class. There is deliberately no
-    code concerning evaluation in class unary_functor. My initial implementation
-    had pure virtual functions to define the interface for evaluation, but this
-    required explicitly providing the overloads in the derived class. Simply
-    omitting any reference to evaluation allows the derived class to accomplish
-    evaluation with a template if the code is syntactically the same for vectorized
-    and unvectorized operation. To users of concrete functors inheriting from
-    unary_functor this makes no difference. The only drawback is that it's not
-    possible to perform evaluation via a base class pointer or reference. But
-    this is best avoided anyway because it degrades performance. If the need arises
-    to have several unary_functors with the same template signature share a common
-    type, there's a mechanism to make the internals opaque by 'grokking'.
-    grokking provides a wrapper around a unary_functor which hides it's type,
-    zimt::grok_type directly inherits from unary_functor and the only template
-    arguments are IN, OUT and _vsize. This hurts performance a little - just as
-    calling via a base class pointer/reference would, but the code is outside
-    class unary_functor and therefore only activated when needed.
-    
-    Class zimt::evaluator is itself coded as a zimt::unary_functor and can
-    serve as another example for the use of the code in this file.
-    
-    Before the introduction of zimt::simd_type, vectorization was done with
-    Vc or not at all. Now zimt::vector_traits will produce Vc types if
-    possible and zimt::simd_type otherwise. This breaks code relying on
-    the fallback to scalar without Vc, and it also breaks code that assumes that
-    Vc is the sole method of vectorization.
-    
-    Extant code written for use with Vc should function as before as long as
-    USE_VC is defined. It may be possible now to use such code even without Vc.
-    This depends on how much of Vc::SimdArray's functionality is used. If such
-    code runs without Vc, it may still not perform well and possibly even worse
-    than scalar code.
+    _vsize by querying zimt::vector_traits.
+
+    IN and OUT can be fundamental types or zimt::xel_t of fundamentals,
+    and _vsize (or, in zimt, oftentimes L) is the vector lane count,
+    which should be a small-ish power of two, like 16.
+
+    So, typical zimt::unary_functor instatiations would be
+
+    zimt::unary_functor < int , float , 16 >
+    zimt::unary_functor < zimt::xel_t<float,2> , zimt::xel_t<float,3> , 8 >
+    zimt::unary_functor < zimt::xel_t < int , 2 > , double >
+    etc.
+
+    And the instatiated zimt::unary_functor has the type system which
+    is needed to work with zimt::transform. zimt::process is a bit more
+    'low-level' than zimt::transform and requires all arguments to be
+    zimt::xel_t. Use zimt::vs_adapter to adapt zimt::unary_functors with
+    fundamentals as IN or OUT; this will create a compatible functor
+    which uses zimt::xel_t < T , 1 > instead of the fundamentals.
 */
 
 #ifndef ZIMT_UNARY_FUNCTOR_H
@@ -854,7 +863,7 @@ struct amplify_type
   {
     out = out_type ( math_type ( in ) * factor ) ;
   }
-  
+
   template < typename = std::enable_if < ( vsize > 1 ) > >
   void eval ( const in_v & in , out_v & out )
   {
@@ -863,19 +872,19 @@ struct amplify_type
 
     const in_nd_ele_v & _in
       = reinterpret_cast < in_nd_ele_v const & > ( in ) ;
-      
+
     const math_nd_ele_type & _factor
       = reinterpret_cast < math_nd_ele_type const & > ( factor ) ;
-    
+
     out_nd_ele_v & _out
       = reinterpret_cast < out_nd_ele_v & > ( out ) ;
-    
+
     // and perform the application of the factor element-wise
 
     for ( int i = 0 ; i < dimension ; i++ )
       zimt::assign ( _out[i] , math_ele_v ( _in[i] ) * _factor[i] ) ;
   }
-  
+
 } ;
 
 /// flip functor produces it's input with component order reversed.
@@ -1276,6 +1285,33 @@ struct uf_adapter
         reinterpret_cast < typename W::out_v & > ( out ) ) ;
   }
 } ;
+
+// pass_through simply copies the input to the output. This is
+// a handy functor if all the 'work' is done by the get_t and/or
+// put_t object.
+
+template < typename T , std::size_t N , std::size_t L >
+struct pass_through
+: public zimt::unary_functor < zimt::xel_t < T , N > ,
+                               zimt::xel_t < T , N > ,
+                               L >
+{
+  template < typename I , typename O >
+  void eval ( const I & i , O & o , const std::size_t cap = 0 )
+  {
+    o = i ;
+  }
+} ;
+
+// factory function to 'wrap' a functor 'inner' in a uf_adapter
+
+template < typename W >
+zimt::uf_adapter < W >
+uf_adapt ( const W & inner )
+{
+  return zimt::uf_adapter < W >
+    ( inner ) ;
+}
 
 } ; // end of namespace zimt
 

@@ -43,37 +43,44 @@
 // guided by an n-dimensional coordinate block which is traversed
 // along parallel 1D 'lines' or 'strands' which are all parallel to
 // one axis of the construct.
-// This example uses a 'permute' object as the get_t passed to
-// zimt::process.
+// This example uses a 2D 'permute' object as the get_t passed to
+// zimt::process. This is similar to the input generation in
+// permute.cc, only that here we work in 2D and with larger arrays.
+// The point of this example is to demonstrate the upper and lower
+// limit to processing which can be specified in the 'loading bill'
+// passed to zimt::process. These two values specify a window to
+// which processing is limited. In this example, we conceptually
+// cut up the array into 507X517 patches (or smaller, where a patch
+// would exceed the array's extent) and process the patches by
+// invocations of zimt::process with corresponding limits in the
+// 'loading bill'. After all patches are processed, we expect the
+// same result as if we'd processed the whole array at once. The
+// test is repeated with different array sizes, and the processing
+// axis (or 'hot' axis) is also varied.
 
-#include <iomanip>
 #include <array>
 #include "../zimt.h"
 
-void test ( std::size_t a ,
-            std::size_t x ,
-            std::size_t y ,
-            std::size_t z )
+void test ( std::size_t a , std::size_t x , std::size_t y )
 {
   // p_t will be the type of get_t for this example: a zimt::permute
-  // object permuting three 1D arrays with int values.
+  // object permuting two 1D arrays with int values.
 
-  typedef zimt::permute < int , 3 , 3 , 16 > p_t ;
+  typedef zimt::permute < int , 2 , 2 , 16 > p_t ;
 
   // this permute object produces values which are passed to the 'act'
-  // functor. In this example, these values are xel_t of three vectors
+  // functor. In this example, these values are xel_t of two vectors
   // of int.
 
   typedef typename p_t::value_t value_t ;
-  typedef typename p_t::value_v value_v ;
 
   // the 1D arrays of per-axis values are held in zimt::arrays
 
   typedef zimt::array_t < 1 , int > axis_t ;
 
-  // and the permute object needs thre of them in a std::array
+  // and the permute object needs two of them in a std::array
 
-  typedef std::array < zimt::view_t < 1 , int > , 3 > grid_t ;
+  typedef std::array < zimt::view_t < 1 , int > , 2 > grid_t ;
 
   // TODO: write an overload for 1D arrays accepting a 'naked' size
 
@@ -83,7 +90,6 @@ void test ( std::size_t a ,
 
   axis_t ax ( x ) ;
   axis_t ay ( y ) ;
-  axis_t az ( z ) ;
 
   for ( std::size_t i = 0 ; i < x ; i++ )
     ax [ i ] = i + 1 ;
@@ -91,110 +97,103 @@ void test ( std::size_t a ,
   for ( std::size_t i = 0 ; i < y ; i++ )
     ay [ i ] = i + 1 ;
 
-  for ( std::size_t i = 0 ; i < z ; i++ )
-    az [ i ] = i + 1 ;
+  // form the 'grid_t' object containing views to the two 1D arrays
 
-  // form the 'grid_t' object containing views to the three 1D arrays
-
-  grid_t grid { ax , ay , az } ;
+  grid_t grid { ax , ay } ;
 
   // create the permute object
 
-  p_t get_abc ( grid , a ) ;
+  p_t get_xy ( grid , a ) ;
 
-  // the shape of the arrays we'll be working on
+  // the shape of the array we'll be working on
 
-  zimt::xel_t < std::size_t , 3 > shape ( { x , y , z } ) ;
+  zimt::xel_t < std::size_t , 2 > shape ( { x , y } ) ;
 
   // the 'act' functor merely passes it's input to it's output
 
-  typedef zimt::pass_through < int , 3 , 16 > act_t ;
+  zimt::pass_through < int , 2 , 16 > act ;
 
-  // and a target array, receiving the output of zimt::process
+  // a target array, receiving the output of zimt::process
 
-  zimt::array_t < 3 , value_t > trg ( shape ) ;
+  zimt::array_t < 2 , value_t > trg ( shape ) ;
 
-  // and the put_t object stores it to the target array
+  // the put_t object stores values to the target array
 
-  zimt::storer < int , 3 , 3 , 16 > p ( trg , a ) ;
+  zimt::storer < int , 2 , 2 , 16 > p ( trg , a ) ;
+
+  // the loading bill is set up with the 'hot' axis
 
   zimt::bill_t bill ;
   bill.axis = a ;
 
-  // showtime!
+  // so far this is pretty much the same as permute.cc, but in 2D.
+  // But we'll do the processing in patches: we'll run an outer
+  // loop over the patches, modify the bill to set up limits for
+  // the window to which the processing is applied, and then call
+  // zimt::process repeatedly to process all windows.
 
-  zimt::process ( shape , get_abc , act_t() , p , bill ) ;
+  int patch_no = 1 ; // just for the printed output
 
-  // a little flourish (TODO: factor out): repeat the operation,
-  // but store to a vbuffer object, then retrieve from same.
+  // we'll use 507X507 here for the patch size; in a 'real'
+  // program we'd rather use a power of two, like 512X512.
+  // But the 'odd' shape is better to 'exercise' the entire
+  // processing code.
 
-  // get the vbuffer array
+  for ( std::size_t u = 0 ; u < x ; u += 507 )
+  {
+    std::size_t ue = std::min ( u + 507 , x ) ;
+    for ( std::size_t v = 0 ; v < y ; v += 517 )
+    {
+      std::size_t ve = std::min ( v + 517 , y ) ;
 
-  auto vbuffer = zimt::get_vector_buffer ( trg , a , 16 ) ;
+      // set up the limits in 'bill'
 
-  // set up and use a vstorer object as put_t for zimt::process
+      bill.lower_limit = { long(u) , long(v) } ;
+      bill.upper_limit = { long(ue) , long(ve) } ;
 
-  zimt::vstorer < int , 3 , 3 , 16 > vs ( vbuffer , a ) ;
-  zimt::process ( shape , get_abc , act_t() , vs , bill ) ;
+      // print out the limits
 
-  // the data are now in the vbuffer array. now set up and use
-  // a vloader object as get_t for zimt::process - as put_t we
-  // use a storer storing to 'trg2'
+      std::cout << "patch #" << patch_no
+                << " lower_limit: " << u << ", " << v
+                << " upper_limit: " << ue << ", " << ve
+                << std::endl ;
 
-  zimt::vloader < int , 3 , 3 , 16 > vl ( vbuffer , a ) ;
-  zimt::array_t < 3 , value_t > trg2 ( shape ) ;
-  zimt::storer < int , 3 , 3 , 16 > pp ( trg2 , a ) ;
-  zimt::process ( shape , vl , act_t() , pp , bill ) ;
+      // showtime!
 
-  // a second flourish: store to, load from three separate arrays
+      zimt::process ( shape , get_xy , act , p , bill ) ;
 
-  zimt::array_t < 3 , int > trg3a ( shape ) ;
-  zimt::array_t < 3 , int > trg3b ( shape ) ;
-  zimt::array_t < 3 , int > trg3c ( shape ) ;
+      // next patch
 
-  // to pass the three arrays to the split_t and join_t objects, they
-  // are packaged in a std::array
+      ++patch_no ;
+    }
+  }
 
-  std::array < zimt::view_t < 3 , int > , 3 >
-    split_trg ( { trg3a , trg3b , trg3c } ) ;
+  // let's look at the result. If the patches were overlapping,
+  // the test would still succeed - we're more interested in
+  // whether the entire array has indeed been filled correctly.
 
-  // first we store to the three arrays with a split_t object
-
-  zimt::split_t < int , 3 , 3 , 16 > sps ( split_trg , a ) ;
-  zimt::process ( shape , get_abc , act_t() , sps , bill ) ;
-
-  // now we load the data with a join_t object, storing the result
-  // to trg3, which should now hold the same content as trg and trg2.
-
-  zimt::join_t < int , 3 , 3 , 16 > spl ( split_trg , a ) ;
-  zimt::array_t < 3 , value_t > trg3 ( shape ) ;
-  zimt::storer < int , 3 , 3 , 16 > p3 ( trg3 , a ) ;
-  zimt::process ( shape , spl , act_t() , p3 , bill ) ;
-
-  // let's look at the result
-
-  auto it = zimt::mcs_t < 3 > ( shape ) ;
+  auto it = zimt::mcs_t < 2 > ( shape ) ;
   for ( int i = 0 ; i < trg.size() ; i++ )
   {
     auto crd = it() ;
     assert ( trg [ crd ] == ( crd + 1 ) ) ;
-    assert ( trg2 [ crd ] == ( crd + 1 ) ) ;
-    assert ( trg3 [ crd ] == ( crd + 1 ) ) ;
   }
 }
 
+// now we'll run the test with a variety of parameters.
+
 int main ( int argc , char * argv[] )
 {
-  for ( std::size_t x = 1 ; x < 35 ; x++ )
+  for ( std::size_t x = 405 ; x < 2000 ; x += 387 )
   {
-    for ( std::size_t y = 1 ; y < 35 ; y++ )
+    for ( std::size_t y = 355 ; y < 1500 ; y += 359 )
     {
-      for ( std::size_t z = 1 ; z < 35 ; z++ )
+      for ( std::size_t a = 0 ; a < 2 ; a++ )
       {
-        for ( std::size_t a = 0 ; a < 3 ; a++ )
-        {
-          test ( a , x , y , z ) ;
-        }
+        std::cout << "test: hot axis: " << a
+                  << " x: " << x
+                  << " y: " << y << std::endl ;
+        test ( a , x , y ) ;
       }
     }
   }

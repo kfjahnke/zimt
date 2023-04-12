@@ -50,6 +50,8 @@
 
 #ifndef ZIMT_BILL_H
 
+#include <vector>
+
 // we need zimt::default_njobs from this header:
 
 #include "multithread.h"
@@ -124,7 +126,55 @@ struct bill_t
   // But the test whether p_cancel is nullptr can be done thread-local.
 
   zimt::atomic < bool > * p_cancel = nullptr ;
+
+  // these two std::vectors - normally empty - specify a window for the
+  // operation. the lower_limit vector gives the starting point, the
+  // upper_limit vector gives the point 'just beyond', so for the 1D
+  // case, if lower_limit is zero and upper_limit is three, the
+  // window contains 0, 1, 2
+  // For N-dimensional processing, if only one value is given, it is
+  // take for all dimensions. Otherwise, there must be as many limit
+  // values as there are dimensions. Empty vectors signify a lower
+  // limit of zero - or of the 'notional' shape's extens, respectively.
+
+  std::vector < long > lower_limit ;
+  std::vector < long > upper_limit ;
+
+  // these two vectors specify offsets which are to be added to the
+  // discrete coordinate passed to the get_t or put_t object when
+  // their respective init functions are called. Processing is the
+  // same as with the two vectors above.
+
+  std::vector < long > get_offset ;
+  std::vector < long > put_offset ;
 } ;
+
+  template < std::size_t D >
+  xel_t < long , D > decode_bill_vector
+    ( const std::vector < long > & v )
+  {
+    zimt::xel_t < long , D > result ;
+
+    if ( v.size() == 0 )
+    {
+      result = 0 ;
+    }
+    else if ( v.size() == 1 )
+    {
+      result = v[0] ;
+    }
+    else if ( v.size() == D )
+    {
+      for ( std::size_t i = 0 ; i < D ; i++ )
+        result[i] = v[i] ;
+    }
+    else
+    {
+      auto msg = "vector argument in bill does not match dimensionality" ;
+      throw std::invalid_argument ( msg ) ;
+    }
+    return result ;
+  }
 
 } ;
 

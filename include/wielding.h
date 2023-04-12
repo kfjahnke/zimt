@@ -166,20 +166,61 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
   const auto & axis ( bill.axis ) ; // short notation
   const auto & segment_size ( bill.segment_size ) ; // ditto
 
-  // create a slice holding the start position of the lines
-  // TODO: avoid detour via a view, calc. slice directly
+  typedef zimt::xel_t < long , dimension > crd_t ;
 
-  zimt::view_t < dimension , out_type > out_view ( shape ) ;
-  auto slice2 = out_view.slice ( axis , 0 ) ;
+  // set up the lower and upper limit of the operation. This is used
+  // if only a window of the 'notional' shape is to be processed. The
+  // limits are taken from the bill.
 
-  // and a multi-coordinate iterator over the slice
+  crd_t lower_limit = decode_bill_vector<dimension> ( bill.lower_limit ) ;
 
-  zimt::mci_t < slice2.dimension > out_mci ( slice2.shape ) ;
+  crd_t upper_limit ;
+
+  if ( bill.upper_limit.size() )
+    upper_limit = decode_bill_vector<dimension> ( bill.upper_limit ) ;
+  else
+    upper_limit = shape ;
+
+  // might omit this test to allow reversed operation
+
+  for ( std::size_t i = 0 ; i < dimension ; i++ )
+  {
+    if ( lower_limit[i] >= upper_limit[i] )
+    {
+      auto msg = "lower_limit in bill is not smaller than upper_limit" ;
+      throw std::invalid_argument ( msg ) ;
+    }
+  }
+
+  // set up offsets for the get_t and put_t objects. Normally these
+  // offsets are zero - a typical case where they aren't would be
+  // reading from and storing to 'cropped' arrays. The offsets are
+  // added unconditionally to the discrete coordinate passed to the
+  // get_t/put_t object's init functions.
+
+  crd_t get_offset = decode_bill_vector<dimension> ( bill.get_offset ) ;
+  crd_t put_offset = decode_bill_vector<dimension> ( bill.put_offset ) ;
+
+  // with the limits established, we can set up the state yielding
+  // the 1D subarrays for processing. The window of coordinates we'll
+  // process in this run is limited by lower_limit and upper_limit:
+
+  auto window_shape = upper_limit - lower_limit ;
+
+  // The lowest coordinates along 'axis' are the ones where we'll
+  // start processing for individual 1D subarrays
+
+  auto head_area_shape = window_shape ;
+  head_area_shape [ axis ] = 1 ;
+
+  // we set up an iterator over this area
+
+  zimt::mci_t < dimension > head_mci ( head_area_shape ) ;
 
   // get the line length and the number of lines
 
-  long length = out_view.shape [ axis ] ;
-  auto nr_lines = slice2.size() ;
+  long length = window_shape [ axis ] ;
+  auto nr_lines = head_area_shape.prod() ;
 
   // get the number of line segments
 
@@ -214,17 +255,28 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
     // this is only needed for reductions, but the compiler should
     // notice if the copy is unnecessary (copy elision). With the
     // copy, reductions can use the same code as ordinary transforms
+    // and the per-thread copies can hold individual state. In vspline,
+    // the equivalent functors are const, which makes them 'pure' in a
+    // functional programming sense. In zimt, most of the time, the
+    // functors will also be constant, but here we rely on the compiler
+    // to figure this out and optimize accordingly. In return we gain
+    // a universal processing routine which can handle reductions on
+    // top of the operations which can be done with a const functor.
 
-    // act_t act ( _act ) ; // create per-thread copy of 'act'
-    auto act = zimt::grok ( _act ) ; // create per-thread copy of 'act'
+    act_t act ( _act ) ; // create per-thread copy of 'act'
 
-    // we need per-thread copies of the get_t and put_t objects:
+    // we need per-thread copies of the get_t and put_t objects as well,
+    // because they may hold individual state, e.g. pointers to memory.
 
     get_t get ( _get ) ;
     put_t put ( _put ) ;
 
-    // these SIMD variables will hold one batch if input or
-    // output, respectively.
+    // these SIMD variables will hold one batch if input or output,
+    // respectively. The get_t functor will set md_in to contain the
+    // next value to be processed, then the 'act' functor is invoked to
+    // produce output from md_in and store the output in md_out, and
+    // finally, the put_t object is invoked to dispose of the result in
+    // md_out.
 
     in_v md_in ;
     out_v md_out ;
@@ -236,7 +288,9 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
     {
       // terminate early on cancellation request - the effect is not
       // immediate, but reasonably granular: the check is once per
-      // segment.
+      // segment. The optimizer can recognize the fact that p_cancel
+      // is in fact nullptr (this is the default) and optimize the
+      // test away.
 
       if ( bill.p_cancel && bill.p_cancel->load() )
         break ;
@@ -258,44 +312,37 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
         nr_values = segment_size ;
 
       // we'll first process batches of vsize values with SIMD code,
-      // then the leftovers with scalar code
+      // then the leftovers with a 'capped' operation
 
       auto nr_vectors = nr_values / vsize ;
       auto leftover = nr_values % vsize ;
 
-      // initialize the discrete coordinate. This coordinate will
-      // remain constant except for the component indexing the
-      // processing axis, which will be counted up as we go along.
-      // This makes the index calculations very efficient: for one
-      // vectorized evaluation, we only need a single vectorized
-      // addition where the vectorized coordinate is increased by
-      // vsize. As we go along, we also initialize a scalar coordinate
-      // which will be used for 'leftovers'. Note how these coordinates
-      // are only used indirectly by passing them to the get_t and put_t
-      // objects, which yield input to, and dispose of output from, the
-      // 'act' functor.
+      // for segments after the first one, we'll add an offset
 
-      auto scrd = out_mci [ line ] ;
       long ofs = segment * segment_size ;
 
-      // initially, we calculate discrete coordinates in long.
+      // The coordinate iterator over the 'head' area gives start
+      // coordinates pertaining to the chosen window
 
-      zimt::xel_t < long , dimension > dcrd ;
+      auto dcrd = head_mci [ line ] ;
 
-      for ( long d = 0 , ds = 0 ; d < dimension ; d++ )
-      {
-        if ( d != axis )
-        {
-          dcrd[d] = scrd[ds] ;
-          ++ds ;
-        }
-        else
-        {
-          dcrd[d] = ofs ;
-        }
-      }
+      // To obtain the start coordinate pertaining to the 'notional'
+      // shape, we add the window's lower limit - usually the lower
+      // limit is zero.
 
-      put.init ( dcrd ) ;
+      dcrd += lower_limit ;
+
+      // and, along the processing axis, an offset (if this is the
+      // very first segment, the offset is zero)
+
+      dcrd [ axis ] += ofs ;
+
+      // now we have the start coordinate and we can init the put_t
+      // object with it. Note how the coordinate is only used once to
+      // initialize the get_t and put_t object via their init function,
+      // what these objects 'make of it' is up to them.
+
+      put.init ( dcrd + put_offset ) ;
 
       if ( nr_vectors == 0 )
       {
@@ -305,22 +352,26 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
           // we need a special init which caps the result, and
           // applies 'stuffing' (see below)
 
-          get.init ( md_in , dcrd , leftover ) ;
+          get.init ( md_in , dcrd + get_offset , leftover ) ;
           act.eval ( md_in , md_out , leftover ) ;
           put.save ( md_out , leftover ) ;
         }
       }
       else
       {
-        // we create a local copy of the get_t and call init on
-        // it, passing in the discrete coordinate of the beginning of
-        // the current line and receiving an initial value of md_in,
-        // the vectorized datum suitable for processing with 'act'.
+        // we passing the discrete coordinate of the beginning of
+        // the current line to the get_t object's init function and
+        // receive an initial value of md_in, the vectorized datum
+        // suitable for as input for 'act'. Note the addition of
+        // 'get_offset'. This is an optional datum from the 'loading
+        // bill' which can be used to make the get_t object use
+        // shifted coordinates - e.g. when loading from a cropped
+        // image.
 
-        get.init ( md_in , dcrd ) ;
+        get.init ( md_in , dcrd + get_offset ) ;
 
         // first we perform a peeling run, processing data vectorized
-        // as long as there are enough data to fill an entire md_out
+        // as long as there are enough data to fill an entire md_in
 
         for ( std::size_t v = 0 ; v < nr_vectors ; v++ )
         {
@@ -330,11 +381,11 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
             get.increase ( md_in ) ;
         }
 
-        // if there are any scalar values left over, we use 'capped'
-        // operations to process them, 'leftover' serving as cap value.
-        // These operations only affect part of the vectorized data.
+        // if there are any scalar values left over, we use a 'capped'
+        // operationsto process them, 'leftover' serving as cap value.
+        // This operation only affects part of the vectorized data.
         // If there are no full vectors at all (see further up), the
-        // lanes from the cap up are padded with the last value before
+        // lanes from the cap are padded with the last value before
         // the cap (this is affected by passing 'stuff' true) - but
         // this is a rare exception. Most of the time at least one
         // full vectorized datum was processed, so all lanes hold valid
@@ -415,27 +466,6 @@ void coupled_f ( const act_t & act ,
       get ( in_view , axis ) ;
     process ( out_view.shape , get , act , put , bill ) ;
   }
-}
-
-template < typename T , std::size_t N , std::size_t L >
-struct pass_through
-: public zimt::unary_functor < zimt::xel_t < T , N > ,
-                               zimt::xel_t < T , N > ,
-                               L >
-{
-  template < typename I , typename O >
-  void eval ( const I & i , O & o , const std::size_t cap = 0 )
-  {
-    o = i ;
-  }
-} ;
-
-template < typename W >
-zimt::uf_adapter < W >
-uf_adapt ( const W & inner )
-{
-  return zimt::uf_adapter < W >
-    ( inner ) ;
 }
 
 } ; // namespace wielding
