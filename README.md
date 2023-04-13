@@ -245,3 +245,15 @@ Where zimt::tansform is less general and does stuff like
       vo = act ( V )
       store vo in array B
 
+### grokking
+
+I've borrowed a term from SciFi which I first started using in vspline, and it's turned out useful, so I carried it over to zimt: I call it 'grokking' functors - from the neologism ["grok"](https://en.wikipedia.org/wiki/Grok "wikipedia entry on 'grok'") in it's meaning 'to understand'. functors are 'standard fare' in zimt. Every call to zimt::transform needs an 'act' functor, and zimt::process additionally takes a get_t and a put_t functor. The concrete type of these functors may vary, to allow a wide variety of operations. But all act functors share the same interface, and the same is true for all get_t and put_t functors. One way to handle such polymorphism is to use a common base class with virtual functions and derive concrete classes from it. I've chosen a similar design, but I avoid the common base class, and instead use a technique called 'type erasure' which captures the specific functionality in std::functions and presents a type which has the same interface, but no visible peculiarities apart from that. The implementation of the 'grokking' process and the associated objects is quite a mouthful, but use is simple due to a bunch of factory functions. For an act functor 'af', it's as simple as this:
+
+    auto ga = zimt::grok ( af ) ;
+
+For a get_t object 'g' and a put_t object 'p' it's
+
+    auto gg = zimt::grok_get ( g ) ;
+    auto gp = zimt::grok_put ( p ) ;
+
+ga, gg, and gp can now be used wherever an object of the 'grokked' type might have been used, they can be copied freely, passed as arguments etc. - but because they are of grok_type, grok_get_t and grok_put_t, you can write code which, for example, accepts such objects rather than template code accepting all kinds of functor types. It makes coding complex functor compositions much easier.

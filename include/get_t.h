@@ -758,6 +758,207 @@ struct linspace_t
   }
 } ;
 
+// to avoid having to deal with the concrete type of a get_t, we can
+// use type erasure, a technique I call 'grokking'. Basically, it
+// captures an object's set of member functions as std::functions
+// and provides a new object which delegates to these std::functions.
+// In result the new object is decoupled from the 'grokkee' type, but
+// provides it's functionality just the same. The internal workings
+// do still use the 'grokked' object, but it's type is hidden from
+// view - it's been 'erased'.
+// For a get_t, we need an object providing two init and two increase
+// overloads - both for the 'normal' and the capped variants if init
+// and increase. Here's the class definition - it's quite a mouthful,
+// but further down there's a factory function to perform the 'grok'
+// which uses ATD, making the process simple.
+
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
+           std::size_t L >  // lane count
+struct grok_get_t
+{
+private:
+  // we need some of the grokkee's types
+
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef zimt::xel_t < long , D > crd_t ;
+
+  // grok_get_t holds six std::functions of these six types:
+
+  typedef std::function < void ( void * & ,
+                                 value_v & ,
+                                 const crd_t & ) > vinit_f ;
+
+  typedef std::function < void ( void * & ,
+                                 value_v & ) > vincrease_f ;
+
+  typedef std::function < void ( void * & ,
+                                 value_v & ,
+                                 const crd_t & ,
+                                 const std::size_t & ) > cinit_f ;
+
+  typedef std::function < void ( void * & ,
+                                 value_v & ,
+                                 const std::size_t & ,
+                                 const bool & ) > cincrease_f ;
+
+  // these last two types are 'infrastructure code' - it's the
+  // same mechanism that's used in grok_type.
+
+  typedef std::function < void* ( void* ) > replicate_type ;
+  typedef std::function < void ( void* ) > terminate_type ;
+
+  // here they are
+
+  vinit_f vinit ;
+  vincrease_f vincrease ;
+  cinit_f cinit ;
+  cincrease_f cincrease ;
+
+  replicate_type rep ;
+  terminate_type trm ;
+
+  // and here we have the pointer to the copy of the grokkee cast
+  // to void*.
+
+  void * p_context ;
+
+public:
+
+  template < typename grokkee_type >
+  grok_get_t ( const grokkee_type & grokkee )
+  {
+    typedef grokkee_type g_t ;
+
+    // p_context is initialized with a copy of 'grokkee'
+
+    p_context = new g_t ( grokkee ) ;
+
+    // the std::functions are initialized with wrappers taking
+    // p_context and a set of arguments which are passed on to
+    // the grokkee's member functions.
+
+    vinit = [] ( void * & p_ctx ,
+                 value_v & v ,
+                 const crd_t & crd )
+          {
+            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            p_gk->init ( v , crd ) ;
+          } ;
+
+    cinit = [] ( void * & p_ctx ,
+                 value_v & v ,
+                 const crd_t & crd ,
+                 const std::size_t & cap )
+          {
+            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            p_gk->init ( v , crd , cap ) ;
+          } ;
+
+    vincrease = [] ( void * & p_ctx ,
+                     value_v & v )
+          {
+            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            p_gk->increase ( v ) ;
+          } ;
+
+    cincrease = [] ( void * & p_ctx ,
+                     value_v & v ,
+                     const std::size_t & cap ,
+                     const bool & stuff )
+          {
+            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            p_gk->increase ( v , cap , stuff ) ;
+          } ;
+
+    rep = [] ( void * p_ctx ) -> void*
+          {
+            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            return new g_t ( *p_gk ) ;
+          } ;
+
+    trm = [] ( void * p_ctx )
+          {
+            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            delete p_gk ;
+          } ;
+  }
+
+  // grok_get_t itself offers the typical member functions of
+  // a get_t object, which in turn delegate to the stored
+  // std::functions.
+
+  void init ( value_v & trg , const crd_t & crd )
+  {
+    vinit ( p_context , trg , crd ) ;
+  }
+
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              const std::size_t & cap )
+  {
+    cinit ( p_context , trg , crd , cap ) ;
+  }
+
+  void increase ( value_v & trg )
+  {
+    vincrease ( p_context , trg ) ;
+  }
+
+  void increase ( value_v & trg ,
+                  const std::size_t & cap ,
+                  const bool & _stuff = true )
+  {
+    cincrease ( p_context , trg , cap , _stuff ) ;
+  }
+
+  grok_get_t & operator= ( const grok_get_t & rhs )
+  {
+    // first copy the std::functions
+
+    vinit = rhs.vinit ;
+    vincrease = rhs.vincrease ;
+    cinit = rhs.cinit ;
+    cincrease = rhs.cincrease ;
+    rep = rhs.rep ;
+    trm = rhs.trm ;
+
+    // now use 'rep' to copy the 'hidden' grokkee
+
+    p_context = rep ( rhs.p_context ) ;
+    return *this ;
+  }
+
+  // copy construction delegates to copy assignment
+
+  grok_get_t ( const grok_get_t & rhs )
+  {
+    *this = rhs ;
+  }
+} ;
+
+// grok_get is a factory function to 'grok' a get_t object.
+// using ATD, the invocation to 'grok' some get_t x is simply
+// auto gk = grok_get ( x ) ;
+// gk can then be used wherever a get_t is required.
+
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
+           std::size_t L ,  // lane count
+           template < typename ,
+                      std::size_t ,
+                      std::size_t ,
+                      std::size_t >
+             class G >
+grok_get_t < T , N , D , L > grok_get
+  ( G < T , N , D , L > grokkee )
+{
+  return grok_get_t < T , N , D , L > ( grokkee ) ;
+}
+
 } ; // namespace zimt
 
 #define ZIMT_GET_T_H

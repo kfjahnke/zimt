@@ -574,6 +574,19 @@ operator+ ( const T1 & t1 , const T2 & t2 )
 /// of template instantiations, and the compiler will optimize the code
 /// as if the 'grok' had not happened, because it can 'see inside' the
 /// grok_type object and optimize the grokking overhead away.
+///
+/// Why not use a base class with virtual 'eval' functions? While this
+/// is feasible to implement the evaluation, there are additional aspects
+/// to consider: we want the grok_type object to be copyable. So we'd
+/// have to implement a mechanism similar to the one we use here: the
+/// 'rep' member function. We'd also need a common base class declaring
+/// the pure virtual eval member functions, and all unary_functors
+/// would need to inherit from it, forcing them to have a virtual
+/// function table. I reckon that all in all a proper implementation
+/// of class grok_type using virtual eval member functions would end
+/// up about as complex as this one, but it would be more intrusive.
+/// The method used here is perfectly general and transparent, and it
+/// requires no 'coorperation' on the part of the grokkee.
 
 template < typename IN ,       // argument or input type
            typename OUT = IN , // result type
@@ -618,7 +631,7 @@ private:
              const std::size_t & cap )
     > c_eval_type ;
 
-  // we need two more types of function to provide the infrastructure
+  // we need two more types of function to provide infrastructure
   // of grok_type: the first one produces a copy of the 'grokkee'
   // and the second one deletes it. Note that the grokkee itself
   // is copied to allocated memory in the c'tor and subsequently
@@ -639,7 +652,7 @@ private:
   terminate_type trm ;
 
   // and here we have the pointer to the copy of the grokkee cast
-  // to void*.
+  // to void*. It's private, so that user code can't 'mess' with it.
 
   void * p_context ;
 
@@ -647,13 +660,15 @@ public:
 
   /// we provide a default constructor so we can create an empty
   /// grok_type and assign to it later. Calling the empty grok_type's
-  /// eval will result in an exception.
+  /// eval will result in an exception, but we want this to set up
+  /// things like arrays of grok_type.
 
   grok_type() { } ;
   
   /// constructor from 'grokkee' using lambda expressions
   /// to initialize the std::functions above. we enable this if
-  /// grokkee_type is a zimt::unary_functor.
+  /// grokkee_type is a zimt::unary_functor. We may relax the
+  /// requirement and accept anything that 'fits'.
 
   template < class grokkee_type ,
              typename std::enable_if
@@ -694,7 +709,27 @@ public:
     p_context = new g_t ( grokkee ) ;
 
     // now initialize the class members holding std::functions
-    // with lamdas taking first the context, then more arguments
+    // with lambdas taking first the context, then more arguments.
+    // This is how we delegate to the grokkee: the lambdas
+    // static_cast the context pointer to the grokkee's type
+    // (which is known in this contructor because the argument
+    // is typed so), and then they proceed to delegate the
+    // call to the grokkee. Replication and termination use
+    // the same pattern. Once the lambdas are store in the
+    // std::functions _e_ev, _c_ev etc. the 'knowledge' of
+    // how to delegate is removed from view: the grokkee's type
+    // is no longer visible or accessible, hence the term 'type
+    // erasure'. Of course the *compiler* can still track what
+    // is going on, and if the grokkee's class definition is
+    // accessible during compilation of the grok, it can
+    // optimize it just as if the grokkee had been used
+    // instead, and there is no overhead. On the other hand,
+    // if the grokkee's class definition is elsewhere, the
+    // mechanism still works, but the context pointer and the
+    // delegation won't be optimized away during compilation.
+    // Even such constructs may be optimized away during
+    // run-time when the code is JITed or submitted to similar
+    // tuning mechanisms.
 
     _v_ev = [] ( void * p_ctx , const in_v & in , out_v & out )
             {
@@ -740,14 +775,20 @@ public:
 
   grok_type & operator= ( const grok_type & rhs )
   {
+    // first copy the std::functions
+
     _v_ev = rhs._v_ev ;
     _c_ev = rhs._c_ev ;
     rep = rhs.rep ;
     trm = rhs.trm ;
 
+    // now use 'rep' to copy the 'hidden' grokkee
+
     p_context = rep ( rhs.p_context ) ;
     return *this ;
   }
+
+  // copy construction delegates to copy assignment
 
   grok_type ( const grok_type & rhs )
   {
@@ -756,7 +797,7 @@ public:
 
   // the eval member functions pass the grok_type object's 'own'
   // p_context to the lambdas which are captured in the members
-  // _v_ev etc. stored as std::functions.
+  // _v_ev etc., stored as std::functions.
 
   // uncapped evaluation member function
 
