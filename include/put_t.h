@@ -286,10 +286,14 @@ struct vstorer
 // but only it's performance is of interest and the cost of saving
 // it's output should be avoided.
 
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
+           std::size_t L >  // lane count
 struct discard_result
 {
-  template < typename T >
-  void init ( const T & crd )
+  template < typename A >
+  void init ( const A & crd )
   { }
 
   template < typename ... A >
@@ -452,7 +456,7 @@ public:
   // manner by passing it to 'trm', which knows how to cast it to
   // it's 'true' type and then calls delete on that.
 
-  ~grok_type()
+  ~grok_put_t()
   {
     if ( p_context )
       trm ( p_context ) ;

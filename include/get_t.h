@@ -758,6 +758,28 @@ struct linspace_t
   }
 } ;
 
+// no_input is a get_t which doesn't 'touch' md_in in
+// zimt::process. The 'act' functor can refer to it, but it's
+// content is not defined. So what's the point? The act functor
+// might be made to do some task at every invocation which does
+// not depend on a location, i.e. produce or process a random
+// value.
+
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
+           std::size_t L >  // lane count
+struct no_input
+{
+  template < typename ... A >
+  void init ( A ... args )
+  { }
+
+  template < typename ... A >
+  void increase ( A ... args )
+  { }
+} ;
+
 // to avoid having to deal with the concrete type of a get_t, we can
 // use type erasure, a technique I call 'grokking'. Basically, it
 // captures an object's set of member functions as std::functions
@@ -936,6 +958,16 @@ public:
   grok_get_t ( const grok_get_t & rhs )
   {
     *this = rhs ;
+  }
+
+  // finally, the d'tor destroys the context object in a type-safe
+  // manner by passing it to 'trm', which knows how to cast it to
+  // it's 'true' type and then calls delete on that.
+
+  ~grok_get_t()
+  {
+    if ( p_context )
+      trm ( p_context ) ;
   }
 } ;
 
