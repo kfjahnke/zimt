@@ -22,17 +22,17 @@ To help with the examples, the 'examples' folder has a shell script 'examples.sh
 
 ### zimt backends
 
-On top of 'zimt's own', zimt currently supports three backends:
+On top of 'zimt's own', zimt currently supports three SIMD backends:
 
   - highway
   - Vc
   - std::simd
 
-My recommendation is to use [highway](https://github.com/google/highway/ "Performance-portable, length-agnostic SIMD with run-time dispatch") - it's the most recent development, supports a wide variety of hardware, ind the integration into zimt is well-used because it's now the default back-end for [lux](https://bitbucket.org/kfj/lux/ "git repository of the lux image and panorama viewer"). highway is available from github, and it's also quite available via package managers, so it's a good idea to see if your package manager offers it. zimt currently relies on highway 1.0.4. To use this backend with zimt, #define USE_HWY
+My recommendation is to use [highway](https://github.com/google/highway/ "Performance-portable, length-agnostic SIMD with run-time dispatch") - it's the most recent development, supports a wide variety of hardware, and the integration into zimt is well-used because it's now the default back-end for [lux](https://bitbucket.org/kfj/lux/ "git repository of the lux image and panorama viewer"). highway is available from github, and it's also quite available via package managers, so it's a good idea to see if your package manager offers it. zimt currently relies on highway 1.0.4. To use this backend with zimt, #define USE_HWY
 
 [Vc](https://github.com/VcDevel/Vc/ "SIMD Vector Classes for C++") is good for intel/AMD processors up to AVX2, and it has dedicated AVX support, which highway does not provide - there, the next-bast thing is SSE4.2, which is quite similar but a bit slower. Apart from that, using Vc with zimt offers few advantages over using the highway backend. You may find Vc packages via your package manager - if you install from source, pick the 1.4 branch explicitly. To use this backend with zimt, #define USE_VC, and link with -lVc
 
-std::simd is part of the C++ standard and requires C++17. Some C++ libraries now provide an implementation of std::simd, but the implementation coming with g++ is - IMHO and of this writing - not very comprehensive, e.g. missing explict SIMD implementations of some math routines. It is a step up from no backend, though, and if you have a recent libstdc++ installed, it's definitely worth a try. To use this backend with zimt, #define USE_STDSIMD, and use -std=c++17.
+[std::simd](https://en.cppreference.com/w/cpp/experimental/simd/ "cppreference.com page: Data-parallel vector library") is part of the C++ standard and requires C++17. Some C++ libraries now provide an implementation of std::simd, but the implementation coming with g++ is - IMHO and of this writing - not very comprehensive, e.g. missing explict SIMD implementations of some math routines. It is a step up from no backend, though, and if you have a recent libstdc++ installed, it's definitely worth a try. To use this backend with zimt, #define USE_STDSIMD, and use -std=c++17.
 
 For all compiles, it's crucial to use optimization (use -O3) and to specify use of the native CPU (unless you need portability). The latter is affected by '-march=native' on intel/AMD CPUs; for other platforms you may need to specify the actual CPU - e.g. -mcpu=apple-m1 for builds on Apple's M1. I prefer using clang++ over g++, but I'll refrain from a clear recommendation.
 
@@ -285,3 +285,5 @@ For a get_t object 'g' and a put_t object 'p' it's
     auto gp = zimt::grok_put ( p ) ;
 
 ga, gg, and gp can now be used wherever an object of the 'grokked' type might have been used, they can be copied freely, passed as arguments etc. - but because they are of grok_type, grok_get_t and grok_put_t, you can write code which, for example, accepts such objects rather than template code accepting all kinds of functor types. It makes coding complex functor compositions much easier.
+
+To demonstrate that a 'grokked' object can even be passed across TU boundaries so that the 'receiving end' can use it without having access to the grokkee's class definition, I have added two example files extern_get_t.cpp and fetches_get_t.cpp. You can compile them separately and then link the object files. The resulting program will show that the get_t object defined in one TU can be used in the other TU.
