@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file get_t.h
+/*! \file put.h
 
     \brief classes to provide input to an 'act' functor
 
@@ -54,7 +54,7 @@
 
 */
 
-#ifndef ZIMT_PUT_T_H
+#ifndef ZIMT_PUT_H
 
 namespace zimt
 {
@@ -187,7 +187,7 @@ struct split_t
 // because it can use efficient SIMD store operations rather than
 // having to interleave the data to store them as xel of T. To
 // retrieve the data from such a vectorized storage array, use
-// class vloader (see get_t.h). The target view should refer to an
+// class vloader (see get.h). The target view should refer to an
 // array obtained via zimt::get_vector_buffer.
 
 template < typename T ,    // elementary/fundamental type
@@ -485,5 +485,5 @@ grok_put_t < T , N , D , L > grok_put
 
 } ; // namespace zimt
 
-#define ZIMT_PUT_T_H
+#define ZIMT_PUT_H
 #endif

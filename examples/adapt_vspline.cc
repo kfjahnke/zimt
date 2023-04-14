@@ -45,7 +45,7 @@
 // eval. There is a handy factory function named zimt::uf_adapt (it's
 // in unary_functor.h) just for the purpose.
 
-#include "../zimt.h"
+#include <zimt/zimt.h>
 #include <vspline/vspline.h>
 
 typedef vigra::TinyVector < float , 3 > vigra_pixel_t ;

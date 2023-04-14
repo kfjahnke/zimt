@@ -52,7 +52,7 @@
 // demonstrate correct use of the limits and offsets in the 'loading
 // bill'.
 
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 // we receive the 'hot' axis, and the size of the patch (x, y)
 

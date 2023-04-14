@@ -149,32 +149,47 @@ struct bill_t
   std::vector < long > put_offset ;
 } ;
 
-  template < std::size_t D >
-  xel_t < long , D > decode_bill_vector
-    ( const std::vector < long > & v )
-  {
-    zimt::xel_t < long , D > result ;
+// this helper function 'translates' the std::vectors in the bill
+// into fixed-size xel_t. zimt::process calls this helper function
+// for all the vectors in the bill.
 
-    if ( v.size() == 0 )
-    {
-      result = 0 ;
-    }
-    else if ( v.size() == 1 )
-    {
-      result = v[0] ;
-    }
-    else if ( v.size() == D )
-    {
-      for ( std::size_t i = 0 ; i < D ; i++ )
-        result[i] = v[i] ;
-    }
-    else
-    {
-      auto msg = "vector argument in bill does not match dimensionality" ;
-      throw std::invalid_argument ( msg ) ;
-    }
-    return result ;
+template < std::size_t D >
+xel_t < long , D > decode_bill_vector
+  ( const std::vector < long > & v )
+{
+  zimt::xel_t < long , D > result ;
+
+  // an empty vector counts as 'all zero'
+
+  if ( v.size() == 0 )
+  {
+    result = 0 ;
   }
+
+  // a single value is taken for all axes
+
+  else if ( v.size() == 1 )
+  {
+    result = v[0] ;
+  }
+
+  // if there are as many values as dimensions, all values are taken
+
+  else if ( v.size() == D )
+  {
+    for ( std::size_t i = 0 ; i < D ; i++ )
+      result[i] = v[i] ;
+  }
+
+  // all other cases are considered errors
+
+  else
+  {
+    auto msg = "vector argument in bill does not match dimensionality" ;
+    throw std::invalid_argument ( msg ) ;
+  }
+  return result ;
+}
 
 } ;
 

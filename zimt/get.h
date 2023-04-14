@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file get_t.h
+/*! \file get.h
 
     \brief classes to provide input to an 'act' functor
 
@@ -52,7 +52,7 @@
     namely the two init and two increase overloads.
 */
 
-#ifndef ZIMT_GET_T_H
+#ifndef ZIMT_GET_H
 
 namespace zimt
 {
@@ -993,5 +993,5 @@ grok_get_t < T , N , D , L > grok_get
 
 } ; // namespace zimt
 
-#define ZIMT_GET_T_H
+#define ZIMT_GET_H
 #endif

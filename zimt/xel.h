@@ -486,7 +486,7 @@ void bunch ( const xel_t < ET < value_type > , nch > * src ,
 
 // The next to member functions are for stashing and unstashing
 // simdized data. This is used e.g. by class vstorer and vloader
-// (see get_t.h and put_t.h)
+// (see get.h and put.h)
 
 // load operation from contiguous memory of the elementary
 // type of a simdized datum.

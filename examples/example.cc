@@ -65,7 +65,7 @@
 // not an option, you can use M. Kretz' original implementation from
 // https://github.com/VcDevel/std-simd.
 
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 // Type for typical xel datum consisting of three float values:
 

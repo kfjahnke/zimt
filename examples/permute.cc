@@ -48,7 +48,7 @@
 
 #include <iomanip>
 #include <array>
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 void test ( std::size_t a ,
             std::size_t x ,

@@ -40,10 +40,15 @@
 
     \brief this header includes all of zimt
 
-    The actual zimt headers are in zimt/include, whereas this header
-    is in zimt/. transform.h is the highest-level header in zimt and
-    pulls in all the other headers.
+    You might as well include transform.h, which also includes
+    everything, but I like to have a top-level header with the
+    same base name as the library itself.
 */
 
-#include "include/transform.h"
+#ifndef ZIMT_INCLUDED
+
+#include "transform.h"
+
+#define ZIMT_INCLUDED
+#endif
 

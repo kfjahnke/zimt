@@ -41,7 +41,7 @@
 // the code in minz.h which makes it quite verbose, because this
 // code needs more arguments than zimt::transform and relatives.
 
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 int main ( int argc , char * argv[] )
 {

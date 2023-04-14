@@ -52,7 +52,7 @@
 // from operating on real arrays and see just how much the memory access
 // adds to total execution time.
 
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 // we use a functor 'crunch' which does a bit of arithmetic.
 
@@ -199,7 +199,7 @@ int main ( int argc , char * argv[] )
   auto gk = zimt::grok ( act_t ( yield ) ) ;
 
   zimt::process ( a.shape , l , gk + gk ,
-                  zimt::discard_result() ) ;
+                  zimt::discard_result < float , 3 , 3 , 16 > () ) ;
 
   // here's the final result over ca. 1e9 pixels:
 

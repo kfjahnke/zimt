@@ -64,7 +64,7 @@
 
 #include <iomanip>
 #include <array>
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 // join_t is the 'get_t' we'll use for this example. This functor
 // generates the input values to the functor. In this example we'll

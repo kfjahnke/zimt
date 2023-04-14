@@ -8,6 +8,34 @@ The code in this library is based on code from my library [vspline](https://bitb
 
 I intend to - eventually - pull zimt 'back into' vspline, but for now I work the code as a stand-alone entity to be free to make design changes without having to worry about breaking my extant applications.
 
+## installation
+
+Installation is simple: soft-link the folder containing the zimt headers to a location which the compiler will find, so that includes à la "#include <zimt/zimt.h>" will succeed. On my Linux system, I use:
+
+    sudo ln -s path-to-source/zimt/zimt /usr/local/include
+
+Where "path-to-source" is the parent folder of the clone of the zimt repo. With this 'installation' the examples will compile out-of-the-box. If you don't like linking stuff into your /usr/local, you'll have to tell the compiler where the zimt headers are, e.g. with a -I command line argument.
+
+The top-level header is called "zimt.h", it includes all of zimt.
+
+To help with the examples, the 'examples' folder has a shell script 'examples.sh' which will compile al C++ files you pass to it with clang++ and g++, and with all available SIMD backends. Of course using all available backends will require that you have them installed as well - if you are missing some, make a copy of the shell script, comment out the parts in question, and use the copy instead of examples.sh. If you don't have any of the SIMD backends, zimt will provide it's own, which does a fairly good job but is usually not as fast as the other backends. But you can go ahead and start coding with zimt, and if you need more speed you can install one of the back-ends later
+
+### zimt backends
+
+On top of 'zimt's own', zimt currently supports three backends:
+
+  - highway
+  - Vc
+  - std::simd
+
+My recommendation is to use [highway](https://github.com/google/highway/ "Performance-portable, length-agnostic SIMD with run-time dispatch") - it's the most recent development, supports a wide variety of hardware, ind the integration into zimt is well-used because it's now the default back-end for [lux](https://bitbucket.org/kfj/lux/ "git repository of the lux image and panorama viewer"). highway is available from github, and it's also quite available via package managers, so it's a good idea to see if your package manager offers it. zimt currently relies on highway 1.0.4. To use this backend with zimt, #define USE_HWY
+
+[Vc](https://github.com/VcDevel/Vc/ "SIMD Vector Classes for C++") is good for intel/AMD processors up to AVX2, and it has dedicated AVX support, which highway does not provide - there, the next-bast thing is SSE4.2, which is quite similar but a bit slower. Apart from that, using Vc with zimt offers few advantages over using the highway backend. You may find Vc packages via your package manager - if you install from source, pick the 1.4 branch explicitly. To use this backend with zimt, #define USE_VC, and link with -lVc
+
+std::simd is part of the C++ standard and requires C++17. Some C++ libraries now provide an implementation of std::simd, but the implementation coming with g++ is - IMHO and of this writing - not very comprehensive, e.g. missing explict SIMD implementations of some math routines. It is a step up from no backend, though, and if you have a recent libstdc++ installed, it's definitely worth a try. To use this backend with zimt, #define USE_STDSIMD, and use -std=c++17.
+
+For all compiles, it's crucial to use optimization (use -O3) and to specify use of the native CPU (unless you need portability). The latter is affected by '-march=native' on intel/AMD CPUs; for other platforms you may need to specify the actual CPU - e.g. -mcpu=apple-m1 for builds on Apple's M1. I prefer using clang++ over g++, but I'll refrain from a clear recommendation.
+
 ## zimt components
 
 In zimt, I provide a type for small aggregates, named 'xel_t' - xel is for things like pi*xel*s etc. - and a type for multidimensional arrays with arbitrary striding, named array_t/view_t . These stand in for the use of vigra::TinyVector and vigra::MultiArray(View) in vspline - vspline does not use much else from vigra, and the vigra library is very large, so I decided to replace these types with my own stripped-down versions to reduce a rather cumbersome dependency and make the code simple, focusing on what's needed in zimt. I also rely heavily on optimization, so I feel that I'm better off with simple constructs, because the chance that the optimizer will recognize optimizable patterns in the code should be higher this way. It's important to note that zimt is made to deal with 'xel' data and fundamentals only - you can create arrays of other data, but you can't use zimt's raison d'être, the transform family of functions, on them, because zimt has no notion of their 'simdized' equivalent. To use arrays of, say, structured types in zimt, you have to reformulate the data as several arrays of fundamentals (typically by creating views with appropriate striding, you don't have to copy the data).

@@ -106,7 +106,7 @@
 // k in 0...m and l in 0...n
 
 #include <iomanip>
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 // rect3d_t is the 'get_t' we'll use for this example. This functor
 // generates the input values to the functor - and for this example,

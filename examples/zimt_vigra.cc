@@ -53,7 +53,7 @@
 
 */
 
-#include "../include/zimt_vigra.h"
+#include <zimt/zimt_vigra.h>
 
 // Type for typical xel datum consisting of three float values
 // and binary-compatible vigra::TinyVector

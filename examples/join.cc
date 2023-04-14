@@ -50,7 +50,7 @@
 
 #include <iomanip>
 #include <array>
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 int main ( int argc , char * argv[] )
 {

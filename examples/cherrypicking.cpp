@@ -101,7 +101,7 @@ void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 // use std::simd backend as standard for the remainder.
 
 #define USE_STDSIMD
-#include "../zimt.h"
+#include <zimt/zimt.h>
 
 // we build unary functors, the first uses f() , the second g():
 

@@ -93,8 +93,8 @@
 #include "array.h"
 #include "unary_functor.h"
 #include "bill.h"
-#include "get_t.h"
-#include "put_t.h"
+#include "get.h"
+#include "put.h"
 
 namespace zimt
 {
