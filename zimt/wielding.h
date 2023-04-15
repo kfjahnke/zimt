@@ -100,15 +100,15 @@ namespace zimt
 {
 typedef std::size_t ic_type ;
 
-/// 'process' is the central function in the wielding namespace
-/// and used to implement all 'transform-like' operations. It is
-/// a generalization of the 'transform' concept, adding choosable
-/// 'get' and 'put' methods generating input for the 'act' functor
-/// and disposing of it's output. By factoring these two activities
-/// out, the code becomes much more flexible, and by selecting
-/// simple appropriate 'get' and 'put' objects, zimt::transform
-/// can easily be implemented as a specialized application of the
-/// more general code in 'process'.
+/// 'process' is the central function in zimt  and used to
+/// implement all 'transform-like' operations. It is  a
+/// generalization of the 'transform' concept, adding choosable
+/// 'get' and 'put' functors generating input for the 'act'
+/// functor  and disposing of it's output. By factoring these
+/// two activities  out, the code becomes much more flexible,
+/// and by selecting  simple appropriate 'get' and 'put' objects,
+/// zimt::transform  can easily be implemented as a specialized
+/// application of the  more general code in 'process'.
 /// So 'process' uses a three-step process: the 'get' object
 /// produces data the 'act' functor can process, the 'act'
 /// functor produces output data from this input, and the 'put'
@@ -119,11 +119,15 @@ typedef std::size_t ic_type ;
 /// the put_t object can dispose of.
 /// Some uses of 'process' will not need the entire set of three
 /// processing elements, but 'process' nevertheless expects them;
-/// they may be 'dunnies', though, which will be optimized away.
+/// they may be 'dummies', though, which will be optimized away.
 /// 'process' 'aggregates' the data so that all of the input will
 /// be processed by vector code (unless the data themselves are not
-/// vectorizable), so the 'act' functor may omit a scalar eval
-/// member function and provide vectorized eval only.
+/// vectorizable), so the 'act' functor doesn't need a scalar eval
+/// member function. It needs to provide a vectorized eval only,
+/// plus - for reductions - a 'capped' eval overload which is
+/// invoked if the vectorized datum passed to the 'act' functor
+/// has content which was filled in to make up full vectors but
+/// shouldn't be fed to the reduction.
 /// The template signature could make an attempt to be more specific,
 /// but as it is it's nice and clear and works well with ATD, so that
 /// invocations of zimt::process can typically invoke it without
@@ -134,17 +138,22 @@ typedef std::size_t ic_type ;
 /// the number of full vectors and 'leftovers' etc. - followed by the
 /// three 'active' elements, and finally the 'loading bill' which is
 /// often left at the default.
+/// Note the template argument gact_t: this allows passing in functors
+/// which take and produce single-channel data in 'naked' form rather
+/// than as xel_t of one element.
 
 template < std::size_t dimension ,
            class get_t ,
-           class act_t ,
+           class gact_t ,
            class put_t >
-void process ( zimt::xel_t < std::size_t , dimension > shape ,
+void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
                const get_t & _get ,
-               const act_t & _act ,
+               const gact_t & gact ,
                const put_t & _put ,
-               zimt::bill_t bill = zimt::bill_t() )
+               const zimt::bill_t & bill = zimt::bill_t() )
 {
+  typedef vs_adapter < gact_t > act_t ;
+
   // we extract the act functor's type system and constants
 
   typedef typename act_t::in_type in_type ;
@@ -262,11 +271,20 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
     // to figure this out and optimize accordingly. In return we gain
     // a universal processing routine which can handle reductions on
     // top of the operations which can be done with a const functor.
+    // At the same time we move from the general functor to the
+    // adapted version (see vs_adapter)
 
-    act_t act ( _act ) ; // create per-thread copy of 'act'
+    act_t act ( gact ) ;
 
     // we need per-thread copies of the get_t and put_t objects as well,
     // because they may hold individual state, e.g. pointers to memory.
+
+    // TODO: it may be more efficient to replace the get_t and put_t
+    // ojects' init functions with c'tor overloads, then hold an
+    // lvalue reference to md_in, or md_out, respectively, in the
+    // get_t/put_t object and avoid passing the reference in increase
+    // or save. Alternatively, init might pass a pointer which could be
+    // stored to avoid the reference argument in increase/save.
 
     get_t get ( _get ) ;
     put_t put ( _put ) ;
@@ -382,7 +400,7 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
         }
 
         // if there are any scalar values left over, we use a 'capped'
-        // operationsto process them, 'leftover' serving as cap value.
+        // operations to process them, 'leftover' serving as cap value.
         // This operation only affects part of the vectorized data.
         // If there are no full vectors at all (see further up), the
         // lanes from the cap are padded with the last value before
@@ -424,48 +442,6 @@ void process ( zimt::xel_t < std::size_t , dimension > shape ,
   // and, if so, with how many threads.
 
   zimt::multithread ( worker , bill.njobs ) ;
-}
-
-// wielding code to get-process two equally shaped views, which is
-// also used for 'apply', passing the same view as in- and output.
-// The calling code (zimt::transform) has already wrapped 'act',
-// the functor converting input values to output values, with
-// vs_adapter, and cast the views to hold xel_t, even if
-// the data are single-channel.
-// With 'loader' as 'get_t', we can use 'process' to implement
-// this function:
-
-template < class act_t , std::size_t dimension >
-void coupled_f ( const act_t & act ,
-                 zimt::view_t < dimension ,
-                                typename act_t::in_type
-                              > in_view ,
-                 zimt::view_t < dimension ,
-                                typename act_t::out_type
-                              > out_view ,
-                 const zimt::bill_t & bill )
-{
-  typedef typename act_t::in_ele_type in_ele_type ;
-  static const std::size_t chn_in = act_t::dim_in ;
-  static const std::size_t chn_out = act_t::dim_out ;
-  static const std::size_t vsize = act_t::vsize ;
-
-  const auto & axis ( bill.axis ) ;
-  storer < in_ele_type , chn_out , dimension , vsize >
-    put ( out_view , axis ) ;
-
-  if ( in_view.strides [ axis ] == 1 )
-  {
-    unstrided_loader < in_ele_type , chn_in , dimension , vsize >
-      get ( in_view , axis ) ;
-    process ( out_view.shape , get , act , put , bill ) ;
-  }
-  else
-  {
-    loader < in_ele_type , chn_in , dimension , vsize >
-      get ( in_view , axis ) ;
-    process ( out_view.shape , get , act , put , bill ) ;
-  }
 }
 
 } ; // namespace wielding

@@ -185,11 +185,11 @@ void test ( std::size_t a ,
 
 int main ( int argc , char * argv[] )
 {
-  for ( std::size_t x = 1 ; x < 35 ; x++ )
+  for ( std::size_t x = 1 ; x < 40 ; x+= 5 )
   {
-    for ( std::size_t y = 1 ; y < 35 ; y++ )
+    for ( std::size_t y = 1 ; y < 20 ; y+= 5 )
     {
-      for ( std::size_t z = 1 ; z < 35 ; z++ )
+      for ( std::size_t z = 1 ; z < 12 ; z += 5 )
       {
         for ( std::size_t a = 0 ; a < 3 ; a++ )
         {

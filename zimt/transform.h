@@ -139,7 +139,7 @@ view_type sort_strides ( const view_type & rhs , bool ascending = true )
   view_type ( rhs , strides , shape ) ;
 }
 
-/// implementation of two-array transform using coupled_f.
+/// implementation of two-array transform using zimt::process.
 ///
 /// 'array-based' transform takes two template arguments:
 ///
@@ -177,7 +177,7 @@ view_type sort_strides ( const view_type & rhs , bool ascending = true )
 // view(s) might be reshaped to make processing more efficient.
 
 template < std::size_t dimension , typename act_t >
-void transform ( const act_t & _act ,
+void transform ( const act_t & act ,
                  const view_t < dimension ,
                                 typename act_t::in_type
                               > input ,
@@ -195,32 +195,19 @@ void transform ( const act_t & _act ,
      ( "transform: the shapes of the input and output array do not match" ) ;
   }
 
-  // wrap the zimt::unary_functor to be used with wielding code.
-  // The wrapper is necessary because the code in wielding.h feeds
-  // arguments as xel_t, even if the data are 'singular'.
-  // The wrapper simply reinterpret_casts any 'singular' arguments
-  // to corresponding xel_t of one element.
+  auto shape = input.shape ;
 
-  typedef vs_adapter < act_t > aact_t ;
-  aact_t act ( _act ) ;
-  
-  // we'll cast the pointers to the arrays to these types to be
-  // compatible with the wrapped functor above.
-
-  typedef typename aact_t::in_type src_type ;
-  typedef typename aact_t::out_type trg_type ;
-  
-  typedef zimt::view_t < dimension , src_type > src_view_type ;
-  typedef zimt::view_t < dimension , trg_type > trg_view_type ;
-
-  const auto & src ( reinterpret_cast < const src_view_type & > ( input ) ) ;
-  auto & trg ( reinterpret_cast < trg_view_type & > ( output ) ) ;
+  typedef typename act_t::in_ele_type in_ele_type ;
+  typedef typename act_t::out_ele_type out_ele_type ;
+  static const std::size_t chn_in = act_t::dim_in ;
+  static const std::size_t chn_out = act_t::dim_out ;
+  static const std::size_t vsize = act_t::vsize ;
 
   // confine the bill to sensible values
 
   if (    bill.segment_size <= 0
-       || bill.segment_size > trg.shape [ bill.axis ])
-    bill.segment_size = trg.shape [ bill.axis ] ;
+       || bill.segment_size > shape [ bill.axis ])
+    bill.segment_size = shape [ bill.axis ] ;
 
   if ( bill.njobs <= 1 )
     bill.njobs = 1 ;
@@ -228,7 +215,29 @@ void transform ( const act_t & _act ,
   if ( bill.njobs > zimt::default_njobs )
     bill.njobs = zimt::default_njobs ;
 
-  coupled_f ( act , src , trg , bill ) ;
+  const auto & axis ( bill.axis ) ;
+
+  // create a storer object to accept output from the act functor
+
+  storer < out_ele_type , chn_out , dimension , vsize >
+    put ( output , axis ) ;
+
+  // input is provided with a loader or unstrided_loader object
+
+  if ( input.strides [ axis ] == 1 )
+  {
+    unstrided_loader < in_ele_type , chn_in , dimension , vsize >
+      get ( input , axis ) ;
+
+    process ( shape , get , act , put , bill ) ;
+  }
+  else
+  {
+    loader < in_ele_type , chn_in , dimension , vsize >
+      get ( input , axis ) ;
+
+    process ( shape , get , act , put , bill ) ;
+  }
 }
 
 /// implementation of index-based transform using process
@@ -303,37 +312,44 @@ void transform ( const act_t & _act ,
 /// pass the dimensionality explicitly.
 
 template < std::size_t dimension , class act_t >
-void transform ( const act_t & _act ,
+void transform ( const act_t & act ,
                  view_t < dimension ,
                           typename act_t::out_type
                         > output ,
                  bill_t bill = bill_t() )
 {
-  typedef vs_adapter < act_t > aact_t ;
-  aact_t act ( _act ) ;
+  auto shape = output.shape ;
 
-  // we'll cast the pointers to the arrays to these types to be
-  // compatible with the wrapped functor above.
+  typedef typename act_t::in_ele_type in_ele_type ;
+  typedef typename act_t::out_ele_type out_ele_type ;
+  static const std::size_t chn_in = act_t::dim_in ;
+  static const std::size_t chn_out = act_t::dim_out ;
+  static const std::size_t vsize = act_t::vsize ;
 
-  typedef typename aact_t::in_type src_type ;
-  typedef typename src_type::value_type src_ele_type ;
-  static const std::size_t nch_in = src_type::size() ;
-
-  typedef typename aact_t::out_type trg_type ;
-  typedef typename trg_type::value_type trg_ele_type ;
-  static const std::size_t nch_out = trg_type::size() ;
-
-  static const std::size_t vsize = aact_t::vsize ;
-
-  typedef zimt::view_t < act_t::dim_in , trg_type > trg_view_type ;
-
-  auto & trg ( static_cast < trg_view_type & > ( output ) ) ;
+  // typedef vs_adapter < act_t > aact_t ;
+  //
+  // // we'll cast the pointers to the arrays to these types to be
+  // // compatible with the wrapped functor above.
+  //
+  // typedef typename aact_t::in_type src_type ;
+  // typedef typename src_type::value_type src_ele_type ;
+  // static const std::size_t nch_in = src_type::size() ;
+  //
+  // typedef typename aact_t::out_type trg_type ;
+  // typedef typename trg_type::value_type trg_ele_type ;
+  // static const std::size_t nch_out = trg_type::size() ;
+  //
+  // static const std::size_t vsize = aact_t::vsize ;
+  //
+  // typedef zimt::view_t < act_t::dim_in , trg_type > trg_view_type ;
+  //
+  // auto & trg ( static_cast < trg_view_type & > ( output ) ) ;
 
   // confine the bill to sensible values
 
   if (    bill.segment_size <= 0
-       || bill.segment_size > trg.shape [ bill.axis ])
-    bill.segment_size = trg.shape [ bill.axis ] ;
+       || bill.segment_size > shape [ bill.axis ])
+    bill.segment_size = shape [ bill.axis ] ;
 
   if ( bill.njobs <= 1 )
     bill.njobs = 1 ;
@@ -348,13 +364,13 @@ void transform ( const act_t & _act ,
   // in the type act takes as input. So, act can take, e.g.
   // float coordinates and 'get' will provide.
 
-  get_crd < src_ele_type , nch_in , dimension , vsize >
+  get_crd < in_ele_type , chn_in , dimension , vsize >
     get ( bill.axis ) ;
 
-  storer < trg_ele_type , nch_out , dimension , vsize >
-    put ( trg , bill.axis ) ;
+  storer < out_ele_type , chn_out , dimension , vsize >
+    put ( output , bill.axis ) ;
 
-  process ( trg.shape , get , act , put , bill ) ;
+  process ( shape , get , act , put , bill ) ;
 }
 
 // for 1D index-based transforms, we add an overload taking a naked

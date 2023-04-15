@@ -72,7 +72,7 @@ struct storer
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
-  const std::size_t & d ;
+  const std::size_t d ;
   zimt::view_t < D , value_t > & trg ;
   const std::size_t stride ;
 
@@ -84,7 +84,22 @@ struct storer
 
   storer ( zimt::view_t < D , value_t > & _trg ,
            const std::size_t & _d = 0 )
-  : trg ( _trg ) , d ( _d ) , stride ( _trg.strides [ _d ] )
+  : trg ( _trg ) ,
+    d ( _d ) ,
+    stride ( _trg.strides [ _d ] )
+  { }
+
+  // c'tor overload for N==1. Here we also accept a view_t
+  // of plain T, on top of accepting a view_t of xel_t<T,1> with
+  // the general c'tor above
+
+  template < typename = std::enable_if < N == 1 > >
+  storer ( zimt::view_t < D , T > & _trg ,
+           const std::size_t & _d = 0 )
+  : trg ( reinterpret_cast
+           < zimt::view_t < D , value_t > & > ( _trg ) ) ,
+    d ( _d ) ,
+    stride ( _trg.strides [ _d ] )
   { }
 
   // init is used to initialize the target pointer

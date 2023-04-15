@@ -202,6 +202,19 @@ struct loader
   : src ( _src ) , d ( _d ) , stride ( _src.strides [ _d ] )
   { }
 
+  // c'tor overload for N==1. Here we also accept a view_t
+  // of plain T, on top of accepting a view_t of xel_t<T,1>
+  // with the general c'tor above
+
+  template < typename = std::enable_if < N == 1 > >
+  loader ( const zimt::view_t < D , T > & _src ,
+           const std::size_t & _d = 0  )
+  : src ( reinterpret_cast
+           < const zimt::view_t < D , value_t > & > ( _src ) ) ,
+    d ( _d ) ,
+    stride ( _src.strides [ _d ] )
+  { }
+
   // init is used to initialize the 'target'' value to the value
   // it should hold at the beginning of the run. The discrete
   // coordinate 'crd' gives the location of the first value, and the
@@ -276,6 +289,14 @@ struct unstrided_loader
   unstrided_loader ( const zimt::view_t < D , value_t > & _src ,
                      const std::size_t & _d = 0 )
   : base_t ( _src , _d )
+  {
+    assert ( _src.strides [ _d ] == 1 ) ;
+  }
+
+  template < typename = std::enable_if < N == 1 > >
+  unstrided_loader ( const zimt::view_t < D , T > & _src ,
+                     const std::size_t & _d = 0  )
+  : base_t ( _src )
   {
     assert ( _src.strides [ _d ] == 1 ) ;
   }

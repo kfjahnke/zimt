@@ -58,13 +58,6 @@
 
 void test ( std::size_t a , std::size_t x , std::size_t y )
 {
-  // as value type, we'll use a xel_t of one int - this is like
-  // working with single integers, but since we're using zimt::process
-  // rather than zimt::transform, the code expects xel_t values and
-  // rejects 'naked' fundamentals.
-
-  typedef zimt::xel_t < int , 1 > value_t ;
-
   // the shape of the patch arrays we'll be working on
 
   zimt::xel_t < std::size_t , 2 > patch_shape ( { x , y } ) ;
@@ -80,13 +73,13 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
 
   // we set up the arrays
 
-  zimt::array_t < 2 , value_t > patch_in ( patch_shape ) ;
-  zimt::array_t < 2 , value_t > large_array ( array_shape ) ;
-  zimt::array_t < 2 , value_t > patch_out ( patch_shape ) ;
+  zimt::array_t < 2 , int > patch_in ( patch_shape ) ;
+  zimt::array_t < 2 , int > large_array ( array_shape ) ;
+  zimt::array_t < 2 , int > patch_out ( patch_shape ) ;
 
   // initialize patch_in with 'something recognizable'
 
-  patch_in.set_data ( value_t ( 42 ) ) ;
+  patch_in.set_data ( 42 ) ;
 
   // the get_t object loads data from the source array. By using
   // a suitable 'bill', we'll make zimt::process load from patch_in
@@ -128,6 +121,8 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
   for ( int i = 0 ; i < patch_in.size() ; i++ )
   {
     auto crd = it() ;
+    // std::cout << crd << " " << patch_in [ crd ]
+    //           << " " << patch_out [ crd ] << std::endl ;
     assert ( patch_in [ crd ] == patch_out [ crd ] ) ;
   }
 }
