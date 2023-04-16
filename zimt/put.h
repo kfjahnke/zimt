@@ -333,58 +333,33 @@ template < typename T ,     // fundamental type
            std::size_t N ,  // channel count
            std::size_t D ,  // dimensions
            std::size_t L >  // lane count
-struct grok_put_t
+class grok_put_t
+: private grok_t
 {
-private:
   // we need some of the grokkee's types
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
-  // grok_put_t holds five std::functions of these five types:
+  // grok_put_t holds three std::functions:
 
-  typedef std::function < void ( void * & ,
-                                 const crd_t & ) > vinit_f ;
+  std::function < void ( void * & ,
+                         const crd_t & ) > vinit ;
 
-  typedef std::function < void ( void * & ,
-                                 value_v & ) > vsave_f ;
+  std::function < void ( void * & ,
+                         value_v & ) > vsave ;
 
-  typedef std::function < void ( void * & ,
-                                 value_v & ,
-                                 const std::size_t & ) > csave_f ;
-
-  // these last two types are 'infrastructure code' - it's the
-  // same mechanism that's used in grok_type.
-
-  typedef std::function < void* ( void* ) > replicate_type ;
-  typedef std::function < void ( void* ) > terminate_type ;
-
-  // here they are
-
-  vinit_f vinit ;
-  vsave_f vsave ;
-  csave_f csave ;
-
-  replicate_type rep ;
-  terminate_type trm ;
-
-  // and here we have the pointer to the copy of the grokkee cast
-  // to void*.
-
-  void * p_context ;
+  std::function < void ( void * & ,
+                         value_v & ,
+                         const std::size_t & ) > csave ;
 
 public:
 
-  template < typename grokkee_type >
-  grok_put_t ( const grokkee_type & grokkee )
+  template < typename grokkee_t >
+  grok_put_t ( const grokkee_t & grokkee )
+  : grok_t ( grokkee )
   {
-    typedef grokkee_type g_t ;
-
-    // p_context is initialized with a copy of 'grokkee'
-
-    p_context = new g_t ( grokkee ) ;
-
     // the std::functions are initialized with wrappers taking
     // p_context and a set of arguments which are passed on to
     // the grokkee's member functions.
@@ -392,14 +367,14 @@ public:
     vinit = [] ( void * & p_ctx ,
                  const crd_t & crd )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->init ( crd ) ;
           } ;
 
     vsave = [] ( void * & p_ctx ,
                  value_v & v )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->save ( v ) ;
           } ;
 
@@ -407,20 +382,8 @@ public:
                  value_v & v ,
                  const std::size_t & cap )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->save ( v , cap ) ;
-          } ;
-
-    rep = [] ( void * p_ctx ) -> void*
-          {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
-            return new g_t ( *p_gk ) ;
-          } ;
-
-    trm = [] ( void * p_ctx )
-          {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
-            delete p_gk ;
           } ;
   }
 
@@ -442,39 +405,6 @@ public:
               const std::size_t & cap )
   {
     csave ( p_context , trg , cap ) ;
-  }
-
-  grok_put_t & operator= ( const grok_put_t & rhs )
-  {
-    // first copy the std::functions
-
-    vinit = rhs.vinit ;
-    vsave = rhs.vsave ;
-    csave = rhs.csave ;
-    rep = rhs.rep ;
-    trm = rhs.trm ;
-
-    // now use 'rep' to copy the 'hidden' grokkee
-
-    p_context = rep ( rhs.p_context ) ;
-    return *this ;
-  }
-
-  // copy construction delegates to copy assignment
-
-  grok_put_t ( const grok_put_t & rhs )
-  {
-    *this = rhs ;
-  }
-
-  // finally, the d'tor destroys the context object in a type-safe
-  // manner by passing it to 'trm', which knows how to cast it to
-  // it's 'true' type and then calls delete on that.
-
-  ~grok_put_t()
-  {
-    if ( p_context )
-      trm ( p_context ) ;
   }
 } ;
 

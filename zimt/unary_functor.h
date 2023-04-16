@@ -593,7 +593,8 @@ template < typename IN ,       // argument or input type
            size_t _vsize = zimt::vector_traits < IN > :: size
          >
 struct grok_type
-: public zimt::unary_functor < IN , OUT , _vsize >
+: private grok_t ,
+  public zimt::unary_functor < IN , OUT , _vsize >
 {
   typedef zimt::unary_functor < IN , OUT , _vsize > base_type ;
 
@@ -608,12 +609,11 @@ struct grok_type
 
 private:
 
-  // next we have the 'inner workings' of grok_type, which we keep
-  // private
+  // 'inner workings' of grok_type, which we keep private
 
-  // given the types, we can define the types for the std::function
-  // we will use to wrap the grokkee's evaluation code in. First
-  // the eval function for full vectors:
+  // define the types for the std::function we will use to
+  // wrap the grokkee's evaluation code in. First the eval
+  // function for full vectors:
 
   typedef std::function
     < void ( void * & , const in_v & , out_v & )
@@ -631,30 +631,11 @@ private:
              const std::size_t & cap )
     > c_eval_type ;
 
-  // we need two more types of function to provide infrastructure
-  // of grok_type: the first one produces a copy of the 'grokkee'
-  // and the second one deletes it. Note that the grokkee itself
-  // is copied to allocated memory in the c'tor and subsequently
-  // only referred to via a void* - this is a very 'C' way of
-  // handling the type erasure, but since all access to the void
-  // pointer happens within class grok_type, there is no reason
-  // not to go for this simple and straightforward approach. It's
-  // easy to understand and seems to optimize well.
-
-  typedef std::function < void* ( void* ) > replicate_type ;
-  typedef std::function < void ( void* ) > terminate_type ;
-
   // these are the class members holding the std::functions:
 
   v_eval_type _v_ev ;
   c_eval_type _c_ev ;
-  replicate_type rep ;
-  terminate_type trm ;
 
-  // and here we have the pointer to the copy of the grokkee cast
-  // to void*. It's private, so that user code can't 'mess' with it.
-
-  void * p_context ;
 
 public:
 
@@ -680,6 +661,7 @@ public:
               > :: type = 0
             >
   grok_type ( grokkee_type grokkee )
+  : grok_t ( grokkee )
   {
     // use vs_adapter to create a functor with an uncapped and
     // a capped eval function, even if 'grokkee_type' does not
@@ -702,11 +684,6 @@ public:
     // refer to the same grokkee - the one we generate here.
 
     typedef vs_adapter < grokkee_type > g_t ;
-
-    // create the copy of the grokke, wrapped in a vs_adapter
-    // and cast to void*
-
-    p_context = new g_t ( grokkee ) ;
 
     // now initialize the class members holding std::functions
     // with lambdas taking first the context, then more arguments.
@@ -737,63 +714,11 @@ public:
             } ;
 
     _c_ev = [] ( void * p_ctx , const in_v & in , out_v & out ,
-                    const std::size_t & cap )
+                 const std::size_t & cap )
             {
               static_cast<g_t*> ( p_ctx ) -> eval ( in , out , cap ) ;
             } ;
-
-    rep = [] ( void * p_ctx ) -> void*
-          {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
-            return new g_t ( *p_gk ) ;
-          } ;
-
-    trm = [] ( void * p_ctx )
-          {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
-            delete p_gk ;
-          } ;
   } ;
-
-  // Copy assignment, and also the copy c'tor relying on it,
-  // create a copy of the context object in a type-safe manner.
-  // Because the std::functions receive the grokkee as their first
-  // argument via p_context (which is unique to each grok_type
-  // object) they can be copied from the rhs object as they are
-  // - they hold no reference to any information specific to rhs.
-  // The new context for the new grok_type object is provided by
-  // calling 'rep'. One might assume that copying a grok_type
-  // object should actually copy the context as well, but what
-  // we want to copy is the functionality, whereas the context
-  // object itself is only useful when it comes to functors
-  // with state, like in reductions. If there are more of them
-  // than strictly necessary, this is no problem, but there
-  // mustn't be too few: if several threads were to access the
-  // same context object concurrently, this would spell disaster.
-  // The functors we're dealing with here are typically copied
-  // so that each worker thread has it's own copy.
-
-  grok_type & operator= ( const grok_type & rhs )
-  {
-    // first copy the std::functions
-
-    _v_ev = rhs._v_ev ;
-    _c_ev = rhs._c_ev ;
-    rep = rhs.rep ;
-    trm = rhs.trm ;
-
-    // now use 'rep' to copy the 'hidden' grokkee
-
-    p_context = rep ( rhs.p_context ) ;
-    return *this ;
-  }
-
-  // copy construction delegates to copy assignment
-
-  grok_type ( const grok_type & rhs )
-  {
-    *this = rhs ;
-  }
 
   // the eval member functions pass the grok_type object's 'own'
   // p_context to the lambdas which are captured in the members
@@ -811,16 +736,6 @@ public:
   void eval ( const in_v & i , out_v & o , const std::size_t & cap )
   {
     _c_ev ( p_context , i , o , cap ) ;
-  }
-
-  // finally, the d'tor destroys the context object in a type-safe
-  // manner by passing it to 'trm', which knows how to cast it to
-  // it's 'true' type and then calls delete on that.
-
-  ~grok_type()
-  {
-    if ( p_context )
-      trm ( p_context ) ;
   }
 } ;
 

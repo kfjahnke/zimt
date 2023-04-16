@@ -293,6 +293,114 @@ struct numeric_overflow
   : std::invalid_argument ( msg ) { }  ;
 } ;
 
+// grok_t is the base class used to 'grok' functors. It uses
+// 'C style' type erasure for the 'grokkee', but handles the
+// grokkee with type-safe code.
+
+struct grok_t
+{
+protected:
+
+  // we need two types of function to provide infrastructure
+  // of grok_t: the first one produces a copy of the 'grokkee'
+  // and the second one deletes it. Note that the grokkee itself
+  // is copied to allocated memory in the c'tor and subsequently
+  // only referred to via a void* - this is a very 'C' way of
+  // handling the type erasure, but since all access to the void
+  // pointer happens within class grok_t and the classes which
+  // inherit from it, there is no reason not to go for this
+  // simple and straightforward approach. It's easy to understand
+  // and seems to optimize well.
+
+  std::function < void* ( void* ) > rep ;
+  std::function < void ( void* ) > trm ;
+
+  // and here we have the pointer to the copy of the grokkee
+  // cast to void*.
+
+  void * p_context ;
+
+  // the 'normal' c'tor creates two lambdas, one to 'replicate'
+  // the 'hidden' grokkee referenced by the void pointer, and one
+  // to destruct it in a type-safe manner.
+
+  template < typename grokkee_t >
+  grok_t ( const grokkee_t & grokkee )
+  {
+     p_context = new grokkee_t ( grokkee ) ;
+
+    // the std::functions are initialized with wrappers taking
+    // p_context and a set of arguments which are passed on to
+    // the grokkee's member functions.
+
+    rep = [] ( void * p_ctx ) -> void*
+          {
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
+            return new grokkee_t ( *p_gk ) ;
+          } ;
+
+    trm = [] ( void * p_ctx )
+          {
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
+            delete p_gk ;
+          } ;
+  }
+
+  // Copy assignment, and also the copy c'tor relying on it,
+  // create a copy of the context object in a type-safe manner.
+  // Because the std::functions receive the grokkee as their first
+  // argument via p_context (which is unique to each grok_type
+  // object) they can be copied from the rhs object as they are
+  // - they hold no reference to any information specific to rhs.
+  // The new context for the new grok_type object is provided by
+  // calling 'rep'. One might assume that copying a grok_type
+  // object should actually copy the context as well, but what
+  // we want to copy is the functionality, whereas the context
+  // object itself is only useful when it comes to functors
+  // with state, like in reductions. If there are more of them
+  // than strictly necessary, this is no problem, but there
+  // mustn't be too few: if several threads were to access the
+  // same context object concurrently, this would spell disaster.
+  // The functors we're dealing with here are typically copied
+  // so that each worker thread has it's own copy.
+
+  grok_t & operator= ( const grok_t & rhs )
+  {
+    // copy the std::functions
+
+    rep = rhs.rep ;
+    trm = rhs.trm ;
+
+    // now use 'rep' to create a copy of the 'hidden' grokkee
+
+    p_context = rep ( rhs.p_context ) ;
+    return *this ;
+  }
+
+  // copy construction delegates to copy assignment
+
+  grok_t ( const grok_t & rhs )
+  {
+    *this = rhs ;
+  }
+
+  // default c'tor - this is to create, like, vectors of grok_t
+  // to assign to them later. Called after default construction,
+  // this will crash.
+
+  grok_t() { } ;
+
+  // finally, the d'tor destroys the context object in a type-safe
+  // manner by passing it to 'trm', which knows how to cast it to
+  // it's 'true' type and then calls delete on that.
+
+  ~grok_t()
+  {
+    if ( p_context )
+      trm ( p_context ) ;
+  }
+} ;
+
 } ; // end of namespace zimt
 
 #endif // ZIMT_COMMON

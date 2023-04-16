@@ -819,66 +819,40 @@ template < typename T ,     // fundamental type
            std::size_t N ,  // channel count
            std::size_t D ,  // dimensions
            std::size_t L >  // lane count
-struct grok_get_t
+class grok_get_t
+: private grok_t
 {
-private:
   // we need some of the grokkee's types
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
-  // grok_get_t holds six std::functions of these six types:
+  // grok_get_t holds four std::functions:
 
-  typedef std::function < void ( void * & ,
-                                 value_v & ,
-                                 const crd_t & ) > vinit_f ;
+  std::function < void ( void * & ,
+                         value_v & ,
+                         const crd_t & ) > vinit ;
 
-  typedef std::function < void ( void * & ,
-                                 value_v & ) > vincrease_f ;
+  std::function < void ( void * & ,
+                         value_v & ) > vincrease ;
 
-  typedef std::function < void ( void * & ,
-                                 value_v & ,
-                                 const crd_t & ,
-                                 const std::size_t & ) > cinit_f ;
+  std::function < void ( void * & ,
+                         value_v & ,
+                         const crd_t & ,
+                         const std::size_t & ) > cinit ;
 
-  typedef std::function < void ( void * & ,
-                                 value_v & ,
-                                 const std::size_t & ,
-                                 const bool & ) > cincrease_f ;
-
-  // these last two types are 'infrastructure code' - it's the
-  // same mechanism that's used in grok_type.
-
-  typedef std::function < void* ( void* ) > replicate_type ;
-  typedef std::function < void ( void* ) > terminate_type ;
-
-  // here they are
-
-  vinit_f vinit ;
-  vincrease_f vincrease ;
-  cinit_f cinit ;
-  cincrease_f cincrease ;
-
-  replicate_type rep ;
-  terminate_type trm ;
-
-  // and here we have the pointer to the copy of the grokkee cast
-  // to void*.
-
-  void * p_context ;
+  std::function < void ( void * & ,
+                         value_v & ,
+                         const std::size_t & ,
+                         const bool & ) > cincrease ;
 
 public:
 
-  template < typename grokkee_type >
-  grok_get_t ( const grokkee_type & grokkee )
+  template < typename grokkee_t >
+  grok_get_t ( const grokkee_t & grokkee )
+  : grok_t ( grokkee )
   {
-    typedef grokkee_type g_t ;
-
-    // p_context is initialized with a copy of 'grokkee'
-
-    p_context = new g_t ( grokkee ) ;
-
     // the std::functions are initialized with wrappers taking
     // p_context and a set of arguments which are passed on to
     // the grokkee's member functions.
@@ -887,7 +861,7 @@ public:
                  value_v & v ,
                  const crd_t & crd )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->init ( v , crd ) ;
           } ;
 
@@ -896,14 +870,14 @@ public:
                  const crd_t & crd ,
                  const std::size_t & cap )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->init ( v , crd , cap ) ;
           } ;
 
     vincrease = [] ( void * & p_ctx ,
                      value_v & v )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->increase ( v ) ;
           } ;
 
@@ -912,20 +886,8 @@ public:
                      const std::size_t & cap ,
                      const bool & stuff )
           {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
+            auto p_gk = static_cast<grokkee_t*> ( p_ctx ) ;
             p_gk->increase ( v , cap , stuff ) ;
-          } ;
-
-    rep = [] ( void * p_ctx ) -> void*
-          {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
-            return new g_t ( *p_gk ) ;
-          } ;
-
-    trm = [] ( void * p_ctx )
-          {
-            auto p_gk = static_cast<g_t*> ( p_ctx ) ;
-            delete p_gk ;
           } ;
   }
 
@@ -955,40 +917,6 @@ public:
                   const bool & _stuff = true )
   {
     cincrease ( p_context , trg , cap , _stuff ) ;
-  }
-
-  grok_get_t & operator= ( const grok_get_t & rhs )
-  {
-    // first copy the std::functions
-
-    vinit = rhs.vinit ;
-    vincrease = rhs.vincrease ;
-    cinit = rhs.cinit ;
-    cincrease = rhs.cincrease ;
-    rep = rhs.rep ;
-    trm = rhs.trm ;
-
-    // now use 'rep' to copy the 'hidden' grokkee
-
-    p_context = rep ( rhs.p_context ) ;
-    return *this ;
-  }
-
-  // copy construction delegates to copy assignment
-
-  grok_get_t ( const grok_get_t & rhs )
-  {
-    *this = rhs ;
-  }
-
-  // finally, the d'tor destroys the context object in a type-safe
-  // manner by passing it to 'trm', which knows how to cast it to
-  // it's 'true' type and then calls delete on that.
-
-  ~grok_get_t()
-  {
-    if ( p_context )
-      trm ( p_context ) ;
   }
 } ;
 
