@@ -316,8 +316,19 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
       // decode the joblet index into it's components, the current
       // line and the segment within this line
 
-      std::size_t line = joblet_index / nr_segments ;
-      std::size_t segment = joblet_index % nr_segments ;
+      std::size_t line ;
+      std::size_t segment ;
+
+      if ( bill.line_first )
+      {
+        line = joblet_index / nr_segments ;
+        segment = joblet_index % nr_segments ;
+      }
+      else
+      {
+        segment = joblet_index / nr_lines ;
+        line = joblet_index % nr_lines ;
+      }
 
       // how many values do we have in the current segment?
       // the last segment may be less than segment_size long

@@ -57,7 +57,7 @@
 #include "multithread.h"
 
 // if you don't #define WIELDING_SEGMENT_SIZE, the default is 512,
-// meaning that the tarnsform family of functions will break down
+// meaning that the transform family of functions will break down
 // long lines into segments of up to 512 elements for processing.
 // This is especially important for 1D arrays - if they are not
 // 'segmented' the code becomes effectively single-threaded.
@@ -147,6 +147,19 @@ struct bill_t
 
   std::vector < long > get_offset ;
   std::vector < long > put_offset ;
+
+  // this boolean tells zimt::process how to decode the 'joblet'
+  // numbers. If line_first is true, successive joblet numbers
+  // fill a line, then the next. If line_first is false, successive
+  // joblet numbers first pick the first segment from all lines,
+  // then the second from all lines etc.
+  // The second mode would play well with tiled storage: if the
+  // tile size were to agree with the segment size, the collective
+  // traversal of the joblet number space would keep active threads
+  // in the same or successive tiles, minimizing the need to 'wake'
+  // tiles from cold storage.
+
+  bool line_first = true ;
 } ;
 
 // this helper function 'translates' the std::vectors in the bill

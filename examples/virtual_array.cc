@@ -53,6 +53,8 @@
 // adds to total execution time.
 
 #include <zimt/zimt.h>
+#include <iomanip>
+#define VSIZE 8
 
 // we use a functor 'crunch' which does a bit of arithmetic.
 
@@ -97,8 +99,8 @@ struct crunch
   // one for 'capped' operation and one for 'uncapped' operation.
   // These two versions only differ in how the 'score' is updated.
   // Note that the score is in double precision - 1e9 values are
-  // already large enough to be problematic in SP float.
-  // Note also that - at least for now - we can'T code the eval
+  // already large enough to be problematic in SP double.
+  // Note also that - at least for now - we can't code the eval
   // member functions as templates (which is commonly done in
   // vspline) because the signature test fails to detect the
   // capped eval overload if the capped eval is coded as a template.
@@ -152,26 +154,14 @@ int main ( int argc , char * argv[] )
   // linspace.cc example. Here, we'll start at zero and use 0.01 as
   // step width in every direction
 
-  typedef zimt::xel_t < float , 3 > delta_t ;
+  typedef zimt::xel_t < double , 3 > delta_t ;
   delta_t start { 0.0 , 0.0 , 0.0 } ;
   delta_t step { .01 , .01 , .01 } ;
-  zimt::linspace_t < float , 3 , 3 , 16 > l ( start , step , 0 ) ;
+  zimt::linspace_t < double , 3 , 3 , VSIZE > l ( start , step , 0 ) ;
 
   // this is our 'act' functor's type
 
-  typedef crunch < float , 3 , 16 > act_t ;
-
-  // here's the 'virtual' array: a view with origin == nullptr - the
-  // 'origin' will never actually be accessed, because the put_t we'll
-  // use does not touch it. But of course we need a valid shape. The
-  // strides aren't used either, so they can be set to zero as well.
-  // We chosse an 'odd' shape to make sure as much code as possible
-  // gets used and that the 'capping' works.
-
-  zimt::xel_t < std::size_t , 3 > shape { 999 , 1011 , 971 } ;
-  zimt::xel_t < long , 3 > strides { 0 , 0 , 0 } ; // unused.
-
-  zimt::view_t < 3 , delta_t > a ( nullptr , strides , shape ) ;
+  typedef crunch < double , 3 , VSIZE > act_t ;
 
   // we need a bit of infrastructure to cumulate the results from
   // per-thread copies of the 'act' functor to 'collect'
@@ -196,30 +186,34 @@ int main ( int argc , char * argv[] )
 
   // now we're ready to go!
 
-  auto gk = zimt::grok ( act_t ( yield ) ) ;
-
-  zimt::process ( a.shape , l , gk + gk ,
-                  zimt::discard_result < float , 3 , 3 , 16 > () ) ;
+  zimt::xel_t < std::size_t , 3 > shape { 999 , 1011 , 1013 } ;
+  zimt::process ( shape ,
+                  l ,
+                  act_t ( yield ) ,
+                  zimt::discard_result < double , 3 , 3 , VSIZE > () ) ;
 
   // here's the final result over ca. 1e9 pixels:
 
+  std::cout << std::fixed << std::showpoint
+            << std::setprecision(VSIZE) ;
+
   std::cout << "collect: " << collect << std::endl ;
-  std::cout << "array size: " << a.size() << std::endl ;
+  std::cout << "array size: " << shape.prod() << std::endl ;
 
-  // if you'd like to arrive at the same result by a simple iteration
-  // without any multithreading or SIMD, uncomment this code:
+  // to arrive at the same result by a simple iteration
+  // without any multithreading or SIMD:
 
-  // typedef zimt::xel_t < float , 3 > f3_t ;
+  // typedef zimt::xel_t < double , 3 > f3_t ;
   //
   // collect = 0 ;
   //
   // auto f = act_t ( yield ) ;
   //
-  // for ( std::size_t i = 0 ; i < shape[0] ; i++ )
+  // for ( std::size_t k = 0 ; k < shape[2] ; k++ )
   // {
   //   for ( std::size_t j = 0 ; j < shape[1] ; j++ )
   //   {
-  //     for ( std::size_t k = 0 ; k < shape[2] ; k++ )
+  //     for ( std::size_t i = 0 ; i < shape[0] ; i++ )
   //     {
   //       f3_t x { i * .01 , j * .01 , k * .01 } ;
   //       f3_t y ;
@@ -230,4 +224,6 @@ int main ( int argc , char * argv[] )
   // }
   //
   // std::cout << "collect: " << collect << std::endl ;
+
+
 }

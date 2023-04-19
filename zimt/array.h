@@ -486,6 +486,7 @@ public:
   using base_t::origin ;
   using base_t::strides ;
   using base_t::shape ;
+  using base_t::size ;
   using base_t::make_strides ;
   using base_t::operator[] ;
 
@@ -531,16 +532,57 @@ public:
 
   array_t & operator= ( const array_t & rhs ) = delete ;
 
+private:
+
+  void reset ( std::false_type ) // 'ordinary' T
+  {
+    base.reset ( origin ) ;
+  }
+
+  // arrays which hold T needing destruction need a deleter. The data
+  // are held as a plain chunk of memory holding T, and without the
+  // deleter, the chunk of memory is simply released with delete,
+  // which does not invoke the individual T's destructors. So the
+  // deleter must loop over the data and apply the d'tor to every
+  // datum in the array.
+
+  void reset ( std::true_type ) // non-trivially destructible T
+  {
+    typedef std::function < void ( T* ) > deleter_t ;
+
+    deleter_t dtor = [=] ( T * p_data )
+    {
+      for ( std::size_t i = 0 ; i < size() ; i++ )
+      {
+        p_data[i].~T() ;
+      }
+    } ;
+
+    base.reset ( origin , dtor ) ;
+  }
+
+public:
+
   // array allocating fresh memory. The array is now in sole possesion
   // of the memory, and unless it's copied the memory is released when
-  // the array is destructed.
+  // the array is destructed. If the T which the array holds via it's
+  // shared_ptr 'store' has an explicit destructor, we add code to
+  // destruct all T in the store explicitly.
 
   array_t ( const shape_type & _shape )
   : base_t ( new T [ _shape.prod() ] ,
              make_strides ( _shape ) ,
              _shape )
   {
-    base.reset ( origin ) ;
+    // does T have a non-trivial destructor?
+
+    static const bool test =
+         std::is_destructible < T > :: value
+      && ! std::is_trivially_destructible < T > :: value ;
+
+    // dispatch accordingly
+
+    reset ( std::integral_constant < bool , test >() ) ;
   }
 
   // array's window function also copies the shared_ptr, base. This makes

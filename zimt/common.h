@@ -331,7 +331,11 @@ protected:
 
     // the std::functions are initialized with wrappers taking
     // p_context and a set of arguments which are passed on to
-    // the grokkee's member functions.
+    // the grokkee's member functions. Note that we can't pass
+    // p_context into the lambdas/std::functions: these will be
+    // copied to copies of the grok_t object, the copies will
+    // have their own context pointer, and this pointer must be
+    // used by the std::functions when they are invoked.
 
     rep = [] ( void * p_ctx ) -> void*
           {
@@ -362,7 +366,8 @@ protected:
   // mustn't be too few: if several threads were to access the
   // same context object concurrently, this would spell disaster.
   // The functors we're dealing with here are typically copied
-  // so that each worker thread has it's own copy.
+  // so that each worker thread has it's own copy - see
+  // zimt::process in wielding.h
 
   grok_t & operator= ( const grok_t & rhs )
   {
