@@ -82,8 +82,8 @@ struct get_crd
 
   // get_crd's c'tor receives the processing axis
 
-  get_crd ( const std::size_t & _d = 0 )
-  : d ( _d )
+  get_crd ( const zimt::bill_t & bill )
+  : d ( bill.axis )
   { }
 
   // init is used to initialize the vectorized value to the value
@@ -198,8 +198,10 @@ struct loader
   // 'hot' axis. It extracts the strides from the source view.
 
   loader ( const zimt::view_t < D , value_t > & _src ,
-           const std::size_t & _d = 0 )
-  : src ( _src ) , d ( _d ) , stride ( _src.strides [ _d ] )
+           const zimt::bill_t & bill )
+  : src ( _src ) ,
+    d ( bill.axis ) ,
+    stride ( _src.strides [ bill.axis ] )
   { }
 
   // c'tor overload for N==1. Here we also accept a view_t
@@ -208,11 +210,11 @@ struct loader
 
   template < typename = std::enable_if < N == 1 > >
   loader ( const zimt::view_t < D , T > & _src ,
-           const std::size_t & _d = 0  )
+           const zimt::bill_t & bill  )
   : src ( reinterpret_cast
            < const zimt::view_t < D , value_t > & > ( _src ) ) ,
-    d ( _d ) ,
-    stride ( _src.strides [ _d ] )
+    d ( bill.axis ) ,
+    stride ( _src.strides [ bill.axis ] )
   { }
 
   // init is used to initialize the 'target'' value to the value
@@ -286,19 +288,19 @@ struct unstrided_loader
   using base_t::src ;
   using base_t::p_src ;
 
-  unstrided_loader ( const zimt::view_t < D , value_t > & _src ,
-                     const std::size_t & _d = 0 )
-  : base_t ( _src , _d )
+  unstrided_loader ( const zimt::view_t < D , value_t > & src ,
+                     const bill_t & bill )
+  : base_t ( src , bill )
   {
-    assert ( _src.strides [ _d ] == 1 ) ;
+    assert ( src.strides [ bill.axis ] == 1 ) ;
   }
 
   template < typename = std::enable_if < N == 1 > >
-  unstrided_loader ( const zimt::view_t < D , T > & _src ,
-                     const std::size_t & _d = 0  )
-  : base_t ( _src )
+  unstrided_loader ( const zimt::view_t < D , T > & src ,
+                     const bill_t & bill  )
+  : base_t ( src , bill )
   {
-    assert ( _src.strides [ _d ] == 1 ) ;
+    assert ( src.strides [ bill.axis ] == 1 ) ;
   }
 
   void init ( value_v & trg , const crd_t & crd )
@@ -393,10 +395,10 @@ struct vloader
   // refers to the 'hot' axis of the 'notional' array
 
   vloader ( zimt::view_t < D + 1 , T > & _src ,
-            const std::size_t & _d = 0 )
+            const bill_t & bill )
   : src ( _src ) ,
-    d ( _d + 1 ) ,
-    stride ( _src.strides [ _d + 1 ] )
+    d ( bill.axis + 1 ) ,
+    stride ( _src.strides [ bill.axis + 1 ] )
   { }
 
 
@@ -480,10 +482,10 @@ struct permute
   // per-component data and the 'hot' axis.
 
   permute ( const std::array < zimt::view_t < 1 , T > , N > & _src ,
-            const std::size_t & _d = 0 )
+            const bill_t & bill )
   : src ( _src ) ,
-    d ( _d ) ,
-    stride ( _src [ _d ] . strides [ 0 ] )
+    d ( bill.axis ) ,
+    stride ( _src [ bill.axis ] . strides [ 0 ] )
   { }
 
   // init is used to initialize the 'target' value to the value
@@ -595,8 +597,10 @@ struct join_t
   zimt::xel_t < long , N > stride ;      // strides of source arrays
   const std::size_t d ;
 
-  join_t ( const src_t & _src , const std::size_t & _d = 0 )
-  : src ( _src ) , d ( _d )
+  join_t ( const src_t & _src ,
+           const bill_t & bill )
+  : src ( _src ) ,
+    d ( bill.axis )
   {
     // copy out the strides of the source arrays
 
@@ -710,10 +714,10 @@ struct linspace_t
 
   linspace_t ( const value_t & _start ,
                const value_t & _step ,
-               const std::size_t & _d = 0 )
+               const bill_t & bill )
   : start ( _start ) ,
     step ( _step ) ,
-    d ( _d )
+    d ( bill.axis )
   { }
 
   // init is used to initialize the vectorized value to the value

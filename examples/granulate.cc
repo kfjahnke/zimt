@@ -128,8 +128,8 @@ struct join_t
   // with the static member function convert, all we need to do is
   // pass the result of 'convert' to the base class c'tor.
 
-  join_t ( const src_t & src )
-  : zimt::unstrided_loader < T , N , D , L > ( convert ( src ) )
+  join_t ( const src_t & src , const bill_t & bill )
+  : zimt::unstrided_loader < T , N , D , L > ( convert ( src ) , bill )
   { }
 } ;
 
@@ -141,11 +141,13 @@ int main ( int argc , char * argv[] )
   typedef join_t < float , 4 , 2 , 16 > j_t ;
   typedef typename j_t::value_t value_t ;
 
+  zimt::bill_t bill ;
+
   // this is our input: an array of float
 
   zimt::array_t < 3 , float > src ( { 4 , 1024 , 1024 } ) ;
 
-  j_t get_rgba ( src ) ;
+  j_t get_rgba ( src , bill ) ;
 
   // this is our output: an array of xel_t<float,4>
 
@@ -155,7 +157,7 @@ int main ( int argc , char * argv[] )
   // store them in the target array
 
   typedef zimt::pass_through < float , 4 , 16 > act_t ;
-  zimt::storer < float , 4 , 2 , 16 > p ( rgba , 0 ) ;
+  zimt::storer < float , 4 , 2 , 16 > p ( rgba , bill ) ;
 
   // just one sample
 
@@ -166,7 +168,7 @@ int main ( int argc , char * argv[] )
 
   // let's go
 
-  zimt::process ( rgba.shape , get_rgba , act_t() , p ) ;
+  zimt::process ( rgba.shape , get_rgba , act_t() , p , bill ) ;
 
   // check that the sample made it to the output
 

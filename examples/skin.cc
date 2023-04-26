@@ -143,10 +143,10 @@ struct rect3d_t
 
   rect3d_t ( const value_t & _a ,
              const step_t & _uv ,
-             const std::size_t & _d )
+             const zimt::bill_t & bill )
   : a ( _a ) ,
     uv ( _uv ) ,
-    d ( _d )
+    d ( bill.axis )
   { }
 
   // init is used to initialize the vectorized value to the value
@@ -235,12 +235,12 @@ int main ( int argc , char * argv[] )
   value_t u { 0.1 , 0.0 , 0.0 } , v { 0.0 , 0.0 , 0.2 } ;
   step_t step { u , v } ;
 
-  rect_t l ( start , step , 0 ) ;
+  rect_t l ( start , step , bill ) ;
   typedef zimt::pass_through < float , 3 , 4 > act_t ;
   zimt::array_t < 2 , value_t > a ( { 17 , 15 } ) ;
-  zimt::storer < float , 3 , 2 , 4 > p ( a , 0 ) ;
+  zimt::storer < float , 3 , 2 , 4 > p ( a , bill ) ;
 
-  zimt::process ( a.shape , l , act_t() , p ) ;
+  zimt::process ( a.shape , l , act_t() , p , bill ) ;
 
   for ( std::size_t y = 0 ; y < 15 ; y++ )
   {
@@ -253,9 +253,9 @@ int main ( int argc , char * argv[] )
   // repeat the process with axis 1 - the order of execution
   // is different, but the result is the same.
 
-  rect_t l1 ( start , step , 1 ) ;
-  zimt::storer < float , 3 , 2 , 4 > p1 ( a , 1 ) ;
   bill.axis = 1 ;
+  rect_t l1 ( start , step , bill ) ;
+  zimt::storer < float , 3 , 2 , 4 > p1 ( a , bill ) ;
 
   zimt::process ( a.shape , l1 , act_t() , p1 , bill ) ;
 

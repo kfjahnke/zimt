@@ -150,7 +150,7 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
                const get_t & _get ,
                const gact_t & gact ,
                const put_t & _put ,
-               const zimt::bill_t & bill = zimt::bill_t() )
+               const zimt::bill_t & bill )
 {
   typedef vs_adapter < gact_t > act_t ;
 

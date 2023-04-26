@@ -215,26 +215,24 @@ void transform ( const act_t & act ,
   if ( bill.njobs > zimt::default_njobs )
     bill.njobs = zimt::default_njobs ;
 
-  const auto & axis ( bill.axis ) ;
-
   // create a storer object to accept output from the act functor
 
   storer < out_ele_type , chn_out , dimension , vsize >
-    put ( output , axis ) ;
+    put ( output , bill ) ;
 
   // input is provided with a loader or unstrided_loader object
 
-  if ( input.strides [ axis ] == 1 )
+  if ( input.strides [ bill.axis ] == 1 )
   {
     unstrided_loader < in_ele_type , chn_in , dimension , vsize >
-      get ( input , axis ) ;
+      get ( input , bill ) ;
 
     process ( shape , get , act , put , bill ) ;
   }
   else
   {
     loader < in_ele_type , chn_in , dimension , vsize >
-      get ( input , axis ) ;
+      get ( input , bill ) ;
 
     process ( shape , get , act , put , bill ) ;
   }
@@ -326,25 +324,6 @@ void transform ( const act_t & act ,
   static const std::size_t chn_out = act_t::dim_out ;
   static const std::size_t vsize = act_t::vsize ;
 
-  // typedef vs_adapter < act_t > aact_t ;
-  //
-  // // we'll cast the pointers to the arrays to these types to be
-  // // compatible with the wrapped functor above.
-  //
-  // typedef typename aact_t::in_type src_type ;
-  // typedef typename src_type::value_type src_ele_type ;
-  // static const std::size_t nch_in = src_type::size() ;
-  //
-  // typedef typename aact_t::out_type trg_type ;
-  // typedef typename trg_type::value_type trg_ele_type ;
-  // static const std::size_t nch_out = trg_type::size() ;
-  //
-  // static const std::size_t vsize = aact_t::vsize ;
-  //
-  // typedef zimt::view_t < act_t::dim_in , trg_type > trg_view_type ;
-  //
-  // auto & trg ( static_cast < trg_view_type & > ( output ) ) ;
-
   // confine the bill to sensible values
 
   if (    bill.segment_size <= 0
@@ -365,10 +344,10 @@ void transform ( const act_t & act ,
   // float coordinates and 'get' will provide.
 
   get_crd < in_ele_type , chn_in , dimension , vsize >
-    get ( bill.axis ) ;
+    get ( bill ) ;
 
   storer < out_ele_type , chn_out , dimension , vsize >
-    put ( output , bill.axis ) ;
+    put ( output , bill ) ;
 
   process ( shape , get , act , put , bill ) ;
 }

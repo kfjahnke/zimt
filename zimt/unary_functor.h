@@ -1246,7 +1246,8 @@ struct uf_adapter
 // a handy functor if all the 'work' is done by the get_t and/or
 // put_t object.
 
-template < typename T , std::size_t N , std::size_t L >
+template < typename T , std::size_t N ,
+           std::size_t L = zimt::vector_traits < T > :: vsize >
 struct pass_through
 : public zimt::unary_functor < zimt::xel_t < T , N > ,
                                zimt::xel_t < T , N > ,

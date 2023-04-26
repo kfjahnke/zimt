@@ -81,19 +81,6 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
 
   patch_in.set_data ( 42 ) ;
 
-  // the get_t object loads data from the source array. By using
-  // a suitable 'bill', we'll make zimt::process load from patch_in
-  // only, rather than trying to load the entire array.
-
-  zimt::loader < int , 1 , 2 , 16 > get ( patch_in , a ) ;
-
-  // the put_t object stores data to the target array. By using
-  // a suitable 'bill', we'll make zimt::process store to patch_out
-  // only, rather than storing the entire array.  The c'tor
-  // still receives the 'notional' array.
-
-  zimt::storer < int , 1 , 2 , 16 > put ( patch_out , a ) ;
-
   zimt::bill_t bill ;
   bill.axis = a ;
 
@@ -109,6 +96,19 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
 
   bill.get_offset = { -23 , -17 } ;
   bill.put_offset = { -23 , -17 } ;
+
+  // the get_t object loads data from the source array. By using
+  // a suitable 'bill', we'll make zimt::process load from patch_in
+  // only, rather than trying to load the entire array.
+
+  zimt::loader < int , 1 , 2 , 16 > get ( patch_in , bill ) ;
+
+  // the put_t object stores data to the target array. By using
+  // a suitable 'bill', we'll make zimt::process store to patch_out
+  // only, rather than storing the entire array.  The c'tor
+  // still receives the 'notional' array.
+
+  zimt::storer < int , 1 , 2 , 16 > put ( patch_out , bill ) ;
 
   // showtime!
 

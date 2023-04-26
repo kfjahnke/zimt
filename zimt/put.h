@@ -83,10 +83,10 @@ struct storer
   // get_t holds no variable state apart from p_trg.
 
   storer ( zimt::view_t < D , value_t > & _trg ,
-           const std::size_t & _d = 0 )
+           const bill_t & bill )
   : trg ( _trg ) ,
-    d ( _d ) ,
-    stride ( _trg.strides [ _d ] )
+    d ( bill.axis ) ,
+    stride ( _trg.strides [ bill.axis ] )
   { }
 
   // c'tor overload for N==1. Here we also accept a view_t
@@ -95,11 +95,11 @@ struct storer
 
   template < typename = std::enable_if < N == 1 > >
   storer ( zimt::view_t < D , T > & _trg ,
-           const std::size_t & _d = 0 )
+           const bill_t & bill )
   : trg ( reinterpret_cast
            < zimt::view_t < D , value_t > & > ( _trg ) ) ,
-    d ( _d ) ,
-    stride ( _trg.strides [ _d ] )
+    d ( bill.axis ) ,
+    stride ( _trg.strides [ bill.axis ] )
   { }
 
   // init is used to initialize the target pointer
@@ -151,8 +151,10 @@ struct split_t
 
   // the c'tor receives the set of target arrays and the 'hot' axis
 
-  split_t ( trg_t & _trg , const std::size_t & _d = 0 )
-  : trg ( _trg ) , d ( _d )
+  split_t ( trg_t & _trg ,
+            const bill_t & bill )
+  : trg ( _trg ) ,
+    d ( bill.axis )
   {
     // copy out the strides of the target arrays
 
@@ -244,10 +246,10 @@ struct vstorer
   // refers to the 'hot' axis of the 'notional' array
 
   vstorer ( zimt::view_t < D + 1 , T > & _trg ,
-            const std::size_t & _d = 0 )
+            const bill_t & bill )
   : trg ( _trg ) ,
-    d ( _d + 1 ) ,
-    stride ( _trg.strides [ _d + 1 ] )
+    d ( bill.axis + 1 ) ,
+    stride ( _trg.strides [ bill.axis + 1 ] )
   { }
 
   // init is used to initialize the target pointer. We receive a

@@ -101,9 +101,14 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
 
   grid_t grid { ax , ay } ;
 
+  // the loading bill is set up with the 'hot' axis
+
+  zimt::bill_t bill ;
+  bill.axis = a ;
+
   // create the permute object
 
-  p_t get_xy ( grid , a ) ;
+  p_t get_xy ( grid , bill ) ;
 
   // the shape of the array we'll be working on
 
@@ -119,12 +124,7 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
 
   // the put_t object stores values to the target array
 
-  zimt::storer < int , 2 , 2 , 16 > p ( trg , a ) ;
-
-  // the loading bill is set up with the 'hot' axis
-
-  zimt::bill_t bill ;
-  bill.axis = a ;
+  zimt::storer < int , 2 , 2 , 16 > p ( trg , bill ) ;
 
   // so far this is pretty much the same as permute.cc, but in 2D.
   // But we'll do the processing in patches: we'll run an outer

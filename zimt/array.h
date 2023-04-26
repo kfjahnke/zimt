@@ -467,9 +467,9 @@ template < std::size_t D , typename T >
 class array_t
 : public view_t < D , T >
 {
-  array_t() = default ;
-
 public:
+
+  array_t() = default ;
 
   typedef view_t < D , T > base_t ;
 

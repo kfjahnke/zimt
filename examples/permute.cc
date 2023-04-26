@@ -98,9 +98,14 @@ void test ( std::size_t a ,
 
   grid_t grid { ax , ay , az } ;
 
+  // set up the 'loading bill'
+
+  zimt::bill_t bill ;
+  bill.axis = a ;
+
   // create the permute object
 
-  p_t get_abc ( grid , a ) ;
+  p_t get_abc ( grid , bill ) ;
 
   // the shape of the arrays we'll be working on
 
@@ -116,10 +121,7 @@ void test ( std::size_t a ,
 
   // and the put_t object stores it to the target array
 
-  zimt::storer < int , 3 , 3 , 16 > p ( trg , a ) ;
-
-  zimt::bill_t bill ;
-  bill.axis = a ;
+  zimt::storer < int , 3 , 3 , 16 > p ( trg , bill ) ;
 
   // showtime!
 
@@ -130,20 +132,20 @@ void test ( std::size_t a ,
 
   // get the vbuffer array
 
-  auto vbuffer = zimt::get_vector_buffer ( trg , a , 16 ) ;
+  auto vbuffer = zimt::get_vector_buffer ( trg , bill.axis , 16 ) ;
 
   // set up and use a vstorer object as put_t for zimt::process
 
-  zimt::vstorer < int , 3 , 3 , 16 > vs ( vbuffer , a ) ;
+  zimt::vstorer < int , 3 , 3 , 16 > vs ( vbuffer , bill ) ;
   zimt::process ( shape , get_abc , act_t() , vs , bill ) ;
 
   // the data are now in the vbuffer array. now set up and use
   // a vloader object as get_t for zimt::process - as put_t we
   // use a storer storing to 'trg2'
 
-  zimt::vloader < int , 3 , 3 , 16 > vl ( vbuffer , a ) ;
+  zimt::vloader < int , 3 , 3 , 16 > vl ( vbuffer , bill ) ;
   zimt::array_t < 3 , value_t > trg2 ( shape ) ;
-  zimt::storer < int , 3 , 3 , 16 > pp ( trg2 , a ) ;
+  zimt::storer < int , 3 , 3 , 16 > pp ( trg2 , bill ) ;
   zimt::process ( shape , vl , act_t() , pp , bill ) ;
 
   // a second flourish: store to, load from three separate arrays
@@ -160,15 +162,15 @@ void test ( std::size_t a ,
 
   // first we store to the three arrays with a split_t object
 
-  zimt::split_t < int , 3 , 3 , 16 > sps ( split_trg , a ) ;
+  zimt::split_t < int , 3 , 3 , 16 > sps ( split_trg , bill ) ;
   zimt::process ( shape , get_abc , act_t() , sps , bill ) ;
 
   // now we load the data with a join_t object, storing the result
   // to trg3, which should now hold the same content as trg and trg2.
 
-  zimt::join_t < int , 3 , 3 , 16 > spl ( split_trg , a ) ;
+  zimt::join_t < int , 3 , 3 , 16 > spl ( split_trg , bill ) ;
   zimt::array_t < 3 , value_t > trg3 ( shape ) ;
-  zimt::storer < int , 3 , 3 , 16 > p3 ( trg3 , a ) ;
+  zimt::storer < int , 3 , 3 , 16 > p3 ( trg3 , bill ) ;
   zimt::process ( shape , spl , act_t() , p3 , bill ) ;
 
   // let's look at the result

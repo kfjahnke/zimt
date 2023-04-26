@@ -65,22 +65,24 @@ int main ( int argc , char * argv[] )
   zimt::array_t < 2 , float > b ( { 1024 , 1024 } ) ;
   zimt::array_t < 2 , float > a ( { 1024 , 1024 } ) ;
 
+  zimt::bill_t bill ;
+
   std::array < zimt::view_t < 2 , float > , 4 >
     src ( { r , g , b , a } ) ;
 
-  j_t get_rgba ( src ) ;
+  j_t get_rgba ( src , bill ) ;
 
   zimt::array_t < 2 , value_t > rgba ( { 1024 , 1024 } ) ;
 
   typedef zimt::pass_through < float , 4 , 16 > act_t ;
-  zimt::storer < float , 4 , 2 , 16 > p ( rgba , 0 ) ;
+  zimt::storer < float , 4 , 2 , 16 > p ( rgba , bill ) ;
 
   r [ { 101 , 203 } ] = 1.0f ;
   g [ { 101 , 203 } ] = 2.0f ;
   b [ { 101 , 203 } ] = 3.0f ;
   a [ { 101 , 203 } ] = 4.0f ;
 
-  zimt::process ( rgba.shape , get_rgba , act_t() , p ) ;
+  zimt::process ( rgba.shape , get_rgba , act_t() , p , bill ) ;
 
   std::cout << rgba [ { 100 , 203 } ] << std::endl ;
   std::cout << rgba [ { 101 , 203 } ] << std::endl ;

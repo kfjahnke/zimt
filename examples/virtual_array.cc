@@ -150,6 +150,8 @@ struct crunch
 
 int main ( int argc , char * argv[] )
 {
+  zimt::bill_t bill ;
+
   // we'll use a familiar 'get_t' object - it's the same as in the
   // linspace.cc example. Here, we'll start at zero and use 0.01 as
   // step width in every direction
@@ -157,7 +159,7 @@ int main ( int argc , char * argv[] )
   typedef zimt::xel_t < double , 3 > delta_t ;
   delta_t start { 0.0 , 0.0 , 0.0 } ;
   delta_t step { .01 , .01 , .01 } ;
-  zimt::linspace_t < double , 3 , 3 , VSIZE > l ( start , step , 0 ) ;
+  zimt::linspace_t < double , 3 , 3 , VSIZE > l ( start , step , bill ) ;
 
   // this is our 'act' functor's type
 
@@ -190,7 +192,9 @@ int main ( int argc , char * argv[] )
   zimt::process ( shape ,
                   l ,
                   act_t ( yield ) ,
-                  zimt::discard_result < double , 3 , 3 , VSIZE > () ) ;
+                  zimt::discard_result < double , 3 , 3 , VSIZE > () ,
+                  bill
+                ) ;
 
   // here's the final result over ca. 1e9 pixels:
 
