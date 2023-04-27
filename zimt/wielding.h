@@ -201,6 +201,32 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
     }
   }
 
+  if ( bill.subdivide.size() )
+  {
+    crd_t subdivide = decode_bill_vector<dimension> ( bill.subdivide ) ;
+    zimt::mcs_t < dimension > mcs ( subdivide ) ;
+    auto field = upper_limit - lower_limit ;
+    for ( std::size_t i = 0 ; i < subdivide.prod() ; i++ )
+    {
+      auto crd = mcs() ;
+      auto low = lower_limit + ( crd * field ) / subdivide ;
+      auto high = lower_limit + ( ( crd + 1 ) * field ) / subdivide ;
+
+      zimt::bill_t patch_bill = bill ;
+      patch_bill.lower_limit.clear() ;
+      patch_bill.upper_limit.clear() ;
+      patch_bill.subdivide.clear() ;
+
+      for ( int d = 0 ; d < dimension ; d++ )
+      {
+        patch_bill.lower_limit.push_back ( low[d] ) ;
+        patch_bill.upper_limit.push_back ( high[d] ) ;
+        process ( shape , _get , gact , _put , patch_bill ) ;
+      }
+    }
+    return ;
+  }
+
   // set up offsets for the get_t and put_t objects. Normally these
   // offsets are zero - a typical case where they aren't would be
   // reading from and storing to 'cropped' arrays. The offsets are

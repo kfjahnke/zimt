@@ -148,6 +148,17 @@ struct bill_t
   std::vector < long > get_offset ;
   std::vector < long > put_offset ;
 
+  // to process the workload in increments, you can specify
+  // a subdivision of the range from lower_limit to upper_limit
+  // (the entire array if the limits aren't set). The range is
+  // cut up into - roughly - equally-sized sub-ranges, these are
+  // encoded as lower_limit and upper_limit in a bill for the
+  // sub-range processing, and then zimt::process is called
+  // recursively for all sub-ranges, now with no subdivide
+  // specified in the bill for the sub-range.
+
+  std::vector < long > subdivide ;
+
   // this boolean tells zimt::process how to decode the 'joblet'
   // numbers. If line_first is true, successive joblet numbers
   // fill a line, then the next. If line_first is false, successive
@@ -160,6 +171,7 @@ struct bill_t
   // tiles from cold storage.
 
   bool line_first = true ;
+
 } ;
 
 // this helper function 'translates' the std::vectors in the bill

@@ -128,7 +128,7 @@ struct join_t
   // with the static member function convert, all we need to do is
   // pass the result of 'convert' to the base class c'tor.
 
-  join_t ( const src_t & src , const bill_t & bill )
+  join_t ( const src_t & src , const zimt::bill_t & bill )
   : zimt::unstrided_loader < T , N , D , L > ( convert ( src ) , bill )
   { }
 } ;
