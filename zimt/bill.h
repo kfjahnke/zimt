@@ -159,6 +159,13 @@ struct bill_t
 
   std::vector < long > subdivide ;
 
+  // when subdivision is active, after each subdivision's process
+  // concludes, this function will be called with the bill that
+  // was also passed to the subdivision's process invocation.
+
+  std::function < void ( const bill_t & ) >
+    conclude = [] ( const bill_t & bill ) { } ;
+
   // this boolean tells zimt::process how to decode the 'joblet'
   // numbers. If line_first is true, successive joblet numbers
   // fill a line, then the next. If line_first is false, successive
@@ -171,7 +178,6 @@ struct bill_t
   // tiles from cold storage.
 
   bool line_first = true ;
-
 } ;
 
 // this helper function 'translates' the std::vectors in the bill

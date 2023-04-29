@@ -142,11 +142,11 @@ typedef std::size_t ic_type ;
 /// which take and produce single-channel data in 'naked' form rather
 /// than as xel_t of one element.
 
-template < std::size_t dimension ,
+template < std::size_t D ,
            class get_t ,
            class gact_t ,
            class put_t >
-void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
+void process ( const zimt::xel_t < std::size_t , D > & shape ,
                const get_t & _get ,
                const gact_t & gact ,
                const put_t & _put ,
@@ -154,7 +154,14 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
 {
   typedef vs_adapter < gact_t > act_t ;
 
-  // we extract the act functor's type system and constants
+  // we extract the act functor's type system and constants. Note
+  // that we extract these data from the 'adapted' functor - the
+  // one processing xel_t only. This is what we'll actually use
+  // in the per-thread processing code. But calling code is free
+  // to pass in act functors which process SIMD vectors of
+  // fundamentals. This makes it easier on the calling side,
+  // and here is the single point where all code must pass, so
+  // this is the best place to do the adaptation.
 
   typedef typename act_t::in_type in_type ;
   typedef typename act_t::in_ele_type in_ele_type ;
@@ -175,24 +182,24 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
   const auto & axis ( bill.axis ) ; // short notation
   const auto & segment_size ( bill.segment_size ) ; // ditto
 
-  typedef zimt::xel_t < long , dimension > crd_t ;
+  typedef zimt::xel_t < long , D > crd_t ;
 
   // set up the lower and upper limit of the operation. This is used
   // if only a window of the 'notional' shape is to be processed. The
   // limits are taken from the bill.
 
-  crd_t lower_limit = decode_bill_vector<dimension> ( bill.lower_limit ) ;
+  crd_t lower_limit = decode_bill_vector<D> ( bill.lower_limit ) ;
 
   crd_t upper_limit ;
 
   if ( bill.upper_limit.size() )
-    upper_limit = decode_bill_vector<dimension> ( bill.upper_limit ) ;
+    upper_limit = decode_bill_vector<D> ( bill.upper_limit ) ;
   else
     upper_limit = shape ;
 
   // might omit this test to allow reversed operation
 
-  for ( std::size_t i = 0 ; i < dimension ; i++ )
+  for ( std::size_t i = 0 ; i < D ; i++ )
   {
     if ( lower_limit[i] >= upper_limit[i] )
     {
@@ -201,29 +208,53 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
     }
   }
 
+  // check for subdivision of the workload. This is mainly for
+  // processing tiled storage: the notional shape may be too big
+  // to hold the entire corpus of data in memory. With workload
+  // subdivision, subsets of the notional shape are processed
+  // with recursive calls to zimt::process (with adapted bill)
+  // and afterwards, the 'conclude' callback is invoked to
+  // trigger activity needed to, e.g., flush tiles from memory
+  // to disk to free memory for the next batch.
+  // For maximum efficiency, the subdivision should split the
+  // notional shape to multiples of the tile size, but this is
+  // neither enforced nor required.
+
   if ( bill.subdivide.size() )
   {
-    crd_t subdivide = decode_bill_vector<dimension> ( bill.subdivide ) ;
-    zimt::mcs_t < dimension > mcs ( subdivide ) ;
+    crd_t subdivide = decode_bill_vector<D> ( bill.subdivide ) ;
+    zimt::mcs_t < D > mcs ( subdivide ) ;
     auto field = upper_limit - lower_limit ;
     for ( std::size_t i = 0 ; i < subdivide.prod() ; i++ )
     {
+      // calculate appropriate limits for the bill of the partial
+      // processing ('patch_bill')
+
       auto crd = mcs() ;
       auto low = lower_limit + ( crd * field ) / subdivide ;
       auto high = lower_limit + ( ( crd + 1 ) * field ) / subdivide ;
 
       zimt::bill_t patch_bill = bill ;
+
       patch_bill.lower_limit.clear() ;
       patch_bill.upper_limit.clear() ;
       patch_bill.subdivide.clear() ;
 
-      for ( int d = 0 ; d < dimension ; d++ )
+      for ( int d = 0 ; d < D ; d++ )
       {
         patch_bill.lower_limit.push_back ( low[d] ) ;
         patch_bill.upper_limit.push_back ( high[d] ) ;
-        process ( shape , _get , gact , _put , patch_bill ) ;
       }
+
+      // now call zimt::process recursively with the adapted bill.
+      // After this call returns, call the 'conclude' callback
+
+      process ( shape , _get , gact , _put , patch_bill ) ;
+      patch_bill.conclude ( patch_bill ) ;
     }
+
+    // now *return* - processing is done.
+
     return ;
   }
 
@@ -233,8 +264,8 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
   // added unconditionally to the discrete coordinate passed to the
   // get_t/put_t object's init functions.
 
-  crd_t get_offset = decode_bill_vector<dimension> ( bill.get_offset ) ;
-  crd_t put_offset = decode_bill_vector<dimension> ( bill.put_offset ) ;
+  crd_t get_offset = decode_bill_vector<D> ( bill.get_offset ) ;
+  crd_t put_offset = decode_bill_vector<D> ( bill.put_offset ) ;
 
   // with the limits established, we can set up the state yielding
   // the 1D subarrays for processing. The window of coordinates we'll
@@ -250,7 +281,7 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
 
   // we set up an iterator over this area
 
-  zimt::mci_t < dimension > head_mci ( head_area_shape ) ;
+  zimt::mci_t < D > head_mci ( head_area_shape ) ;
 
   // get the line length and the number of lines
 
@@ -345,6 +376,15 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
       std::size_t line ;
       std::size_t segment ;
 
+      // There are two ways to decode the joblet index: either
+      // step through the segments inside a line, then do the same
+      // for the next line etc - this is done when 'line_first' is
+      // true. The other mode is to step through the first segment
+      // of all lines, then the second of all lines etc.
+      // Normally, line_first is set and it's the best choice. One
+      // exception is processing of tiled storage: here, line_first
+      // should be false to reduce tile switching.
+
       if ( bill.line_first )
       {
         line = joblet_index / nr_segments ;
@@ -414,7 +454,7 @@ void process ( const zimt::xel_t < std::size_t , dimension > & shape ,
       }
       else
       {
-        // we passing the discrete coordinate of the beginning of
+        // we pass the discrete coordinate of the beginning of
         // the current line to the get_t object's init function and
         // receive an initial value of md_in, the vectorized datum
         // suitable for as input for 'act'. Note the addition of
