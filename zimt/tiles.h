@@ -471,8 +471,8 @@ public:
     auto upper_limit = decode_bill_vector<D> ( bill.upper_limit ) ;
     auto offset = decode_bill_vector<D>
       ( is_get_t ? bill.get_offset : bill.put_offset ) ;
-    lower_limit -= offset ;
-    upper_limit -= offset ;
+    lower_limit += offset ;
+    upper_limit += offset ;
     auto lowest = lower_limit / tile_shape ;
     auto highest = ( upper_limit - 1 ) / tile_shape ;
     close_some ( lowest , highest + 1 ) ;
@@ -503,6 +503,16 @@ public:
       close_all() ;
   }
 } ;
+
+// class tile_loader provides an object which extracts data from
+// a tile store, following 'normal' get_t semantics. This does
+// require some 'pedestrian' code to deal with situations where
+// the tile boundaries and the segment boundaries do not agree.
+// If the caller avoids such mismatches, the code runs 'smoothly'
+// using efficient vector code throughout, and the caller's aim
+// should be to set everything up that way, but we want the code
+// to cover all eventualities, hence the 'pedestrian' special
+// cases.
 
 template < typename T ,
            std::size_t N ,
@@ -663,6 +673,17 @@ struct tile_loader
     increase ( trg , cap , true ) ;
   }
 
+  // helper function advance enters the next chunk and sets
+  // 'p_src' and 'tail' accordingly
+
+  void advance()
+  {
+    hot_chunk [ d ] ++ ;
+    in_chunk_crd [ d ] = 0 ;
+    current_tile = get_tile ( hot_chunk ) ;
+    current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
+  }
+
   // 'increase' fetches a full vector of data from the source view
   // and increments the pointer to the data in the view to the next
   // position.
@@ -671,17 +692,8 @@ struct tile_loader
   {
     if ( tail == 0 )
     {
-      // this case never occurs when 'increase' is called from
-      // 'init' because then 'tail' is never zero. It ocurs if
-      // the current tile has been fully exhausted and the next
-      // one has to be accessed.
-
-      hot_chunk [ d ] ++ ;
-      in_chunk_crd [ d ] = 0 ;
-      current_tile = get_tile ( hot_chunk ) ;
-      current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
+      advance() ;
     }
-
     if ( tail >= L )
     {
       // this is the 'normal' case: there are enough values left
@@ -694,24 +706,50 @@ struct tile_loader
     }
     else
     {
-      // tis case occurs if there aren't enough values left in the
-      // current tile to make up an entire vector. This requires
-      // some artistry to combine data from the current and the next
-      // tile - we silently assume that the next tile won't be so
-      // 'short' that it's not sufficient to fill up the 'missing'
-      // lanes. Note the signature of the 'bunch' overload: it
-      // takes 'tail' and the second data pointer p_src2.
+      std::size_t src_index ;
+      std::size_t lane = 0 ;
 
-      hot_chunk [ d ] ++ ;
-      auto next_tile = get_tile ( hot_chunk ) ;
-      in_chunk_crd [ d ] = 0 ;
-      value_t * p_src2 ;
-      std::size_t tail2 ;
-      next_tile->provide ( in_chunk_crd , d , p_src2 , tail2 ) ;
-      trg.bunch ( p_src , stride , tail , p_src2 ) ;
-      current_tile = next_tile ;
-      p_src = p_src2 ;
-      tail = tail2 ;
+      while ( true )
+      {
+        // how many lanes do we still need to fill?
+
+        std::size_t need = L - lane ;
+
+        // fetch that number, unless tail is smaller: then only
+        // fetch as many as tail
+
+        std::size_t fetch = std::min ( need , tail ) ;
+
+        // transfer 'fetch' values to 'trg', counting up 'lane'
+
+        for ( src_index = 0 ;
+              fetch > 0 ;
+              --fetch , ++lane , ++src_index )
+        {
+          for ( std::size_t ch = 0 ; ch < N ; ch++ )
+          {
+            trg[ch][lane] = p_src [ src_index * stride ] [ ch ] ;
+          }
+        }
+
+        if ( lane < L )
+        {
+          // if 'lane' hasn't yet reached it's final value, L, call
+          // advance to set 'p_src' and 'tail' to refer to the next
+          // tile in line
+
+          advance() ;
+        }
+        else
+        {
+          // 'lane' has reached the final value. We subtract 'fetch'
+          // from tail because we have consumed that amount of values.
+          // then we break the loop
+
+          tail -= fetch ;
+          break ;
+        }
+      }
     }
   }
 
@@ -726,19 +764,61 @@ struct tile_loader
                   std::size_t cap ,
                   bool stuff = true )
   {
+    if ( tail == 0 )
+    {
+      advance() ;
+    }
     if ( tail >= cap )
     {
       trg.bunch ( p_src , stride , cap , stuff ) ;
     }
     else
     {
-      hot_chunk [ d ] ++ ;
-      auto next_tile = get_tile ( hot_chunk ) ;
-      in_chunk_crd [ d ] = 0 ;
-      value_t * p_src2 ;
-      std::size_t tail2 ;
-      next_tile->provide ( in_chunk_crd , d , p_src2 , tail2 ) ;
-      trg.bunch ( p_src , stride , tail , cap , stuff , p_src2 ) ;
+      std::size_t nlanes = cap ;
+      std::size_t src_index ;
+      std::size_t lane = 0 ;
+
+      while ( true )
+      {
+         // how many lanes do we still need to fill?
+
+        std::size_t need = cap - lane ;
+
+        // fetch that number, unless tail is smaller: then only
+        // fetch as many as tail
+
+        std::size_t fetch = std::min ( need , tail ) ;
+
+        // transfer 'fetch' values to 'trg', counting up 'lane'
+
+        for ( src_index = 0 ;
+              fetch > 0 ;
+              --fetch , ++lane , ++src_index )
+        {
+          for ( std::size_t ch = 0 ; ch < N ; ch++ )
+          {
+            trg[ch][lane] = p_src [ src_index * stride ] [ ch ] ;
+          }
+        }
+
+        if ( lane < cap )
+        {
+          // if 'lane' hasn't yet reached it's final value, cap, call
+          // advance to set 'p_src' and 'tail' to refer to the next
+          // tile in line
+
+          advance() ;
+        }
+        else
+        {
+          // 'lane' has reached the final value. We subtract 'fetch'
+          // from tail because we have consumed that amount of values.
+          // then we break the loop
+
+          tail -= fetch ;
+          break ;
+        }
+      }
     }
   }
 
@@ -894,23 +974,23 @@ struct tile_storer
     current_tile->provide ( in_chunk_crd , d , p_trg , tail ) ;
   }
 
-  // 'increase' fetches a full vector of data from the source view
-  // and increments the pointer to the data in the view to the next
-  // position.
+  // helper function advance enters the next chunk and sets
+  // 'p_trg' and 'tail' accordingly
+
+  void advance()
+  {
+    hot_chunk [ d ] ++ ;
+    in_chunk_crd [ d ] = 0 ;
+    current_tile = get_tile ( hot_chunk ) ;
+    current_tile->provide ( in_chunk_crd , d , p_trg , tail ) ;
+  }
 
   void save ( value_v & trg )
   {
     if ( tail == 0 )
     {
-      // this case ocurs if the current tile has been filled in
-      // to the end of the line and the next one has to be accessed.
-
-      hot_chunk [ d ] ++ ;
-      in_chunk_crd [ d ] = 0 ;
-      current_tile = get_tile ( hot_chunk ) ;
-      current_tile->provide ( in_chunk_crd , d , p_trg , tail ) ;
+      advance() ;
     }
-
     if ( tail >= L )
     {
       // this is the 'normal' case: there are enough values left
@@ -923,24 +1003,54 @@ struct tile_storer
     }
     else
     {
-      // tis case occurs if there aren't enough values left in the
-      // current tile to take in an entire vector. This requires
-      // some artistry to distribute data to the current and the next
-      // tile - we silently assume that the next tile won't be so
-      // 'short' that it's not sufficient to accomodate the extra
-      // lanes. Note the signature of the 'fluff' overload: it
-      // takes 'tail' and the second data pointer p_trg2.
+      // The current tile can't accommodate as many values as we
+      // have in 'trg' (namely L values, a full vector's lane count)
+      // so we have to save as many to the current tile as it can
+      // take, then switch to the next tile, until all values are
+      // stored.
 
-      hot_chunk [ d ] ++ ;
-      auto next_tile = get_tile ( hot_chunk ) ;
-      in_chunk_crd [ d ] = 0 ;
-      value_t * p_trg2 ;
-      std::size_t tail2 ;
-      next_tile->provide ( in_chunk_crd , d , p_trg2 , tail2 ) ;
-      trg.fluff ( p_trg , stride , tail , p_trg2 ) ;
-      current_tile = next_tile ;
-      p_trg = p_trg2 ;
-      tail = tail2 ;
+      std::size_t trg_index ;
+      std::size_t lane = 0 ;
+
+      while ( true )
+      {
+        // how many lanes do we still need to store?
+
+        std::size_t pending = L - lane ;
+
+        // store that number, unless tail is smaller: then only
+        // store as many as tail
+
+        std::size_t store = std::min ( pending , tail ) ;
+
+        // transfer 'store' values to memory, counting up 'lane'
+
+        for ( trg_index = 0 ;
+              store > 0 ;
+              --store , ++lane , ++trg_index )
+        {
+          for ( std::size_t ch = 0 ; ch < N ; ch++ )
+          {
+            p_trg [ trg_index * stride ] [ ch ] = trg[ch][lane] ;
+          }
+        }
+
+        if ( lane < L )
+        {
+          // if 'lane' hasn't yet reached it's final value, L, call
+          // advance to set 'p_trg' and 'tail' to refer to the next
+          // tile in line
+
+          advance() ;
+        }
+        else
+        {
+          // 'lane' has reached the final value. we break the loop
+          // without updating 'tail' because the run ends now.
+
+          break ;
+        }
+      }
     }
   }
 
@@ -954,19 +1064,63 @@ struct tile_storer
   void save ( value_v & trg ,
               std::size_t cap )
   {
+    if ( tail == 0 )
+    {
+      advance() ;
+    }
     if ( tail >= cap )
     {
       trg.fluff ( p_trg , stride , cap ) ;
     }
     else
     {
-      hot_chunk [ d ] ++ ;
-      auto next_tile = get_tile ( hot_chunk ) ;
-      in_chunk_crd [ d ] = 0 ;
-      value_t * p_trg2 ;
-      std::size_t tail2 ;
-      next_tile->provide ( in_chunk_crd , d , p_trg2 , tail2 ) ;
-      trg.fluff ( p_trg , stride , tail , cap , p_trg2 ) ;
+      // The current tile can't accommodate as many values as we
+      // have in 'trg' (namely 'cap' values), so we have to save as
+      // many to the current tile as it can take, then switch to the
+      // next tile, until all values are stored.
+
+      std::size_t trg_index ;
+      std::size_t lane = 0 ;
+
+      while ( true )
+      {
+        // how many lanes do we still need to store?
+
+        std::size_t pending = cap - lane ;
+
+        // store that number, unless tail is smaller: then only
+        // store as many as tail
+
+        std::size_t store = std::min ( pending , tail ) ;
+
+        // transfer 'store' values to memory, counting up 'lane'
+
+        for ( trg_index = 0 ;
+              store > 0 ;
+              --store , ++lane , ++trg_index )
+        {
+          for ( std::size_t ch = 0 ; ch < N ; ch++ )
+          {
+            p_trg [ trg_index * stride ] [ ch ] = trg[ch][lane] ;
+          }
+        }
+
+        if ( lane < cap )
+        {
+          // if 'lane' hasn't yet reached it's final value, cap, call
+          // advance to set 'p_trg' and 'tail' to refer to the next
+          // tile in line
+
+          advance() ;
+        }
+        else
+        {
+          // 'lane' has reached the final value. we break the loop
+          // without updating 'tail' because the run ends now.
+
+          break ;
+        }
+      }
     }
   }
 

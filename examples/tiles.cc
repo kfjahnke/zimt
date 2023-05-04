@@ -101,7 +101,7 @@ int main ( int argc , char * argv[] )
   // where processing can continue while the disk I/O takes place.
   // As the code stands, there is a possibility that a subdivision
   // will 'let go' of tiles which are 'picked up again' by the next
-  // subdivision. zhis could be avoided by aligning subdivision
+  // subdivision. This could be avoided by aligning subdivision
   // boundaries with tile boundaries. If it were assured that tiles
   // aren't picked up again by subsequent subdivisions, we could
   // simply push the I/O to a queue and have it processed by a
