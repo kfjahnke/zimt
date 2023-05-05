@@ -73,26 +73,12 @@
 /// get_t and put_t objects to be used with zimt::process; the
 /// main intent is currently to get a smooth zimt::process run
 /// over a large notional shape to read from, process and store
-/// to tile stores with minimal overhead. This is realized
-/// with the 'subdivision' feature of zimt::process, which can
-/// subdivide a large workload into smaller parcels. These
-/// parcels can be chosen so that they fit into the processing
-/// system's memory. Once a parcel has been dealt with, the
-/// tiles it has accessed during the 'partial' processing can
-/// be closed again and the memory is free to be used for the
-/// next parcel. zimt::process has the capabilities needed to
-/// do this 'subdivided' processing, and it can be triggered
-/// by passing appropriate parameters in the 'loading bill'.
+/// to tile stores with minimal overhead.
 ///
 /// Finally, we have templates of get_t and a put_t objects
 /// interacting with the tile store, in order to make tiled
 /// storage available as input or output (or both) of
-/// zimt::process. For very large workloads, this relies on
-/// appropriate 'subdivision' specified in the loading bill
-/// and passing of a suitable 'conclude' callback to flush
-/// tiles after a partial workload. These additional measures
-/// affect processing, but they are compatible with other
-/// get_t and put_t objects. With this integration into
+/// zimt::process. With this integration into
 /// zimt::process, we gain access to code which, for example,
 /// can run a reduction over an entire tile store (or parts
 /// of it) without having to load the entire store to memory.
@@ -200,18 +186,11 @@ struct tile_t
 // the tile pointer, and the tile pointer itself.
 // user code gaining access to a tile pointer is allowed to
 // interface with the tile's memory as it sees fit, but it
-// is assumed that several thread which access the same tile
+// is assumed that several threads which access the same tile
 // concurrently will *not access the same data* inside this
 // memory. With this access model, user code can simply hold
 // the tile pointer and access it without mutex protection.
 // This is an important optimization.
-// TODO: the tile pointer might be coded as a std::atomic,
-// to avoid use of the mutex for most accesses: the calling
-// code could get the atomic, if it's not null, use it, and
-// if it's null it could get a lock on the mutex, recheck
-// and if it's still null allocate the tile.
-// Another strategy would be to open all tiles in the current
-// (sub-) workload beforehand, then allow mutex-free access.
 
 template < typename tile_t >
 struct tether_t
@@ -295,6 +274,49 @@ private:
     return filename ;
   }
 
+  // 'dropping' a tile optionally flushes it's content to
+  // a file, then frees the memory for data. this should only
+  // be called by mutex-protected code or when it's assured
+  // that only one thread is interacting with the tile store.
+
+  void drop ( const index_type & tile_index )
+  {
+    auto & tether ( store [ tile_index ] ) ; // shorthand
+
+    if ( tether.p_tile != nullptr )
+    {
+      if ( write_to_disk && tether.p_tile->modified )
+      {
+        auto filename = get_file_name ( tile_index ) ;
+        tether.p_tile->store ( filename.c_str() ) ;
+      }
+      delete tether.p_tile->p_data ;
+      delete tether.p_tile ;
+      tether.p_tile = nullptr ;
+    }
+  }
+
+  // close the tile store altogether - i.e. after it was processed.
+  // if write_to_disk is set, all tiles marked 'modified' are written
+  // to their associated files. Since this is not multithreaded code,
+  // we can proceed without the lock_guard. This is more of a
+  // precaution - if all goes according to plan, all tiles should
+  // have been released already before this call happens.
+
+  void close_all()
+  {
+    zimt::mcs_t < D > tile_it ( store_shape ) ;
+    std::size_t ntiles = store_shape.prod() ;
+
+    for ( std::size_t i = 0 ; i < ntiles ; i++ )
+    {
+      auto tile_index = tile_it() ;
+      auto & tether ( store [ tile_index ] ) ;
+      assert ( tether.nusers == 0 ) ;
+      drop ( tile_index ) ;
+    }
+  }
+
 public:
 
   // tile_store_t's c'tor receives the 'notional' shape of the
@@ -322,7 +344,10 @@ public:
   // are blocked until the access is over. Note that access to
   // the tile's data array is allowed concurrently - it's
   // assumed that all threads will only access 'their' share
-  // and that the shared don't overlap.
+  // and that the shares don't overlap. This is - in the
+  // context of zimt::process - guaranteed, because each
+  // 'joblet index' stands for a distinct, unique part of the
+  // total workload.
 
   tile_type * get ( const index_type & tile_index )
   {
@@ -342,7 +367,7 @@ public:
     if ( tether.p_tile == nullptr )
     {
       // the tile isn't yet manifest. create the tile_t object,
-      // allocate it's memory and, optionally, read date from
+      // allocate it's memory and, optionally, read data from
       // a file.
 
       tether.p_tile = new tile_type ( tile_shape ) ;
@@ -350,56 +375,20 @@ public:
 
       auto filename = get_file_name ( tile_index ) ;
       tether.p_tile->load ( filename.c_str() ) ;
+      tether.nusers = 0 ;
     }
 
     ++ tether.nusers ;
     return tether.p_tile ;
   }
 
-private:
-
-  // 'dropping' a tile optionally flushes it's content to
-  // a file, then frees the memory for data. this should only
-  // be called by mutex-protected code or when it's assured
-  // that only one thread is interacting with the tile store.
-
-  void drop ( const index_type & tile_index ,
-              tether_type & tether )
-  {
-    if ( tether.p_tile != nullptr )
-    {
-      if ( write_to_disk && tether.p_tile->modified )
-      {
-        auto filename = get_file_name ( tile_index ) ;
-        tether.p_tile->store ( filename.c_str() ) ;
-      }
-      delete tether.p_tile->p_data ;
-      delete tether.p_tile ;
-      tether.p_tile = nullptr ;
-    }
-  }
-
-public:
-
-  // closing a tile optionally writes it's data to a file and
-  // then deallocates the tile's memory.
-
-  void close ( const index_type & tile_index )
-  {
-    auto & tether ( store [ tile_index ] ) ; // shorthand
-
-#ifndef ZIMT_SINGLETHREAD
-      std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
-#endif
-
-    // there mustn't be any more users of this tile!
-
-    assert ( tether.nusers == 0 ) ;
-    drop ( tile_index , tether ) ;
-  }
-
-  // releasing a tile counts down the tile's user count if the
-  // tile is manifest.
+  // releasing a tile counts down the tile's user count and
+  // 'drops' the tile if the user count reaches zero. release
+  // is not called by tile_loader/tile_storer immediately when
+  // processing leaves the scope of a tile, but only when
+  // processing enters a new set of tiles, so the release
+  // comes typically after all processing affecting the tile
+  // is over.
 
   void release ( const index_type & tile_index )
   {
@@ -409,93 +398,24 @@ public:
       std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
 #endif
 
+    // we are strict here - at least as long as the design
+    // hasn't 'solidified' entirely: release should only be
+    // called 'if there is something to release', and if
+    // there are no more users, the tile should have been
+    // dropped earlier.
+
+    assert ( tether.nusers > 0 ) ;
+
     -- tether.nusers ;
-  }
-
-  // close the tile store altogether - i.e. after it was processed.
-  // if write_to_disk is set, all tiles marked 'modified' are written
-  // to their associated files. Since this is not multithreaded code,
-  // we can proceed without the lock_guard.
-
-  void close_all()
-  {
-    zimt::mcs_t < D > tile_it ( store_shape ) ;
-    std::size_t ntiles = store_shape.prod() ;
-
-    for ( std::size_t i = 0 ; i < ntiles ; i++ )
+    if ( tether.nusers == 0 )
     {
-      auto tile_index = tile_it() ;
-      auto & tether ( store [ tile_index ] ) ;
-      assert ( tether.nusers == 0 ) ;
-      drop ( tile_index , tether ) ;
+      drop ( tile_index ) ;
     }
   }
 
-  // close only tiles in a given range of tile indices. This function
-  // and the next are used when the workload is very large and
-  // subdivided into partial workloads. After each partial workload,
-  // zimt::process calls the 'conclude' callback, passing the bill
-  // for the partial workload. This bill has the information needed
-  // to figure out the range of tile indices which were affected by
-  // the partial processing, and hence the range of tiles that have
-  // to be checked is narrowed, saving processing time. For large
-  // total worlkloads, this may make a considerable difference
-  // compared to the 'sloppy' approach of calling close_all after
-  // each partial workload.
-
-  void close_some ( const index_type & start ,
-                    const index_type & end )
-  {
-    auto range = end - start ;
-
-    zimt::mcs_t < D > tile_it ( range ) ;
-    std::size_t ntiles = range.prod() ;
-
-    for ( std::size_t i = 0 ; i < ntiles ; i++ )
-    {
-      auto tile_index = tile_it() + start ;
-      auto & tether ( store [ tile_index ] ) ;
-      assert ( tether.nusers == 0 ) ;
-      drop ( tile_index , tether ) ;
-    }
-  }
-
-  // overload taking the loading bill of a partial workload and a
-  // flag indicating whether the get_offset or put_offset is
-  // relevant for the operation - this is only known to the caller.
-
-  void close_some ( const bill_t & bill ,
-                    bool is_get_t )
-  {
-    auto lower_limit = decode_bill_vector<D> ( bill.lower_limit ) ;
-    auto upper_limit = decode_bill_vector<D> ( bill.upper_limit ) ;
-    auto offset = decode_bill_vector<D>
-      ( is_get_t ? bill.get_offset : bill.put_offset ) ;
-    lower_limit += offset ;
-    upper_limit += offset ;
-    auto lowest = lower_limit / tile_shape ;
-    auto highest = ( upper_limit - 1 ) / tile_shape ;
-    close_some ( lowest , highest + 1 ) ;
-  }
-
-  // if the tile store is not 'too big', all tiles can be opened
-  // initially
-
-  void open_all()
-  {
-    zimt::mcs_t < D > tile_it ( store_shape ) ;
-    std::size_t ntiles = store_shape.prod() ;
-
-    for ( std::size_t i = 0 ; i < ntiles ; i++ )
-    {
-      auto tile_index = tile_it() ;
-      auto & tether ( store [ tile_index ] ) ;
-      tether.p_tile = new tile_type ( tile_shape ) ;
-      tether.p_tile->allocate() ;
-      auto filename = get_file_name ( tile_index ) ;
-      tether.p_tile->load ( filename.c_str() ) ;
-    }
-  }
+  // calling close_all should not be necessary - if 'cleanup'
+  // is false, it will be omitted, assuming all tiles were
+  // closed earlier.
 
   ~tile_store_t()
   {
@@ -512,7 +432,10 @@ public:
 // using efficient vector code throughout, and the caller's aim
 // should be to set everything up that way, but we want the code
 // to cover all eventualities, hence the 'pedestrian' special
-// cases.
+// cases. On the plus side, the implementation is perfectly
+// general and can handle arbitrary shapes and boundaries,
+// it only takes a little longer when it has to 'cross tile
+// boundaries' in a load/process/store cycle.
 
 template < typename T ,
            std::size_t N ,
@@ -537,121 +460,156 @@ struct tile_loader
   crd_t hot_chunk ;
   crd_t in_chunk_crd ;
   std::size_t tail ;
+  tile_type ** working_set ;
+  crd_t set_marker ;
 
-  // to use tiled storage effectively, the loading bill should
-  // set line_first to false. Then, successive cycles of the
-  // loader will use the same set of tiles several times before
-  // a new set of tiles is 'entered'. We can exploit this fact
-  // and avoid accessing the mutex-protected data in the tile
-  // store for such 'repeat perfomances' with a bit of logic:
+private:
 
-  struct tile_record
+  // The tile loader maintains a list of tiles it's currently
+  // using. Typically, a set of tiles is 'visited' repeatedly,
+  // until, finally, the next row of tiles is entered, which
+  // can be detected by the tile loader. The list of currently
+  // used tiles - the 'working set' - holds as many tile pointers
+  // as the tile store's shape along the 'hot' axis. Once the
+  // new row is entered, the tiles in the store are released
+  // with this function:
+
+  void clear_working_set()
   {
-    zimt::xel_t < long , D > index ;
-    tile_type * p_tile ;
-  } ;
-
-  std::deque < tile_record > repeat_queue ;
-
-  // get_tile will try and provide a pointer to tile_type from
-  // the previous cycle if possible, and only if it can't find
-  // one to reuse, it accesses the tile store. This function
-  // exploits the fact that - if a 'repeat performance' is in fact
-  // happening - the tiles are requested in the same sequence as
-  // they were requested in the previous cycle, so if the first
-  // tile of the 'run' does not match the first tile in the
-  // queue, we can safely assume all other tiles in the queue
-  // won't match either and flush the queue.
-
-  tile_type * get_tile ( const zimt::xel_t < long , D > & index ,
-                         bool flush = false )
-  {
-    tile_type * p_tile = nullptr ;
-
-    if ( repeat_queue.size() )
+    for ( std::size_t i = 0 ;
+          i < tile_store.store_shape [ d ] ;
+          i++ )
     {
-      // look at the tip of the repeat queue
-
-      auto const & candidate ( repeat_queue.front() ) ;
-
-      // is this the tile the user has asked for?
-
-      if ( candidate.index == index )
+      if ( working_set [ i ] != nullptr )
       {
-        // yes! we save the tile pointer to p_tile and pop the
-        // tip of the queue.
-
-        p_tile = candidate.p_tile ;
-        repeat_queue.pop_front() ;
-      }
-      else if ( flush )
-      {
-        // the tip of the queue is not the requested one, and
-        // 'flush' is set, indicating this is the first call to
-        // get_tile in the current cycle. If the first tile is
-        // 'wrong', we can forget about the rest as well, so we
-        // release all tiles in the queue and clear the queue.
-
-        for ( const auto & it : repeat_queue )
-        {
-          tile_store.release ( it.index ) ;
-        }
-        repeat_queue.clear() ;
+        set_marker [ d ] = i ;
+        tile_store.release ( set_marker ) ;
+        working_set [ i ] = nullptr ;
       }
     }
+  }
 
-    // has the search failed?
+public:
+
+  // get_tile will try and provide a pointer to tile_type from
+  // a previous cycle if possible, and only if it can't find
+  // one to reuse, it accesses the tile store.
+  // The function exploits the fact that access to tiles is
+  // along a linear subset of tiles along the 'hot' axis, and
+  // once the tile loader accesses the next linear subset,
+  // there will not be any more accesses to the previous linear
+  // subset. So the tile loader accumulates tile pointers in
+  // it's 'working set' until a new subset is touched, and then
+  // the tiles in the working set are released. With this
+  // inermediate layer, the need for mutex-protected access
+  // to the tiles is greatly reduced.
+
+  tile_type * get_tile ( const zimt::xel_t < long , D > & index )
+  {
+    // set_marker is only ever -1 right after construction.
+
+    if ( set_marker == -1 )
+    {
+      set_marker = index ;
+      set_marker [ d ] = 0 ;
+    }
+
+    // are we still in the same linear subset?
+
+    auto match_index = index ;
+    match_index [ d ] = 0 ;
+
+    if ( match_index != set_marker )
+    {
+      // no: this is a new linear subset. release all tiles
+      // which are held in working_set
+
+      clear_working_set() ;
+
+      // set the set_marker to refer to the new linear subset
+
+      set_marker = index ;
+      set_marker [ d ] = 0 ;
+    }
+
+    // now try and access the working set
+
+    tile_type * p_tile = working_set [ index [ d ] ] ;
+
+    // is there a pointer to be had at this position?
 
     if ( p_tile == nullptr )
     {
-      // no luck so far - access the tile store
+      // no luck so far - access the tile store, then save the
+      // tile pointer to the working set. Here we have the
+      // mutex-protected access (via tile_store.get). It only
+      // occurs if the tile is accessed by this tile loader
+      // for the very first time, so in total once for every
+      // thread cooperating on the current row of tiles,
+      // rather than once per 'entering' the tile's domain.
 
       p_tile = tile_store.get ( index ) ;
       assert ( p_tile != nullptr ) ;
+
+      working_set [ index [ d ] ] = p_tile ;
     }
 
-    // by now, we certainly have a tile and push it to the back
-    // of the queue. Then we return the tile pointer.
+    // return the tile pointer.
 
-    repeat_queue.push_back ( { index , p_tile } ) ;
     return p_tile ;
   }
 
-  // get_t's c'tor receives the zimt::view providing data and the
-  // 'hot' axis. It extracts the strides from the source view.
-
   tile_loader ( tile_store_type & _tile_store ,
-                 const std::size_t & _stride ,
-                 const bill_t & bill )
+                const std::size_t & _stride ,
+                const bill_t & bill )
   : tile_store ( _tile_store ) ,
     d ( bill.axis ) ,
     stride ( _stride ) ,
-    chunk_shape ( _tile_store.tile_shape )
-  { }
+    chunk_shape ( _tile_store.tile_shape ) ,
+    set_marker ( -1 )
+  {
+    working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
+  }
 
-  // tile_loader's d'tor releases the tiles in the repeat queue
+  // because we have the working set in dynamic memory, we need
+  // a copy c'tor which sets up a new working set for the copy.
+
+  tile_loader ( const tile_loader & other )
+  : tile_store ( other.tile_store ) ,
+    d ( other.d ) ,
+    stride ( other.stride ) ,
+    chunk_shape ( other.chunk_shape ) ,
+    set_marker ( -1 )
+  {
+    working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
+  }
+
+  // get_t objects aren't to be copy-assigned, but we make sure
+  // this can't happen:
+
+  tile_loader & operator= ( const tile_loader & other ) = delete ;
+
+  // tile_loader's d'tor releases the tiles in the working set.
+  // this needs to be done because after the last row of tiles,
+  // no new row is entered to trigger the release of the tiles
+  // in the working set.
 
   ~tile_loader()
   {
-    for ( const auto & it : repeat_queue )
-    {
-      tile_store.release ( it.index ) ;
-    }
+    clear_working_set() ;
+    delete[] working_set ;
   }
 
   // tile_loader's init function figures out the first tile
-  // index for this cycle and calls get_tile with 'flush'
-  // set true, so that if the first tile in the repeat queue
-  // is not the same one, the queue is emptied and the tiles
-  // it holds are released. Then the tile's function 'provide'
-  // is called to set 'p_src' and 'tail' to correct values,
-  // and 'increase' is called to initialize the first batch
-  // of vectorized data in 'trg'.
+  // index for this cycle and calls get_tile. Then the tile's
+  // function 'provide' is called to set 'p_src' and 'tail'
+  // to correct values, and 'increase' is called to initialize
+  // the first batch of vectorized data in 'trg'.
 
   void init ( value_v & trg , const crd_t & crd )
   {
     hot_chunk = crd / chunk_shape ;
-    current_tile = get_tile ( hot_chunk , true ) ;
+    current_tile = get_tile ( hot_chunk ) ;
     in_chunk_crd = crd % chunk_shape ;
     current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
     increase ( trg ) ;
@@ -667,7 +625,7 @@ struct tile_loader
               std::size_t cap )
   {
     hot_chunk = crd / chunk_shape ;
-    current_tile = get_tile ( hot_chunk , true ) ;
+    current_tile = get_tile ( hot_chunk ) ;
     in_chunk_crd = crd % chunk_shape ;
     current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
     increase ( trg , cap , true ) ;
@@ -850,70 +808,72 @@ struct tile_storer
   crd_t hot_chunk ;
   crd_t in_chunk_crd ;
   std::size_t tail ;
+  tile_type ** working_set ;
+  crd_t set_marker ;
 
-  // to use tiled storage effectively, the loading bill should
-  // set line_first to false. Then, successive cycles of the
-  // loader will use the same set of tiles several times before
-  // a new set of tiles is 'entered'. We can exploit this fact
-  // and avoid accessing the mutex-protected data in the tile
-  // store for such 'repeat perfomances' with a bit of logic:
+private:
 
-  struct tile_record
+  void clear_working_set()
   {
-    zimt::xel_t < long , D > index ;
-    tile_type * p_tile ;
-  } ;
-
-  std::deque < tile_record > repeat_queue ;
-
-  // get_tile will try and provide a pointer to tile_type from
-  // the previous cycle if possible, and only if it can't find
-  // one to reuse, it accesses the tile store. This function
-  // exploits the fact that - if a 'repeat performance' is in fact
-  // happening - the tiles are requested in the same sequence as
-  // they were requested in the previous cycle, so if the first
-  // tile of the 'run' does not match the first tile in the
-  // queue, we can safely assume all other tiles in the queue
-  // won't match either and flush the queue.
-
-  tile_type * get_tile ( const zimt::xel_t < long , D > & index ,
-                         bool flush = false )
-  {
-    tile_type * p_tile = nullptr ;
-
-    if ( repeat_queue.size() )
+    for ( std::size_t i = 0 ;
+          i < tile_store.store_shape [ d ] ;
+          i++ )
     {
-      // look at the tip of the repeat queue
-
-      auto const & candidate ( repeat_queue.front() ) ;
-
-      // is this the tile the user has asked for?
-
-      if ( candidate.index == index )
+      if ( working_set [ i ] != nullptr )
       {
-        // yes! we save the tile pointer to p_tile and pop the
-        // tip of the queue.
-
-        p_tile = candidate.p_tile ;
-        repeat_queue.pop_front() ;
-      }
-      else if ( flush )
-      {
-        // the tip of the queue is not the requested one, and
-        // 'flush' is set, indicating this is the first call to
-        // get_tile in the current cycle. If the first tile is
-        // 'wrong', we can forget about the rest as well, so we
-        // release all tiles in the queue and clear the queue.
-
-        for ( const auto & it : repeat_queue )
-        {
-          tile_store.release ( it.index ) ;
-        }
-        repeat_queue.clear() ;
+        set_marker [ d ] = i ;
+        tile_store.release ( set_marker ) ;
+        working_set [ i ] = nullptr ;
       }
     }
+  }
 
-    // has the search failed?
+public:
+
+  // get_tile will try and provide a pointer to tile_type from
+  // a previous cycle if possible, and only if it can't find
+  // one to reuse, it accesses the tile store.
+  // The function exploits the fact that access to tiles is
+  // along a linear subset of tiles along the 'hot' axis, and
+  // once the tile loader accesses the next linear subset,
+  // there will not be any more accesses to the previous linear
+  // subset. So the tile loader accumulates tile pointers in
+  // it's 'working set' until a new subset is touched, and then
+  // the tiles in the working set are released. With this
+  // inermediate layer, the need for mutex-protected access
+  // to the tiles is greatly reduced.
+
+  tile_type * get_tile ( const zimt::xel_t < long , D > & index )
+  {
+    if ( set_marker == -1 )
+    {
+      set_marker = index ;
+      set_marker [ d ] = 0 ;
+    }
+
+   // are we still in the same linear subset?
+
+    auto match_index = index ;
+    match_index [ d ] = 0 ;
+
+    if ( match_index != set_marker )
+    {
+      // no: this is a new linear subset. release all tiles
+      // which are held in working_set
+
+      clear_working_set() ;
+
+      // set the set_marker to refer to the new linear subset
+
+      set_marker = index ;
+      set_marker [ d ] = 0 ;
+    }
+
+    // try and access the working set
+
+    tile_type * p_tile = working_set [ index [ d ] ] ;
+
+    // is there a pointer to be had at this position?
 
     if ( p_tile == nullptr )
     {
@@ -921,12 +881,10 @@ struct tile_storer
 
       p_tile = tile_store.get ( index ) ;
       assert ( p_tile != nullptr ) ;
+
+      working_set [ index [ d ] ] = p_tile ;
     }
 
-    // by now, we certainly have a tile and push it to the back
-    // of the queue. Then we return the tile pointer.
-
-    repeat_queue.push_back ( { index , p_tile } ) ;
     p_tile->modified = true ;
     return p_tile ;
   }
@@ -935,15 +893,28 @@ struct tile_storer
   // 'hot' axis. It extracts the strides from the source view.
 
   tile_storer ( tile_store_type & _tile_store ,
-                 const std::size_t & _stride ,
-                 const bill_t & bill )
+                const std::size_t & _stride ,
+                const bill_t & bill )
   : tile_store ( _tile_store ) ,
     d ( bill.axis ) ,
     stride ( _stride ) ,
-    chunk_shape ( _tile_store.tile_shape )
+    chunk_shape ( _tile_store.tile_shape ) ,
+    set_marker ( -1 )
   {
     // for a tile storer, we need to set write_to_disk true
 
+    working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
+    tile_store.write_to_disk = true ;
+  }
+
+  tile_storer ( const tile_storer & other )
+  : tile_store ( other.tile_store ) ,
+    d ( other.d ) ,
+    stride ( other.stride ) ,
+    chunk_shape ( other.chunk_shape ) ,
+    set_marker ( -1 )
+  {
+    working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
     tile_store.write_to_disk = true ;
   }
 
@@ -951,25 +922,20 @@ struct tile_storer
 
   ~tile_storer()
   {
-    for ( const auto & it : repeat_queue )
-    {
-      tile_store.release ( it.index ) ;
-    }
+    clear_working_set() ;
+    delete[] working_set ;
   }
 
   // tile_storer's init function figures out the first tile
-  // index for this cycle and calls get_tile with 'flush'
-  // set true, so that if the first tile in the repeat queue
-  // is not the same one, the queue is emptied and the tiles
-  // it holds are released. Then the tile's function 'provide'
-  // is called to set 'p_trg' and 'tail' to correct values,
-  // and 'increase' is called to initialize the first batch
-  // of vectorized data in 'trg'.
+  // index for this cycle and calls get_tile. Then the tile's
+  // function 'provide' is called to set 'p_trg' and 'tail'
+  // to correct values, and 'increase' is called to initialize
+  // the first batch of vectorized data in 'trg'.
 
   void init ( const crd_t & crd )
   {
     hot_chunk = crd / chunk_shape ;
-    current_tile = get_tile ( hot_chunk , true ) ;
+    current_tile = get_tile ( hot_chunk ) ;
     in_chunk_crd = crd % chunk_shape ;
     current_tile->provide ( in_chunk_crd , d , p_trg , tail ) ;
   }

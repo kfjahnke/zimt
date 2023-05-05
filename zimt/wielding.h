@@ -208,56 +208,6 @@ void process ( const zimt::xel_t < std::size_t , D > & shape ,
     }
   }
 
-  // check for subdivision of the workload. This is mainly for
-  // processing tiled storage: the notional shape may be too big
-  // to hold the entire corpus of data in memory. With workload
-  // subdivision, subsets of the notional shape are processed
-  // with recursive calls to zimt::process (with adapted bill)
-  // and afterwards, the 'conclude' callback is invoked to
-  // trigger activity needed to, e.g., flush tiles from memory
-  // to disk to free memory for the next batch.
-  // For maximum efficiency, the subdivision should split the
-  // notional shape to multiples of the tile size, but this is
-  // neither enforced nor required.
-
-  if ( bill.subdivide.size() )
-  {
-    crd_t subdivide = decode_bill_vector<D> ( bill.subdivide ) ;
-    zimt::mcs_t < D > mcs ( subdivide ) ;
-    auto field = upper_limit - lower_limit ;
-    for ( std::size_t i = 0 ; i < subdivide.prod() ; i++ )
-    {
-      // calculate appropriate limits for the bill of the partial
-      // processing ('patch_bill')
-
-      auto crd = mcs() ;
-      auto low = lower_limit + ( crd * field ) / subdivide ;
-      auto high = lower_limit + ( ( crd + 1 ) * field ) / subdivide ;
-
-      zimt::bill_t patch_bill = bill ;
-
-      patch_bill.lower_limit.clear() ;
-      patch_bill.upper_limit.clear() ;
-      patch_bill.subdivide.clear() ;
-
-      for ( int d = 0 ; d < D ; d++ )
-      {
-        patch_bill.lower_limit.push_back ( low[d] ) ;
-        patch_bill.upper_limit.push_back ( high[d] ) ;
-      }
-
-      // now call zimt::process recursively with the adapted bill.
-      // After this call returns, call the 'conclude' callback
-
-      process ( shape , _get , gact , _put , patch_bill ) ;
-      patch_bill.conclude ( patch_bill ) ;
-    }
-
-    // now *return* - processing is done.
-
-    return ;
-  }
-
   // set up offsets for the get_t and put_t objects. Normally these
   // offsets are zero - a typical case where they aren't would be
   // reading from and storing to 'cropped' arrays. The offsets are
@@ -376,25 +326,10 @@ void process ( const zimt::xel_t < std::size_t , D > & shape ,
       std::size_t line ;
       std::size_t segment ;
 
-      // There are two ways to decode the joblet index: either
-      // step through the segments inside a line, then do the same
-      // for the next line etc - this is done when 'line_first' is
-      // true. The other mode is to step through the first segment
-      // of all lines, then the second of all lines etc.
-      // Normally, line_first is set and it's the best choice. One
-      // exception is processing of tiled storage: here, line_first
-      // should be false to reduce tile switching.
+      // decode the joblet index
 
-      if ( bill.line_first )
-      {
-        line = joblet_index / nr_segments ;
-        segment = joblet_index % nr_segments ;
-      }
-      else
-      {
-        segment = joblet_index / nr_lines ;
-        line = joblet_index % nr_lines ;
-      }
+      line = joblet_index / nr_segments ;
+      segment = joblet_index % nr_segments ;
 
       // how many values do we have in the current segment?
       // the last segment may be less than segment_size long

@@ -59,18 +59,7 @@ int main ( int argc , char * argv[] )
   zimt::tile_store_t < dtype , 2 , 2 >
     tile_drain ( shape , { 256 , 256 } , "crd_tiles" ) ;
 
-  // the bill is optimized for tiled operation
-
   zimt::bill_t bill ;
-  bill.line_first = false ;
-  bill.subdivide = { 4 , 1 } ; // play with this, too
-
-  // try adding lower, upper limit, offsets to the bill
-
-  bill.conclude = [&] ( const zimt::bill_t & bill )
-  {
-    tile_drain.close_some ( bill , false ) ;
-  } ;
 
   // we feed discrete coordinates as input, don't modify them
   // and store to the tile store.
@@ -83,7 +72,7 @@ int main ( int argc , char * argv[] )
 
   zimt::process ( shape , gc , act , tp , bill ) ;
 
-  // conclude has already taken care of tidying up the tile store
+  // no need to tidy up the tile store
 
   tile_drain.cleanup = false ;
 }
