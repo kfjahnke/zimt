@@ -61,11 +61,12 @@
 /// not an error: The tile, when active, holds a chunk of memory
 /// which is left as it is if no data can be had from the file.
 /// When a tile is closed, it's data may be written back to the
-/// file (provided that it's 'modified' flag was set). Currently
+/// file (provided that 'write_to_disk' was set). Currently
 /// the code silently assumes opening the file for writing will
 /// succeed. Files for tiles are simply memory copied to disk,
 /// there are no metadata nor any provisions to make the data
-/// portable.
+/// portable. There is no compression, either. Such improvements
+/// can be added later by diversifying the access to mass storage.
 ///
 /// Next is a class bundling a set of tiles which, together,
 /// represent the storage for an entire (possibly very large)
@@ -73,7 +74,13 @@
 /// get_t and put_t objects to be used with zimt::process; the
 /// main intent is currently to get a smooth zimt::process run
 /// over a large notional shape to read from, process and store
-/// to tile stores with minimal overhead.
+/// to tile stores with minimal overhead. This is a narrower
+/// scope than access to arbitrary tiles as they are needed,
+/// and can be coded so that - even with concurrent access -
+/// overhead for coordinating data access can be kept low,
+/// because the access pattern is known beforehand: it follows
+/// the pattern given by zimt::process. Nevertheless, accessing
+/// mass storage is intrinsically slow, so don't expect miracles.
 ///
 /// Finally, we have templates of get_t and a put_t objects
 /// interacting with the tile store, in order to make tiled
@@ -85,6 +92,14 @@
 /// We can also process entire tile stores (or parts) with SIMD
 /// code like any other data source/sink, using the same act
 /// functor as we'd use for non-tiled storage.
+///
+/// Apart from accessing single large data sets, another use
+/// case which I intend to exploit is work with several data
+/// sets at once. Even if one of these sets may fit into memory,
+/// several of them may not, which is where tiled storage comes
+/// in. As long as processing is limited to parts of the data
+/// in a given time window, such collections of data sets can
+/// be processed together, i.e. to form a synopsis or correlation.
 
 #ifndef ZIMT_TILES_H
 
@@ -100,9 +115,12 @@ namespace zimt
 {
 // tile_t acts as conduit to a tile's data and encodes it's
 // interaction with files. The struct itself is lightweight,
-// memory for storage is allocated only if necessary.
+// and memory for storage of the tile's actual data is allocated
+// only if necessary.
 
-template < typename T , std::size_t N , std::size_t D >
+template < typename T ,    // fundamental type
+           std::size_t N , // number of channels
+           std::size_t D > // dimensionality
 struct tile_t
 {
   typedef xel_t < T , N > value_t ;
@@ -112,10 +130,13 @@ struct tile_t
 
   const shape_type shape ;
   storage_t * p_data = nullptr ;
-  bool modified = false ;
 
   // allocate allocates the storage: an array of value_t with
-  // shape 'shape'.
+  // shape 'shape'. Note that the array's 'owned' memory and
+  // the view which it holds to it are not touched in any way;
+  // the code will assume that the array holds a single
+  // contiguous, compact block of memory with as many value_t
+  // as the shape's inner product.
 
   void allocate()
   {
@@ -123,13 +144,15 @@ struct tile_t
     p_data = new storage_t ( shape ) ;
   }
 
-  // load loads data from a file to the storage array. If the
+  // 'load' loads data from a file to the storage array. If the
   // file can't be opened, this is accepted and the data off
-  // p_data are left as they are.
+  // p_data are left as they are. file access is coded very
+  // simply in C - for now.
 
-  void load ( const char * p_filename )
+  void load ( const char * p_filename ) const
   {
-    assert ( p_data != nullptr ) ;
+    assert ( p_data != nullptr ) ; // might alocate instead
+
     FILE* input = fopen ( p_filename , "rb" ) ;
     if ( input != NULL )
     {
@@ -147,7 +170,7 @@ struct tile_t
 
   // store stores the storage array to a file
 
-  void store ( const char * p_filename )
+  void store ( const char * p_filename ) const
   {
     assert ( p_data != nullptr ) ;
     FILE* output = fopen ( p_filename , "wb" ) ;
@@ -158,22 +181,43 @@ struct tile_t
   }
 
   // tile_t's c'tor only sets the shape; allocating storage or
-  // access to files is done later with specific functions
+  // access to files is done later with specific functions as
+  // the need arises. A tile store is - at the tile level -
+  // a sparse storage medium: tiles which aren't ever 'touched'
+  // by processing have neither memory nor mass storage footprint.
+  // So very large notional shapes can be used without necessarily
+  // producing any load at all, and only when processing touches
+  // a specific tile, it becomes manifest.
 
   tile_t ( const shape_type & _shape )
   : shape ( _shape ) { }
 
-  // 'provide' provides a pointer into the tile at location 'crd'
+  // 'provide' obtains a pointer into the tile at location 'crd'
   // and writes it to 'p_memory'. 'tail' receives the number of
   // values left along axis d. This function is called by the
   // tile-based get_t/put_t objects to obtain the appropriate
   // data pointer and number of values which the current tile
-  // can provide.
+  // can still provide until the 'right edge' of the tile is
+  // reached.
 
   void provide ( const index_type & crd , // in-tile coordinate
                  const std::size_t & d ,  // hot axis
                  value_t * & p_memory ,   // returns pointer
                  std::size_t & tail )     // and number of values
+               const
+  {
+    tail = shape [ d ] - crd [ d ] ;
+    p_memory = & ( (*p_data) [ crd ] ) ;
+  }
+
+  // overload setting a const pointer to memory; this overload
+  // is used by tile_loader which won't modify the tile's memory
+
+  void provide ( const index_type & crd , // in-tile coordinate
+                 const std::size_t & d ,  // hot axis
+                 const value_t * & p_memory , // returns pointer
+                 std::size_t & tail )     // and number of values
+               const
   {
     tail = shape [ d ] - crd [ d ] ;
     p_memory = & ( (*p_data) [ crd ] ) ;
@@ -190,23 +234,41 @@ struct tile_t
 // concurrently will *not access the same data* inside this
 // memory. With this access model, user code can simply hold
 // the tile pointer and access it without mutex protection.
-// This is an important optimization.
+// This is an important optimization, reducing the use of
+// mutex-protected access dramatically, but it's scope is
+// limited to use cases where it's guaranteed that threads
+// won't 'step on each other's toes', like in zimt::process.
 
 template < typename tile_t >
 struct tether_t
 {
+  // for single-threaded processing, we can do without the mutex
+
 #ifndef ZIMT_SINGLETHREAD
   std::mutex tile_mutex ;
 #endif
 
+  // nusers records the number of threads which hold and may
+  // access a copy of the tile pointer, and which may access
+  // the tile's array of data concurrently.
+
   std::size_t nusers = 0 ;
+
+  // this is the tile pointer itself
+
   tile_t * p_tile = nullptr ;
 } ;
 
 // tile_store_t holds an array of tether_t to mediate access
 // to the tiles. The amount of tiles needed is calculated from
 // the 'notional' shape passed to the c'tor and the intended
-// shape of individual tiles.
+// shape of individual tiles. This object provides member
+// functions to coordinate access to the tiles; code which is
+// meant to be called by the individual processing threads
+// to gain access to tiles and to end their access are
+// appropriately mutex-protected, making sure that only one
+// thread at a time can access shared resources like the
+// tether structures and the pointers they hold.
 
 template < typename T , std::size_t N , std::size_t D >
 struct tile_store_t
@@ -217,11 +279,11 @@ struct tile_store_t
   typedef xel_t < long , D > index_type ;
 
   const shape_type array_shape ; // 'notional' shape
-  const shape_type tile_shape ;  // shape of tiles
+  const shape_type tile_shape ;  // shape of individual tiles
   const shape_type store_shape ; // shape of the array of tether_t
 
-  // if this flag is set, tiles with modified==true will be
-  // written to disk when the tiles are closed.
+  // if this flag is set, tiles will be written to disk when they
+  // are 'dropped'.
 
   bool write_to_disk = false ;
 
@@ -262,7 +324,7 @@ private:
   // helper function to construct a filename for a file associated
   // with a specific tile index
 
-  std::string get_file_name ( const index_type & tile_index )
+  std::string get_file_name ( const index_type & tile_index ) const
   {
     auto filename = basename ;
     for ( std::size_t i = 0 ; i < D ; i++ )
@@ -277,7 +339,8 @@ private:
   // 'dropping' a tile optionally flushes it's content to
   // a file, then frees the memory for data. this should only
   // be called by mutex-protected code or when it's assured
-  // that only one thread is interacting with the tile store.
+  // that only one thread is interacting with the tile store,
+  // so this member function is also private.
 
   void drop ( const index_type & tile_index )
   {
@@ -285,7 +348,7 @@ private:
 
     if ( tether.p_tile != nullptr )
     {
-      if ( write_to_disk && tether.p_tile->modified )
+      if ( write_to_disk )
       {
         auto filename = get_file_name ( tile_index ) ;
         tether.p_tile->store ( filename.c_str() ) ;
@@ -297,11 +360,12 @@ private:
   }
 
   // close the tile store altogether - i.e. after it was processed.
-  // if write_to_disk is set, all tiles marked 'modified' are written
-  // to their associated files. Since this is not multithreaded code,
+  // if write_to_disk is set, all tiles marked are written to
+  // their associated files. Since this is not multithreaded code,
   // we can proceed without the lock_guard. This is more of a
   // precaution - if all goes according to plan, all tiles should
-  // have been released already before this call happens.
+  // have been released already before this call happens. This is
+  // also a private member function.
 
   void close_all()
   {
@@ -320,8 +384,9 @@ private:
 public:
 
   // tile_store_t's c'tor receives the 'notional' shape of the
-  // entire workload, the intended shape of an individual tile,
-  // and the base name of files associated with tiles.
+  // entire workload, the intended - or given - shape of an
+  // individual tile, and the base name of files associated
+  // with tiles.
 
   tile_store_t ( shape_type _array_shape ,
                  shape_type _tile_shape ,
@@ -335,19 +400,26 @@ public:
 
   // 'get' provides a pointer to the tile at 'tile_index'. If the
   // pointer in the 'tether' is initially nullptr, a new tile_t
-  // object is created and the pointer in store is set to it.
-  // Memory for the tile is allocated, and, if p_filename is not
-  // nullptr, it's taken as a filename and the file's content
-  // is read into the tile's memory. Acccess is guarded via the
-  // mutex in the 'tether', so that only one thread at a time
-  // can manipulate the members of the tile object, other threads
-  // are blocked until the access is over. Note that access to
-  // the tile's data array is allowed concurrently - it's
-  // assumed that all threads will only access 'their' share
-  // and that the shares don't overlap. This is - in the
-  // context of zimt::process - guaranteed, because each
-  // 'joblet index' stands for a distinct, unique part of the
-  // total workload.
+  // object is created and the pointer in 'store' is set to it.
+  // Memory for the tile is allocated, and, if a file is available,
+  // it's content is read into the tile's memory. Acccess is guarded
+  // via the mutex in the 'tether', so that only one thread at a
+  // time can manipulate the members of the tile object, other
+  // threads are blocked until the access is over. Note that access
+  // to the tile's data array is allowed concurrently - it's assumed
+  // that all threads will only access 'their' share and that the
+  // shares don't overlap. This is - in the context of zimt::process -
+  // guaranteed, because each 'joblet index' stands for a distinct,
+  // unique part of the total workload.
+  // Note that - since this member function is called by the
+  // individual processing threads - the blocking does not block
+  // processing altogether: only the thread which 'happens upon'
+  // the tile first will spend (considerable) time 'breaking the
+  // ground', and only if other threads need access to the same
+  // same tile at the same time, they are made to wait until the
+  // tile is ready. With this granular approach and a suitable
+  // number of threads, the CPU cores can still be kept busy
+  // even if some threads are busy loading data from files.
 
   tile_type * get ( const index_type & tile_index )
   {
@@ -358,7 +430,7 @@ public:
 #endif
 
     // if p_tile is already set, pass it back straight away.
-    // The caller is free to access the data without further
+    // The caller is then free to access the data without further
     // access control, because it's assumed that each thread
     // only ever interacts with a specific part of the tile's
     // memory. The only interaction requiring access control
@@ -378,7 +450,11 @@ public:
       tether.nusers = 0 ;
     }
 
+    // the tile is (now) available. Increase the user count
+    // and pass back the pointer.
+
     ++ tether.nusers ;
+
     return tether.p_tile ;
   }
 
@@ -388,7 +464,15 @@ public:
   // processing leaves the scope of a tile, but only when
   // processing enters a new set of tiles, so the release
   // comes typically after all processing affecting the tile
-  // is over.
+  // is over: as zimt::process moves through the notional shape
+  // processing lines collinear to the 'hot axis', subsequent
+  // lines in the tile are accessed, until processing leaves the
+  // tile's scope. Only once all processing threads have left
+  // the current row of tiles (as recorded in their 'working set')
+  // user count will drop to zero, triggering the call to 'drop'.
+  // With this logic, the need for 'overseeing' the process is
+  // minimal - it's, in a way, self-organizing, just as the
+  // joblet-based code in zimt::process, which drives processing.
 
   void release ( const index_type & tile_index )
   {
@@ -406,7 +490,11 @@ public:
 
     assert ( tether.nusers > 0 ) ;
 
+    // count down the user count and 'drop' the tile if it
+    // reaches zero
+
     -- tether.nusers ;
+
     if ( tether.nusers == 0 )
     {
       drop ( tile_index ) ;
@@ -424,51 +512,49 @@ public:
   }
 } ;
 
-// class tile_loader provides an object which extracts data from
-// a tile store, following 'normal' get_t semantics. This does
-// require some 'pedestrian' code to deal with situations where
-// the tile boundaries and the segment boundaries do not agree.
-// If the caller avoids such mismatches, the code runs 'smoothly'
-// using efficient vector code throughout, and the caller's aim
-// should be to set everything up that way, but we want the code
-// to cover all eventualities, hence the 'pedestrian' special
-// cases. On the plus side, the implementation is perfectly
-// general and can handle arbitrary shapes and boundaries,
-// it only takes a little longer when it has to 'cross tile
-// boundaries' in a load/process/store cycle.
+// classes tile_loader and tile_storer share the code to interface
+// with the tile store via this common base class. It implements a
+// method to limit the amount of tiles which are 'active' - meaning
+// that the tile pointer in the tether is not nullptr but points to
+// a tile_t object with an attached array of values.
+// The method used here to detect and 'close' tiles which are no
+// longer needed relies on cooperation with zimt::process and the
+// order in which zimt::process accesses parts of the 'notional'
+// shape. So this base class is not a general-purpose access
+// mediator which could be used for random access - for such uses
+// we'd have to work with timestamps, limits on the number of
+// open tiles, etc. - but for the dedicated purpose of working
+// with zimt::process, this class should perform well with little
+// overhead.
 
 template < typename T ,
            std::size_t N ,
            std::size_t D ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
-struct tile_loader
+struct tile_user_t
 {
-  typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
-
-  const std::size_t d ;
   typedef tile_store_t < T , N , D > tile_store_type ;
   typedef typename tile_store_type::tile_type tile_type ;
+
+  const std::size_t d ;
+  const long stride ;
+
   tile_store_type & tile_store ;
   tile_type * current_tile ;
-  value_t * p_src ;
-  const std::size_t stride ;
   const xel_t < std::size_t , D > chunk_shape ;
   crd_t hot_chunk ;
-  crd_t in_chunk_crd ;
-  std::size_t tail ;
+  crd_t in_tile_crd ;
+
   tile_type ** working_set ;
   crd_t set_marker ;
 
 private:
 
-  // The tile loader maintains a list of tiles it's currently
+  // The tile user maintains a list of tiles it's currently
   // using. Typically, a set of tiles is 'visited' repeatedly,
   // until, finally, the next row of tiles is entered, which
-  // can be detected by the tile loader. The list of currently
+  // can be detected by the tile user. The list of currently
   // used tiles - the 'working set' - holds as many tile pointers
   // as the tile store's shape along the 'hot' axis. Once the
   // new row is entered, the tiles in the store are released
@@ -506,20 +592,19 @@ public:
 
   tile_type * get_tile ( const zimt::xel_t < long , D > & index )
   {
+    auto match_index = index ;
+    match_index [ d ] = 0 ;
+
     // set_marker is only ever -1 right after construction.
 
     if ( set_marker == -1 )
     {
-      set_marker = index ;
-      set_marker [ d ] = 0 ;
+      set_marker = match_index ;
     }
 
     // are we still in the same linear subset?
 
-    auto match_index = index ;
-    match_index [ d ] = 0 ;
-
-    if ( match_index != set_marker )
+    else if ( match_index != set_marker )
     {
       // no: this is a new linear subset. release all tiles
       // which are held in working_set
@@ -528,8 +613,7 @@ public:
 
       // set the set_marker to refer to the new linear subset
 
-      set_marker = index ;
-      set_marker [ d ] = 0 ;
+      set_marker = match_index ;
     }
 
     // now try and access the working set
@@ -559,13 +643,13 @@ public:
     return p_tile ;
   }
 
-  tile_loader ( tile_store_type & _tile_store ,
-                const std::size_t & _stride ,
+  tile_user_t ( tile_store_type & _tile_store ,
                 const bill_t & bill )
   : tile_store ( _tile_store ) ,
     d ( bill.axis ) ,
-    stride ( _stride ) ,
     chunk_shape ( _tile_store.tile_shape ) ,
+    stride ( tile_type::storage_t::make_strides
+      ( _tile_store.tile_shape ) [ d ] ) ,
     set_marker ( -1 )
   {
     working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
@@ -574,31 +658,93 @@ public:
   // because we have the working set in dynamic memory, we need
   // a copy c'tor which sets up a new working set for the copy.
 
-  tile_loader ( const tile_loader & other )
+  tile_user_t ( const tile_user_t & other )
   : tile_store ( other.tile_store ) ,
     d ( other.d ) ,
-    stride ( other.stride ) ,
     chunk_shape ( other.chunk_shape ) ,
+    stride ( other.stride ) ,
     set_marker ( -1 )
   {
     working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
   }
 
-  // get_t objects aren't to be copy-assigned, but we make sure
-  // this can't happen:
+  // get_t/put_t objects aren't to be copy-assigned; we make
+  // sure this can't happen:
 
-  tile_loader & operator= ( const tile_loader & other ) = delete ;
+  tile_user_t & operator= ( const tile_user_t & other ) = delete ;
 
-  // tile_loader's d'tor releases the tiles in the working set.
+  // tile_user_t's d'tor releases the tiles in the working set.
   // this needs to be done because after the last row of tiles,
   // no new row is entered to trigger the release of the tiles
   // in the working set.
 
-  ~tile_loader()
+  ~tile_user_t()
   {
     clear_working_set() ;
     delete[] working_set ;
   }
+
+  // tile_user_t's init function figures out the first tile
+  // index for this cycle and calls get_tile. It also figures
+  // out the in-tile coordinate
+
+  void init ( const crd_t & crd )
+  {
+    hot_chunk = crd / chunk_shape ;
+    current_tile = get_tile ( hot_chunk ) ;
+    in_tile_crd = crd % chunk_shape ;
+  }
+
+} ; // class tile_user_t
+
+// class tile_loader provides an object which extracts data from
+// a tile store, following 'normal' get_t semantics. This does
+// require some 'pedestrian' code to deal with situations where
+// the tile boundaries and the segment boundaries do not agree.
+// If the caller avoids such mismatches, the code runs 'smoothly'
+// using efficient vector code throughout, and the caller's aim
+// should be to set everything up that way, but we want the code
+// to cover all eventualities, hence the 'pedestrian' special
+// cases. On the plus side, the implementation is perfectly
+// general and can handle arbitrary shapes and boundaries,
+// it only takes a little longer when it has to 'cross tile
+// boundaries' in a load/process/store cycle.
+
+template < typename T ,
+           std::size_t N ,
+           std::size_t D ,
+           std::size_t L = zimt::vector_traits < T > :: vsize >
+struct tile_loader
+: public tile_user_t < T , N , D , L >
+{
+  typedef tile_user_t < T , N , D , L > tile_user ;
+
+  using typename tile_user::crd_t ;
+  using typename tile_user::tile_store_type ;
+  using typename tile_user::tile_type ;
+
+  using tile_user::d ;
+  using tile_user::current_tile ;
+  using tile_user::chunk_shape ;
+  using tile_user::hot_chunk ;
+  using tile_user::in_tile_crd ;
+  using tile_user::get_tile ;
+  using tile_user::stride ;
+
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef zimt::simdized_type < value_t , L > value_v ;
+
+  const value_t * p_src ;
+  std::size_t tail ;
+
+  tile_loader ( tile_store_type & _tile_store ,
+                const bill_t & bill )
+  : tile_user ( _tile_store , bill )
+  { }
+
+  tile_loader ( const tile_loader & other )
+  : tile_user ( other )
+  { }
 
   // tile_loader's init function figures out the first tile
   // index for this cycle and calls get_tile. Then the tile's
@@ -608,10 +754,8 @@ public:
 
   void init ( value_v & trg , const crd_t & crd )
   {
-    hot_chunk = crd / chunk_shape ;
-    current_tile = get_tile ( hot_chunk ) ;
-    in_chunk_crd = crd % chunk_shape ;
-    current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
+    tile_user::init ( crd ) ;
+    current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
     increase ( trg ) ;
   }
 
@@ -624,10 +768,8 @@ public:
               const crd_t & crd ,
               std::size_t cap )
   {
-    hot_chunk = crd / chunk_shape ;
-    current_tile = get_tile ( hot_chunk ) ;
-    in_chunk_crd = crd % chunk_shape ;
-    current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
+    tile_user::init ( crd ) ;
+    current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
     increase ( trg , cap , true ) ;
   }
 
@@ -637,9 +779,9 @@ public:
   void advance()
   {
     hot_chunk [ d ] ++ ;
-    in_chunk_crd [ d ] = 0 ;
+    in_tile_crd [ d ] = 0 ;
     current_tile = get_tile ( hot_chunk ) ;
-    current_tile->provide ( in_chunk_crd , d , p_src , tail ) ;
+    current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
   }
 
   // 'increase' fetches a full vector of data from the source view
@@ -789,141 +931,43 @@ template < typename T ,
            std::size_t N ,
            std::size_t D ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
-struct tile_storer
+class tile_storer
+: public tile_user_t < T , N , D , L >
 {
+  typedef tile_user_t < T , N , D , L > tile_user ;
+
+  using typename tile_user::crd_t ;
+  using typename tile_user::tile_store_type ;
+  using typename tile_user::tile_type ;
+
+  using tile_user::d ;
+  using tile_user::current_tile ;
+  using tile_user::tile_store ;
+  using tile_user::chunk_shape ;
+  using tile_user::hot_chunk ;
+  using tile_user::in_tile_crd ;
+  using tile_user::stride ;
+  using tile_user::get_tile ;
+
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
-  typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
 
-  const std::size_t d ;
-  typedef tile_store_t < T , N , D > tile_store_type ;
-  typedef typename tile_store_type::tile_type tile_type ;
-  tile_store_type & tile_store ;
-  tile_type * current_tile ;
   value_t * p_trg ;
-  const std::size_t stride ;
-  const xel_t < std::size_t , D > chunk_shape ;
-  crd_t hot_chunk ;
-  crd_t in_chunk_crd ;
   std::size_t tail ;
-  tile_type ** working_set ;
-  crd_t set_marker ;
-
-private:
-
-  void clear_working_set()
-  {
-    for ( std::size_t i = 0 ;
-          i < tile_store.store_shape [ d ] ;
-          i++ )
-    {
-      if ( working_set [ i ] != nullptr )
-      {
-        set_marker [ d ] = i ;
-        tile_store.release ( set_marker ) ;
-        working_set [ i ] = nullptr ;
-      }
-    }
-  }
 
 public:
 
-  // get_tile will try and provide a pointer to tile_type from
-  // a previous cycle if possible, and only if it can't find
-  // one to reuse, it accesses the tile store.
-  // The function exploits the fact that access to tiles is
-  // along a linear subset of tiles along the 'hot' axis, and
-  // once the tile loader accesses the next linear subset,
-  // there will not be any more accesses to the previous linear
-  // subset. So the tile loader accumulates tile pointers in
-  // it's 'working set' until a new subset is touched, and then
-  // the tiles in the working set are released. With this
-  // inermediate layer, the need for mutex-protected access
-  // to the tiles is greatly reduced.
-
-  tile_type * get_tile ( const zimt::xel_t < long , D > & index )
-  {
-    if ( set_marker == -1 )
-    {
-      set_marker = index ;
-      set_marker [ d ] = 0 ;
-    }
-
-   // are we still in the same linear subset?
-
-    auto match_index = index ;
-    match_index [ d ] = 0 ;
-
-    if ( match_index != set_marker )
-    {
-      // no: this is a new linear subset. release all tiles
-      // which are held in working_set
-
-      clear_working_set() ;
-
-      // set the set_marker to refer to the new linear subset
-
-      set_marker = index ;
-      set_marker [ d ] = 0 ;
-    }
-
-    // try and access the working set
-
-    tile_type * p_tile = working_set [ index [ d ] ] ;
-
-    // is there a pointer to be had at this position?
-
-    if ( p_tile == nullptr )
-    {
-      // no luck so far - access the tile store
-
-      p_tile = tile_store.get ( index ) ;
-      assert ( p_tile != nullptr ) ;
-
-      working_set [ index [ d ] ] = p_tile ;
-    }
-
-    p_tile->modified = true ;
-    return p_tile ;
-  }
-
-  // get_t's c'tor receives the zimt::view providing data and the
-  // 'hot' axis. It extracts the strides from the source view.
-
   tile_storer ( tile_store_type & _tile_store ,
-                const std::size_t & _stride ,
                 const bill_t & bill )
-  : tile_store ( _tile_store ) ,
-    d ( bill.axis ) ,
-    stride ( _stride ) ,
-    chunk_shape ( _tile_store.tile_shape ) ,
-    set_marker ( -1 )
+  : tile_user ( _tile_store , bill )
   {
-    // for a tile storer, we need to set write_to_disk true
-
-    working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
     tile_store.write_to_disk = true ;
   }
 
   tile_storer ( const tile_storer & other )
-  : tile_store ( other.tile_store ) ,
-    d ( other.d ) ,
-    stride ( other.stride ) ,
-    chunk_shape ( other.chunk_shape ) ,
-    set_marker ( -1 )
+  : tile_user ( other )
   {
-    working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
     tile_store.write_to_disk = true ;
-  }
-
-  // tile_storer's d'tor releases the tiles in the repeat queue
-
-  ~tile_storer()
-  {
-    clear_working_set() ;
-    delete[] working_set ;
   }
 
   // tile_storer's init function figures out the first tile
@@ -934,10 +978,8 @@ public:
 
   void init ( const crd_t & crd )
   {
-    hot_chunk = crd / chunk_shape ;
-    current_tile = get_tile ( hot_chunk ) ;
-    in_chunk_crd = crd % chunk_shape ;
-    current_tile->provide ( in_chunk_crd , d , p_trg , tail ) ;
+    tile_user::init ( crd ) ;
+    current_tile->provide ( in_tile_crd , d , p_trg , tail ) ;
   }
 
   // helper function advance enters the next chunk and sets
@@ -946,9 +988,9 @@ public:
   void advance()
   {
     hot_chunk [ d ] ++ ;
-    in_chunk_crd [ d ] = 0 ;
+    in_tile_crd [ d ] = 0 ;
     current_tile = get_tile ( hot_chunk ) ;
-    current_tile->provide ( in_chunk_crd , d , p_trg , tail ) ;
+    current_tile->provide ( in_tile_crd , d , p_trg , tail ) ;
   }
 
   void save ( value_v & trg )
@@ -1089,8 +1131,8 @@ public:
       }
     }
   }
-
 } ; // class tile_storer
+
 
 } ; // namespace zimt
 

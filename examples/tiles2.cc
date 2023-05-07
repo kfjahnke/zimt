@@ -66,7 +66,7 @@ int main ( int argc , char * argv[] )
 
   zimt::get_crd < dtype , 2 , 2 > gc ( bill ) ;
   zimt::pass_through < dtype , 2 > act ;
-  zimt::tile_storer < dtype , 2 , 2 > tp ( tile_drain , 1 , bill ) ;
+  zimt::tile_storer < dtype , 2 , 2 > tp ( tile_drain , bill ) ;
 
   // showtime!
 

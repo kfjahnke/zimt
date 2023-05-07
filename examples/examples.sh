@@ -8,8 +8,8 @@ do
 
   for compiler in clang++ g++
   do
-  
-    common_flags="-O3 -std=c++11 -march=native -Wno-deprecated-declarations" 
+
+    common_flags="-O3 -std=c++11 -march=native -Wno-deprecated-declarations"
 
     # compile without explicit SIMD code
 

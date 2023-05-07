@@ -66,9 +66,9 @@ int main ( int argc , char * argv[] )
   // of the other get_t/put_t objects, making the tiled storage
   // a 'zimt standard' source/sink.
 
-  zimt::tile_loader < float , 3 , 2 > tl ( tile_source , 1 , bill ) ;
+  zimt::tile_loader < float , 3 , 2 > tl ( tile_source , bill ) ;
   zimt::pass_through < float , 3 > act ;
-  zimt::tile_storer < float , 3 , 2 > tp ( tile_drain , 1 , bill ) ;
+  zimt::tile_storer < float , 3 , 2 > tp ( tile_drain , bill ) ;
 
   // showtime!
 
