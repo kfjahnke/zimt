@@ -1326,10 +1326,8 @@ public:
       hn::Store ( yield ( i ) , D() , p_trg + i * Lanes ( D() ) ) ;
   }
 
-// on AVX512, there do not seem to be any gather/scatter operations
-// for short or byte values, so I use goading to implement them.
-
-#ifdef FLV_AVX512f
+// there are no gather/scatter operations for short or byte values,
+// so I use goading to implement them.
 
   // to gather larger-than-short data, use hwy g/s
 
@@ -1377,7 +1375,7 @@ public:
     typedef std::integral_constant
               < bool , sizeof ( value_type ) <= 2 > is_small_t ;
 
-    _gather ( p_src , indexes , std::false_type() ) ; // is_small_t() ) ;
+    _gather ( p_src , indexes , is_small_t() ) ;
   }
 
   void scatter ( value_type * const & p_trg ,
@@ -1388,36 +1386,6 @@ public:
 
     _scatter ( p_trg , indexes , is_small_t() ) ;
   }
-
-#else // #ifdef FLV_AVX512f
-
-  // other ISAs seem to have no problem scattering all value_types
-
-  // gather with 'proper' index type, which is derived by type inference
-  // from the tag type D which defines the underlying vector type. This
-  // type is quite specific in highway: it is a vector of signed integers
-  // with the same number of bits as the fundamental type of the vector
-  // that is indexed. Calling code should obtain index_type from simd_t
-  // (it's public), but it may provide indexes in other forms, which are
-  // routed to the template further down.
-
-  void gather ( const value_type * const & p_src ,
-                const index_type & indexes )
-  {
-    for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
-      take ( i , hn::GatherIndex ( D() , p_src ,
-             indexes.yield ( i ) ) ) ;
-  }
-
-  void scatter ( value_type * const & p_trg ,
-                 const index_type & indexes ) const
-  {
-    for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
-      hn::ScatterIndex ( yield ( i ) , D() , p_trg ,
-                         indexes.yield ( i ) ) ;
-  }
-
-#endif
 
   // goading implementation with arbitrary index type. This will be used
   // if the indexes aren't precisely index_type, but some other entity

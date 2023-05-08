@@ -568,6 +568,8 @@ public:
   // the array is destructed. If the T which the array holds via it's
   // shared_ptr 'store' has an explicit destructor, we add code to
   // destruct all T in the store explicitly.
+  // Note that the array's memory is not initialized. it may contain
+  // anything.
 
   array_t ( const shape_type & _shape )
   : base_t ( new T [ _shape.prod() ] ,

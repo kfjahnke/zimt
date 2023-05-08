@@ -287,12 +287,17 @@ struct tile_store_t
 
   bool write_to_disk = false ;
 
+  // if this flag is set, data will be read from disk if they
+  // are available
+
+  bool read_from_disk = true ;
+
   // this flag is used to assert that the d'tor can proceed
   // without looking for open tiles and closing them: if
   // processing closes all tiles after use, there's no need
   // to go through the entire set again. The default is to
   // check all tiles, set it to false to avoid the check.
-
+//
   bool cleanup = true ;
 
   // array holding tether_type, controlling access to the tiles
@@ -444,7 +449,6 @@ public:
 
       tether.p_tile = new tile_type ( tile_shape ) ;
       tether.p_tile->allocate() ;
-
       auto filename = get_file_name ( tile_index ) ;
       tether.p_tile->load ( filename.c_str() ) ;
       tether.nusers = 0 ;
@@ -653,6 +657,10 @@ public:
     set_marker ( -1 )
   {
     working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
+    std::memset ( working_set ,
+                  0 ,
+                    tile_store.store_shape [ d ]
+                  * sizeof ( tile_type* ) ) ;
   }
 
   // because we have the working set in dynamic memory, we need
@@ -666,7 +674,11 @@ public:
     set_marker ( -1 )
   {
     working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
-  }
+    std::memset ( working_set ,
+                  0 ,
+                    tile_store.store_shape [ d ]
+                  * sizeof ( tile_type* ) ) ;
+   }
 
   // get_t/put_t objects aren't to be copy-assigned; we make
   // sure this can't happen:
@@ -730,6 +742,7 @@ struct tile_loader
   using tile_user::in_tile_crd ;
   using tile_user::get_tile ;
   using tile_user::stride ;
+  using tile_user::tile_store ;
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
@@ -737,14 +750,24 @@ struct tile_loader
   const value_t * p_src ;
   std::size_t tail ;
 
+  // TODO: think about tile stores which are used at the same
+  // time for reading and writing data: they should have both
+  // flags true.
+
   tile_loader ( tile_store_type & _tile_store ,
                 const bill_t & bill )
   : tile_user ( _tile_store , bill )
-  { }
+  {
+    tile_store.write_to_disk = false ;
+    tile_store.read_from_disk = true ;
+  }
 
   tile_loader ( const tile_loader & other )
   : tile_user ( other )
-  { }
+  {
+    tile_store.write_to_disk = false ;
+    tile_store.read_from_disk = true ;
+  }
 
   // tile_loader's init function figures out the first tile
   // index for this cycle and calls get_tile. Then the tile's
@@ -806,7 +829,6 @@ struct tile_loader
     }
     else
     {
-      std::size_t src_index ;
       std::size_t lane = 0 ;
 
       while ( true )
@@ -822,13 +844,13 @@ struct tile_loader
 
         // transfer 'fetch' values to 'trg', counting up 'lane'
 
-        for ( src_index = 0 ;
-              fetch > 0 ;
-              --fetch , ++lane , ++src_index )
+        for ( std::size_t left = fetch ;
+              left > 0 ;
+              --left , ++lane , p_src += stride )
         {
           for ( std::size_t ch = 0 ; ch < N ; ch++ )
           {
-            trg[ch][lane] = p_src [ src_index * stride ] [ ch ] ;
+            trg [ ch ] [ lane ] = (*p_src) [ ch ] ;
           }
         }
 
@@ -875,7 +897,6 @@ struct tile_loader
     else
     {
       std::size_t nlanes = cap ;
-      std::size_t src_index ;
       std::size_t lane = 0 ;
 
       while ( true )
@@ -891,13 +912,13 @@ struct tile_loader
 
         // transfer 'fetch' values to 'trg', counting up 'lane'
 
-        for ( src_index = 0 ;
-              fetch > 0 ;
-              --fetch , ++lane , ++src_index )
+        for ( std::size_t left = fetch ;
+              left > 0 ;
+              --left , ++lane , p_src += stride )
         {
           for ( std::size_t ch = 0 ; ch < N ; ch++ )
           {
-            trg[ch][lane] = p_src [ src_index * stride ] [ ch ] ;
+            trg [ ch ] [ lane ] = (*p_src) [ ch ] ;
           }
         }
 
@@ -911,11 +932,8 @@ struct tile_loader
         }
         else
         {
-          // 'lane' has reached the final value. We subtract 'fetch'
-          // from tail because we have consumed that amount of values.
-          // then we break the loop
+          // 'lane' has reached the final value.
 
-          tail -= fetch ;
           break ;
         }
       }
@@ -962,12 +980,14 @@ public:
   : tile_user ( _tile_store , bill )
   {
     tile_store.write_to_disk = true ;
+    tile_store.read_from_disk = false ;
   }
 
   tile_storer ( const tile_storer & other )
   : tile_user ( other )
   {
     tile_store.write_to_disk = true ;
+    tile_store.read_from_disk = false ;
   }
 
   // tile_storer's init function figures out the first tile
@@ -1017,7 +1037,6 @@ public:
       // take, then switch to the next tile, until all values are
       // stored.
 
-      std::size_t trg_index ;
       std::size_t lane = 0 ;
 
       while ( true )
@@ -1033,13 +1052,13 @@ public:
 
         // transfer 'store' values to memory, counting up 'lane'
 
-        for ( trg_index = 0 ;
-              store > 0 ;
-              --store , ++lane , ++trg_index )
+        for ( std::size_t left = store ;
+              left > 0 ;
+              --left , ++lane , p_trg += stride )
         {
           for ( std::size_t ch = 0 ; ch < N ; ch++ )
           {
-            p_trg [ trg_index * stride ] [ ch ] = trg[ch][lane] ;
+            (*p_trg) [ ch ] = trg [ ch ] [ lane ] ;
           }
         }
 
@@ -1053,9 +1072,9 @@ public:
         }
         else
         {
-          // 'lane' has reached the final value. we break the loop
-          // without updating 'tail' because the run ends now.
+          // 'lane' has reached the final value.
 
+          tail -= store ;
           break ;
         }
       }
@@ -1087,7 +1106,6 @@ public:
       // many to the current tile as it can take, then switch to the
       // next tile, until all values are stored.
 
-      std::size_t trg_index ;
       std::size_t lane = 0 ;
 
       while ( true )
@@ -1103,13 +1121,13 @@ public:
 
         // transfer 'store' values to memory, counting up 'lane'
 
-        for ( trg_index = 0 ;
-              store > 0 ;
-              --store , ++lane , ++trg_index )
+        for ( std::size_t left = store ;
+              left > 0 ;
+              --left , ++lane , p_trg += stride )
         {
           for ( std::size_t ch = 0 ; ch < N ; ch++ )
           {
-            p_trg [ trg_index * stride ] [ ch ] = trg[ch][lane] ;
+            (*p_trg) [ ch ] = trg [ ch ] [ lane ] ;
           }
         }
 
