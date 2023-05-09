@@ -750,22 +750,19 @@ struct tile_loader
   const value_t * p_src ;
   std::size_t tail ;
 
-  // TODO: think about tile stores which are used at the same
-  // time for reading and writing data: they should have both
-  // flags true.
-
   tile_loader ( tile_store_type & _tile_store ,
                 const bill_t & bill )
   : tile_user ( _tile_store , bill )
   {
-    tile_store.write_to_disk = false ;
+    // we set read_from_disk true unconditionally, but user code
+    // can change the settings later on.
+
     tile_store.read_from_disk = true ;
   }
 
   tile_loader ( const tile_loader & other )
   : tile_user ( other )
   {
-    tile_store.write_to_disk = false ;
     tile_store.read_from_disk = true ;
   }
 
@@ -980,14 +977,12 @@ public:
   : tile_user ( _tile_store , bill )
   {
     tile_store.write_to_disk = true ;
-    tile_store.read_from_disk = false ;
   }
 
   tile_storer ( const tile_storer & other )
   : tile_user ( other )
   {
     tile_store.write_to_disk = true ;
-    tile_store.read_from_disk = false ;
   }
 
   // tile_storer's init function figures out the first tile
