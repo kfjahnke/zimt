@@ -51,7 +51,7 @@
 /// increments, reading them before and writing them back
 /// after processing.
 ///
-/// This header codes a notion of 'tiles': small arrays of
+/// This header codes a notion of 'tiles': small-ish arrays of
 /// memory which provide a part of the data corresponding to
 /// a part of the 'notional' shape. These tiles are linked to
 /// a file which holds the data when the tile is not active.
@@ -91,7 +91,7 @@
 /// of it) without having to load the entire store to memory.
 /// We can also process entire tile stores (or parts) with SIMD
 /// code like any other data source/sink, using the same act
-/// functor as we'd use for non-tiled storage.
+/// functors as we'd use for non-tiled storage.
 ///
 /// Apart from accessing single large data sets, another use
 /// case which I intend to exploit is work with several data
@@ -100,6 +100,15 @@
 /// in. As long as processing is limited to parts of the data
 /// in a given time window, such collections of data sets can
 /// be processed together, i.e. to form a synopsis or correlation.
+/// a typical use case would be a tile store of N*N tiles. The
+/// code in this header will, on average, limit the amount of
+/// tiles which are held 'open' (so, with a memory footprint)
+/// to N, which, with rising N, is substantially lower than the
+/// N*N tiles of the entire store. If this still exceeds the
+/// capacity of the system, access to the data can be cut up
+/// to partial workloads by setting appropriate boundaries in
+/// the 'loading bill' - with a window which makes the 'hot'
+/// axis shorter, while the other axes won't make a difference.
 
 #ifndef ZIMT_TILES_H
 
@@ -583,7 +592,7 @@ public:
 
   // get_tile will try and provide a pointer to tile_type from
   // a previous cycle if possible, and only if it can't find
-  // one to reuse, it accesses the tile store.
+  // one to re-use, it accesses the tile store.
   // The function exploits the fact that access to tiles is
   // along a linear subset of tiles along the 'hot' axis, and
   // once the tile loader accesses the next linear subset,
@@ -591,36 +600,64 @@ public:
   // subset. So the tile loader accumulates tile pointers in
   // it's 'working set' until a new subset is touched, and then
   // the tiles in the working set are released. With this
-  // inermediate layer, the need for mutex-protected access
-  // to the tiles is greatly reduced.
+  // intermediate layer, the need for mutex-protected access
+  // to the tiles is greatly reduced: the mutex-protected
+  // access only occurs when a slot in the working set is
+  // first filled and when the working set is cleared out.
+  // In the first case, response will be quick if the tile in
+  // question is already used by other threads; then the call
+  // to tile_store.get() will return the tile pointer almost
+  // immedately. If a tile loader 'happens upon' a tile which
+  // is not in use already, it 'takes responsibility' for
+  // making the tile available and - while this happens - the
+  // tile is locked for other threads which will block if they
+  // attempt to gain access, but they will gain access as soon
+  // as they can acquire the lock on the tile's mutex.
+  // The second place where mutex-protected access happens is
+  // when user count sinks to zero and the tile is released.
+  // If the tile needs to be written to disk, the 'responsible'
+  // thread will be busy for considerable time, but since the
+  // zimt::process logic ensures that processing will not
+  // revert to tiles which reached zero user count after having
+  // been in use, that's no problem: someone has to do the job
+  // of storing the data to disk, and there are enough other
+  // threads to carry on the zimt::process run over other tiles.
+  // The thread taking responsibility for saving a tile to disk
+  // may become a 'straggler', but as soon as it acquires a new
+  // 'joblet' it will be 'back with the others'. Even if the OS
+  // decides to halt a thread for a while, the worst case is
+  // that this will result in a bunch of tiles held open until
+  // the last thread 'holding on' to these tiles has completed
+  // it's current joblet. Still, if this cumulates there is
+  // potential for overload if this happens with several rows of
+  // tiles due to some worst-case scenario, so TODO this should
+  // be kept in mind. It would be nice if there were some way
+  // of discouraging the OS from halting a thread in mid-joblet.
 
   tile_type * get_tile ( const zimt::xel_t < long , D > & index )
   {
     auto match_index = index ;
     match_index [ d ] = 0 ;
 
-    // set_marker is only ever -1 right after construction.
-
-    if ( set_marker == -1 )
-    {
-      set_marker = match_index ;
-    }
-
     // are we still in the same linear subset?
 
-    else if ( match_index != set_marker )
+    if ( match_index != set_marker )
     {
-      // no: this is a new linear subset. release all tiles
-      // which are held in working_set
+      // set_marker is only ever -1 right after construction.
+      // So if it's not -1, it's from a previous subset and
+      // we release all tiles which are held in working_set
 
-      clear_working_set() ;
+      if ( set_marker != -1 )
+      {
+        clear_working_set() ;
+      }
 
-      // set the set_marker to refer to the new linear subset
+     // set the set_marker to refer to the new linear subset
 
       set_marker = match_index ;
     }
 
-    // now try and access the working set
+    // now access the working set
 
     tile_type * p_tile = working_set [ index [ d ] ] ;
 
@@ -656,6 +693,12 @@ public:
       ( _tile_store.tile_shape ) [ d ] ) ,
     set_marker ( -1 )
   {
+    // TODO: I'm using memset here to initialize the newly allocated
+    // memory. There is, apparently, alternative syntax which has
+    // the same effect but it's a bit arcane: putting a pair of
+    // braces after the closing bracket of the new expression, like
+    // working_set = new tile_type * [ ... ] () ;
+
     working_set = new tile_type * [ tile_store.store_shape [ d ] ] ;
     std::memset ( working_set ,
                   0 ,
@@ -718,9 +761,13 @@ public:
 // should be to set everything up that way, but we want the code
 // to cover all eventualities, hence the 'pedestrian' special
 // cases. On the plus side, the implementation is perfectly
-// general and can handle arbitrary shapes and boundaries,
+// general and can handle arbitrary shapes and boundaries;
 // it only takes a little longer when it has to 'cross tile
 // boundaries' in a load/process/store cycle.
+// A good part of the implementation is shared with tile_storer
+// via the common base class, tile_user - namely the logic to
+// efficiently gain access to the tiles from the store with a
+// minimum of mutex-protected access.
 
 template < typename T ,
            std::size_t N ,
@@ -755,7 +802,10 @@ struct tile_loader
   : tile_user ( _tile_store , bill )
   {
     // we set read_from_disk true unconditionally, but user code
-    // can change the settings later on.
+    // can change the settings later on. Since we only set the
+    // single flag, write_to_disk is unaffected and may or may not
+    // be set: if it's also set, the tiles store is in read/write
+    // mode, which is an expected and accepted modus operandi.
 
     tile_store.read_from_disk = true ;
   }
@@ -766,10 +816,10 @@ struct tile_loader
     tile_store.read_from_disk = true ;
   }
 
-  // tile_loader's init function figures out the first tile
-  // index for this cycle and calls get_tile. Then the tile's
-  // function 'provide' is called to set 'p_src' and 'tail'
-  // to correct values, and 'increase' is called to initialize
+  // tile_loader's init function figures out the first tile index
+  // for this cycle obtains the current tile. Then the tile's
+  // function 'provide' is called to set 'p_src' and 'tail' to
+  // appropriate values, and 'increase' is called to initialize
   // the first batch of vectorized data in 'trg'.
 
   void init ( value_v & trg , const crd_t & crd )
@@ -782,7 +832,13 @@ struct tile_loader
   // the 'capped' variant of 'init' only fills in the values below
   // the cap and 'stuffs' the remainder of the lanes with the last
   // 'genuine' value before the cap. The code is the same as above,
-  // only the call to 'increase' uses the capped overload.
+  // only the call to 'increase' uses the capped overload with
+  // 'stuff' set true to affect the stuffing. Note that this is a
+  // rare exception which only occurs if a segment is very short,
+  // i.e. because the notional shape is very short along the hot
+  // axis. Most of the time, segments are larger ans stuffing is
+  // not necessary because the previous cycle has already filled
+  // the simdized datum with valid content.
 
   void init ( value_v & trg ,
               const crd_t & crd ,
@@ -792,6 +848,8 @@ struct tile_loader
     current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
     increase ( trg , cap , true ) ;
   }
+
+private:
 
   // helper function advance enters the next chunk and sets
   // 'p_src' and 'tail' accordingly
@@ -804,16 +862,22 @@ struct tile_loader
     current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
   }
 
-  // 'increase' fetches a full vector of data from the source view
-  // and increments the pointer to the data in the view to the next
-  // position.
+public:
+
+  // 'increase' fetches a full vector of data from the tile store
+  // and increments the pointer to the data to the next read position.
 
   void increase ( value_v & trg )
   {
     if ( tail == 0 )
     {
+      // we won't encounter this case initially (init results in
+      // non-zero tail) but only if previous processing made 'tail'
+      // sink to precisely zero. So we need to call advance.
+
       advance() ;
     }
+
     if ( tail >= L )
     {
       // this is the 'normal' case: there are enough values left
@@ -940,7 +1004,12 @@ struct tile_loader
 } ; // class tile_loader
 
 // tile_storer uses the same techniques as tile_loader, just the
-// flow of data is reversed.
+// flow of data is reversed. One might code the processing with
+// a flag indicating direction of data flow (i.e. true meaning
+// simsized datum -> memory and false meaning the reverse, but
+// for now I stick with copy-and-paste and swappig source and
+// target of the relevant assignments, assuming that this code
+// will remain static later on.
 
 template < typename T ,
            std::size_t N ,
