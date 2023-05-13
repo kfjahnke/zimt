@@ -45,21 +45,33 @@
 
 int main ( int argc , char * argv[] )
 {
+  long width = std::atol ( argv[1] ) ;
+  long height = std::atol ( argv[2] ) ;
+  long tile_width = std::atol ( argv[3] ) ;
+  long tile_height = std::atol ( argv[4] ) ;
+  long segment_size = std::atol ( argv[5] ) ;
+  long njobs = std::atol ( argv[6] ) ;
+  long axis = std::atol ( argv[7] ) ;
+
   // notional shape for zimt::process. Here we use a moderate
   // size, but this shape could become very large in 'real' code.
   // Try and play with this value: like, what happens with 'odd'
   // sizes, small sizes...
 
-  zimt::xel_t < std::size_t , 2 > shape { 2048 , 2048 } ;
+  zimt::xel_t < std::size_t , 2 > shape { width , height } ;
 
   // we set up one tile store as data drain.
 
   typedef short dtype ;
 
   zimt::tile_store_t < dtype , 2 , 2 >
-    tile_drain ( shape , { 256 , 256 } , "crd_tiles" ) ;
+    tile_drain ( shape , { tile_width , tile_height } ,
+                 "crd_tiles" , axis ) ;
 
   zimt::bill_t bill ;
+  bill.segment_size = segment_size ;
+  bill.njobs = njobs ;
+  bill.axis = axis ;
 
   // we feed discrete coordinates as input, don't modify them
   // and store to the tile store.
@@ -71,8 +83,4 @@ int main ( int argc , char * argv[] )
   // showtime!
 
   zimt::process ( shape , gc , act , tp , bill ) ;
-
-  // no need to tidy up the tile store
-
-  tile_drain.cleanup = false ;
 }

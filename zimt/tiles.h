@@ -54,7 +54,7 @@
 /// This header codes a notion of 'tiles': small-ish arrays of
 /// memory which provide a part of the data corresponding to
 /// a part of the 'notional' shape. These tiles are linked to
-/// a file which holds the data when the tile is not active.
+/// files which holds the data when the tiles are not active.
 /// When a tile is opened for reading and the file is present
 /// and sufficiently large, the data are loaded from the file.
 /// If there is no file or it doesn't have enough data, that's
@@ -66,7 +66,10 @@
 /// succeed. Files for tiles are simply memory copied to disk,
 /// there are no metadata nor any provisions to make the data
 /// portable. There is no compression, either. Such improvements
-/// can be added later by diversifying the access to mass storage.
+/// can be added later by diversifying the access to mass storage;
+/// class tile_store is a base class with virtual members which
+/// user code can override if the base class' members aren't
+/// suitable.
 ///
 /// Next is a class bundling a set of tiles which, together,
 /// represent the storage for an entire (possibly very large)
@@ -120,6 +123,8 @@
 #include "xel.h"
 #include "array.h"
 
+std::mutex stdout_mutex ;
+
 namespace zimt
 {
 // tile_t acts as conduit to a tile's data and encodes it's
@@ -151,42 +156,6 @@ struct tile_t
   {
     assert ( p_data == nullptr ) ;
     p_data = new storage_t ( shape ) ;
-  }
-
-  // 'load' loads data from a file to the storage array. If the
-  // file can't be opened, this is accepted and the data off
-  // p_data are left as they are. file access is coded very
-  // simply in C - for now.
-
-  void load ( const char * p_filename ) const
-  {
-    assert ( p_data != nullptr ) ; // might alocate instead
-
-    FILE* input = fopen ( p_filename , "rb" ) ;
-    if ( input != NULL )
-    {
-      fseek ( input , 0L , SEEK_END ) ;
-      auto size = ftell ( input ) ;
-      std::size_t nbytes = shape.prod() * sizeof ( value_t ) ;
-      if ( size >= nbytes )
-      {
-        fseek ( input , 0L , SEEK_SET ) ;
-        fread ( p_data->data() , 1 , nbytes , input ) ;
-      }
-      fclose ( input ) ;
-    }
-  }
-
-  // store stores the storage array to a file
-
-  void store ( const char * p_filename ) const
-  {
-    assert ( p_data != nullptr ) ;
-    FILE* output = fopen ( p_filename , "wb" ) ;
-    assert ( output != NULL ) ;
-    std::size_t nbytes = shape.prod() * sizeof ( value_t ) ;
-    fwrite ( p_data->data() , 1 , nbytes , output ) ;
-    fclose ( output ) ;
   }
 
   // tile_t's c'tor only sets the shape; allocating storage or
@@ -290,6 +259,7 @@ struct tile_store_t
   const shape_type array_shape ; // 'notional' shape
   const shape_type tile_shape ;  // shape of individual tiles
   const shape_type store_shape ; // shape of the array of tether_t
+  const std::size_t d ; // hot axis
 
   // if this flag is set, tiles will be written to disk when they
   // are 'dropped'.
@@ -299,20 +269,21 @@ struct tile_store_t
   // if this flag is set, data will be read from disk if they
   // are available
 
-  bool read_from_disk = true ;
+  bool read_from_disk = false ;
 
   // this flag is used to assert that the d'tor can proceed
   // without looking for open tiles and closing them: if
   // processing closes all tiles after use, there's no need
   // to go through the entire set again. The default is to
   // check all tiles, set it to false to avoid the check.
-//
+
   bool cleanup = true ;
 
   // array holding tether_type, controlling access to the tiles
 
   typedef tether_t < tile_type > tether_type ;
   array_t < D , tether_type > store ;
+  // array_t < D , std::atomic < int > > row_tags ;
 
   // base name of the files the store will access
 
@@ -320,10 +291,15 @@ struct tile_store_t
 
 private:
 
+  std::deque < index_type > limbo ;
+  std::mutex limbo_mutex ;
+  std::size_t limbo_threshold = 256 ;
+
   // helper function to provide store_shape in the c'tor
 
-  static shape_type get_store_shape ( const shape_type & array_shape ,
-                                      const shape_type & tile_shape )
+  static shape_type get_store_shape
+    ( const shape_type & array_shape ,
+      const shape_type & tile_shape )
   {
     shape_type store_shape ;
     for ( std::size_t i = 0 ; i < D ; i++ )
@@ -335,20 +311,15 @@ private:
     return store_shape ;
   }
 
-  // helper function to construct a filename for a file associated
-  // with a specific tile index
-
-  std::string get_file_name ( const index_type & tile_index ) const
-  {
-    auto filename = basename ;
-    for ( std::size_t i = 0 ; i < D ; i++ )
-    {
-      filename += "_" ;
-      filename += std::to_string ( tile_index[i] ) ;
-    }
-    filename += std::string ( ".ztl" ) ;
-    return filename ;
-  }
+  // static shape_type get_row_tags_shape
+  //   ( const shape_type & array_shape ,
+  //     const shape_type & tile_shape ,
+  //     const std::size_t & d )
+  // {
+  //   auto shape = get_store_shape ( array_shape , tile_shape ) ;
+  //   shape [ d ] = 1 ;
+  //   return shape ;
+  // }
 
   // 'dropping' a tile optionally flushes it's content to
   // a file, then frees the memory for data. this should only
@@ -364,35 +335,108 @@ private:
     {
       if ( write_to_disk )
       {
-        auto filename = get_file_name ( tile_index ) ;
-        tether.p_tile->store ( filename.c_str() ) ;
+        store_tile ( tether.p_tile , tile_index ) ;
       }
       delete tether.p_tile->p_data ;
       delete tether.p_tile ;
       tether.p_tile = nullptr ;
+      tether.nusers = 0 ;
     }
   }
 
   // close the tile store altogether - i.e. after it was processed.
   // if write_to_disk is set, all tiles marked are written to
   // their associated files. Since this is not multithreaded code,
-  // we can proceed without the lock_guard. This is more of a
-  // precaution - if all goes according to plan, all tiles should
-  // have been released already before this call happens. This is
-  // also a private member function.
+  // we can proceed without the lock_guard. All tiles still in
+  // limbo are dropped now.
 
   void close_all()
   {
     zimt::mcs_t < D > tile_it ( store_shape ) ;
     std::size_t ntiles = store_shape.prod() ;
 
-    for ( std::size_t i = 0 ; i < ntiles ; i++ )
+    for ( index_type inx : limbo )
     {
-      auto tile_index = tile_it() ;
-      auto & tether ( store [ tile_index ] ) ;
-      assert ( tether.nusers == 0 ) ;
-      drop ( tile_index ) ;
+      drop ( inx ) ;
     }
+  }
+
+protected:
+
+  // helper function to construct a filename for a file associated
+  // with a specific tile index
+
+  virtual std::string get_filename
+            ( const index_type & tile_index ) const
+  {
+    auto filename = basename ;
+    for ( std::size_t i = 1 ; i <= D ; i++ )
+    {
+      filename += "_" ;
+      filename += std::to_string ( tile_index [ D - i ] ) ;
+    }
+    filename += std::string ( ".ztl" ) ;
+    return filename ;
+  }
+
+  // load data from a file to a tile's storage array. If the
+  // file can't be opened, this is accepted and the data off
+  // p_data are left as they are. file access is coded very
+  // simply in C for this class, but classes inheriting from
+  // tile_store_t may use their own code.
+
+  virtual bool load_tile ( tile_type * p_tile ,
+                           const index_type & tile_index ) const
+  {
+    auto filename = get_filename ( tile_index ) ;
+    auto & p_data ( p_tile->p_data ) ;
+
+    assert ( p_data != nullptr ) ; // might alocate instead
+    FILE* input = fopen ( filename.c_str() , "rb" ) ;
+
+    if ( input != NULL )
+    {
+      fseek ( input , 0L , SEEK_END ) ;
+      auto size = ftell ( input ) ;
+      std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
+      if ( size >= nbytes )
+      {
+        fseek ( input , 0L , SEEK_SET ) ;
+        fread ( p_data->data() , 1 , nbytes , input ) ;
+      }
+      fclose ( input ) ;
+
+      std::lock_guard < std::mutex > lk ( stdout_mutex ) ;
+      std::cout << std::this_thread::get_id()
+                << ": read  " << nbytes << " bytes from "
+                << filename << std::endl ;
+
+      return true ;
+    }
+    return false ;
+  }
+
+  // store a tile's storage array to a file
+
+  virtual bool store_tile ( tile_type * p_tile ,
+                            const index_type & tile_index ) const
+  {
+    auto filename = get_filename ( tile_index ) ;
+    auto const & p_data ( p_tile->p_data ) ;
+
+    assert ( p_data != nullptr ) ;
+    FILE* output = fopen ( filename.c_str() , "wb" ) ;
+    assert ( output != NULL ) ;
+    std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
+    fwrite ( p_data->data() , 1 , nbytes , output ) ;
+    fclose ( output ) ;
+
+    std::lock_guard < std::mutex > lk ( stdout_mutex ) ;
+    std::cout << std::this_thread::get_id() <<
+              ": wrote " << nbytes << " bytes to "
+              << filename << std::endl ;
+
+    return true ;
   }
 
 public:
@@ -404,13 +448,26 @@ public:
 
   tile_store_t ( shape_type _array_shape ,
                  shape_type _tile_shape ,
-                 std::string _basename )
+                 std::string _basename ,
+                 const std::size_t & _d = 0 ,
+                 const std::size_t & _limbo_threshold = 256 )
   : array_shape ( _array_shape ) ,
     tile_shape ( _tile_shape ) ,
     store_shape ( get_store_shape ( _array_shape , _tile_shape ) ) ,
     store ( get_store_shape ( _array_shape , _tile_shape ) ) ,
-    basename ( _basename )
-  { }
+    limbo_threshold ( _limbo_threshold ) ,
+    basename ( _basename ) ,
+    d ( _d )
+  {
+    // zimt::mcs_t < D > mcs ( store_shape ) ;
+    // for ( std::size_t i = 0 ; i < store_shape.size() ; i++ )
+    // {
+    //   auto inx = mcs() ;
+    //   auto & tether ( store [ inx ] ) ;
+    //   tether.nusers = 0 ;
+    //   tether.p_tile = nullptr ;
+    // }
+  }
 
   // 'get' provides a pointer to the tile at 'tile_index'. If the
   // pointer in the 'tether' is initially nullptr, a new tile_t
@@ -458,8 +515,11 @@ public:
 
       tether.p_tile = new tile_type ( tile_shape ) ;
       tether.p_tile->allocate() ;
-      auto filename = get_file_name ( tile_index ) ;
-      tether.p_tile->load ( filename.c_str() ) ;
+
+      // TODO: if ( read_from_disk ) VVVV - if tile was written
+      // by storer it must be taken up again, so ...
+
+      load_tile ( tether.p_tile , tile_index ) ;
       tether.nusers = 0 ;
     }
 
@@ -472,7 +532,8 @@ public:
   }
 
   // releasing a tile counts down the tile's user count and
-  // 'drops' the tile if the user count reaches zero. release
+  // pushes the tile to the 'limbo' queue if the user count
+  // reaches zero. release
   // is not called by tile_loader/tile_storer immediately when
   // processing leaves the scope of a tile, but only when
   // processing enters a new set of tiles, so the release
@@ -482,46 +543,104 @@ public:
   // lines in the tile are accessed, until processing leaves the
   // tile's scope. Only once all processing threads have left
   // the current row of tiles (as recorded in their 'working set')
-  // user count will drop to zero, triggering the call to 'drop'.
+  // user count will drop to zero, triggering the pushing of the
+  // tile to limbo, from where it will eventually be dropped
+  // if the limbo queue's size exceeds the threshold.
   // With this logic, the need for 'overseeing' the process is
   // minimal - it's, in a way, self-organizing, just as the
   // joblet-based code in zimt::process, which drives processing.
 
   void release ( const index_type & tile_index )
   {
-    auto & tether ( store [ tile_index ] ) ; // shorthand
+    {
+      auto & tether ( store [ tile_index ] ) ; // shorthand
+
+#ifndef ZIMT_SINGLETHREAD
+        std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
+#endif
+
+      // we are strict here - at least as long as the design
+      // hasn't 'solidified' entirely: release should only be
+      // called 'if there is something to release', and if
+      // there are no more users, the tile should have been
+      // dropped earlier.
+
+      assert ( tether.nusers > 0 ) ;
+
+      // count down the user count and 'drop' the tile if it
+      // reaches zero
+
+      -- tether.nusers ;
+
+      // initially I coded to drop the tile now, but then there
+      // are a lot of store-then-reload situations. So now I defer
+      // dropping the tile to 'later' when it's more likely that
+      // another thread won't need to reload a tile we've already
+      // stored.
+
+      if ( tether.nusers == 0 )
+      {
+        // push the tile to the limbo queue. Note how the entry
+        // in the tile's tether remains untouched by this - the
+        // entry simply persists, albeit with zero user count.
+        // But if the tile is accessed again, user count will
+        // rise above zero again. When entries are removed from
+        // the limbo queue (when it is too full, or at the end
+        // when the tile_store is destructed) and found to have
+        // zero users *then*, they are finally dropped. This
+        // leaves room for store-then-load-again situations,
+        // which can be handled with very little ado: the user
+        // count simply rises again, and if the tile is still
+        // in use when it's pushed out of the queue, it's
+        // simply not dropped, assuming that it will 'come back'
+        // again when the current use ends and user count drops
+        // to zero again, triggering the tile to be pushed to
+        // limbo again *then*.
+
+        std::lock_guard < std::mutex > lk ( limbo_mutex ) ;
+        limbo.push_back ( tile_index ) ;
+      }
+    }
+    // if we find now that the limbo queue is too full, we
+    // consume so many tile inices from the tip of the queue
+    // that the size is below threshold again. Tiles which
+    // have no users when popped from the queue are finally
+    // dropped, and if they should be needed again they have
+    // to be re-loaded from disk - but this should be rare.
+
+    while ( limbo.size() > limbo_threshold )
+    {
+      index_type tip ;
+      {
+        std::lock_guard < std::mutex > lk ( limbo_mutex ) ;
+        tip = limbo.front() ;
+        limbo.pop_front() ;
+      }
+
+      auto & tether ( store [ tip ] ) ; // shorthand
 
 #ifndef ZIMT_SINGLETHREAD
       std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
 #endif
 
-    // we are strict here - at least as long as the design
-    // hasn't 'solidified' entirely: release should only be
-    // called 'if there is something to release', and if
-    // there are no more users, the tile should have been
-    // dropped earlier.
+      // if the tile index from limbo refers to a zero-user
+      // tile, we drop that tile. If not, the tile has been
+      // taken into use again, in which case it will 'come back'
+      // some time later when the last current user releases it,
+      // so we needn't actually do anything with it here.
 
-    assert ( tether.nusers > 0 ) ;
-
-    // count down the user count and 'drop' the tile if it
-    // reaches zero
-
-    -- tether.nusers ;
-
-    if ( tether.nusers == 0 )
-    {
-      drop ( tile_index ) ;
+      if ( tether.nusers == 0 )
+      {
+        drop ( tip ) ;
+      }
     }
   }
 
-  // calling close_all should not be necessary - if 'cleanup'
-  // is false, it will be omitted, assuming all tiles were
-  // closed earlier.
+  // calling close_all drops all tiles still in limbo
 
   ~tile_store_t()
   {
-    if ( cleanup )
-      close_all() ;
+    close_all() ;
   }
 } ;
 
@@ -575,14 +694,16 @@ private:
 
   void clear_working_set()
   {
+    auto index = set_marker ;
+
     for ( std::size_t i = 0 ;
           i < tile_store.store_shape [ d ] ;
           i++ )
     {
       if ( working_set [ i ] != nullptr )
       {
-        set_marker [ d ] = i ;
-        tile_store.release ( set_marker ) ;
+        index [ d ] = i ;
+        tile_store.release ( index ) ;
         working_set [ i ] = nullptr ;
       }
     }
@@ -615,24 +736,9 @@ public:
   // as they can acquire the lock on the tile's mutex.
   // The second place where mutex-protected access happens is
   // when user count sinks to zero and the tile is released.
-  // If the tile needs to be written to disk, the 'responsible'
-  // thread will be busy for considerable time, but since the
-  // zimt::process logic ensures that processing will not
-  // revert to tiles which reached zero user count after having
-  // been in use, that's no problem: someone has to do the job
-  // of storing the data to disk, and there are enough other
-  // threads to carry on the zimt::process run over other tiles.
-  // The thread taking responsibility for saving a tile to disk
-  // may become a 'straggler', but as soon as it acquires a new
-  // 'joblet' it will be 'back with the others'. Even if the OS
-  // decides to halt a thread for a while, the worst case is
-  // that this will result in a bunch of tiles held open until
-  // the last thread 'holding on' to these tiles has completed
-  // it's current joblet. Still, if this cumulates there is
-  // potential for overload if this happens with several rows of
-  // tiles due to some worst-case scenario, so TODO this should
-  // be kept in mind. It would be nice if there were some way
-  // of discouraging the OS from halting a thread in mid-joblet.
+  // Then, the tile 'spends some time in limbo', and when it
+  // is released from limbo and still has zero users, it's
+  // finally 'dropped' to disk.
 
   tile_type * get_tile ( const zimt::xel_t < long , D > & index )
   {
@@ -668,14 +774,13 @@ public:
       // no luck so far - access the tile store, then save the
       // tile pointer to the working set. Here we have the
       // mutex-protected access (via tile_store.get). It only
-      // occurs if the tile is accessed by this tile loader
+      // occurs if the tile is accessed by this tile_user
       // for the very first time, so in total once for every
       // thread cooperating on the current row of tiles,
       // rather than once per 'entering' the tile's domain.
 
       p_tile = tile_store.get ( index ) ;
       assert ( p_tile != nullptr ) ;
-
       working_set [ index [ d ] ] = p_tile ;
     }
 
@@ -735,7 +840,10 @@ public:
 
   ~tile_user_t()
   {
-    clear_working_set() ;
+    if ( set_marker != -1 )
+    {
+      clear_working_set() ;
+    }
     delete[] working_set ;
   }
 

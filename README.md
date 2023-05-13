@@ -16,7 +16,7 @@ Installation is simple: soft-link the folder containing the zimt headers to a lo
 
 Where "path-to-source" is the parent folder of the clone of the zimt repo. With this 'installation' the examples will compile out-of-the-box. If you don't like linking stuff into your /usr/local, you'll have to tell the compiler where the zimt headers are, e.g. with a -I command line argument.
 
-The top-level header is called "zimt.h", it includes all of zimt.
+The top-level header is called "zimt.h", it includes all of zimt except the code for using tiled storage.
 
 To help with the examples, the 'examples' folder has a shell script 'examples.sh' which will compile all C++ files you pass to it with clang++ and g++, and with all available SIMD backends. Of course using all available backends will require that you have them installed as well - if you are missing some, make a copy of the shell script, comment out the parts in question, and use the copy instead of examples.sh. If you don't have any of the SIMD backends, zimt will provide it's own, which does a fairly good job but is usually not as fast as the other backends. But you can go ahead and start coding with zimt, and if you need more speed you can install one of the back-ends later.
 

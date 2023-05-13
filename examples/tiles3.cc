@@ -91,12 +91,6 @@ void first()
   // showtime!
 
   zimt::process ( shape , tl , act , tp , bill ) ;
-
-  // we can clear the 'cleanup' flag in the tile stores, all tiles
-  // should already be flushed.
-
-  tile_source.cleanup = false ;
-  tile_drain.cleanup = false ;
 }
 
 void second()
@@ -149,11 +143,37 @@ void second()
     auto crd = mcs() ;
     assert ( target [ crd ] == crd + offset ) ;
   }
-
-  // again, we don't need the cleanup.
-
-  tile_source.cleanup = false ;
 }
+
+template < typename T , std::size_t N , std::size_t D >
+struct mod_tile_store_t
+: public zimt::tile_store_t < T , N , D >
+{
+  typedef zimt::tile_store_t < T , N , D > base_t ;
+  using typename base_t::index_type ;
+  using typename base_t::tile_type ;
+  using typename base_t::value_t ;
+  using base_t::base_t ;
+
+private:
+
+  // diverts output, like >> /dev/null
+  // by not writing to disk and instead only emitting a message
+  // about what would have been written.
+
+  virtual bool store_tile ( tile_type * p_tile ,
+                            const index_type & tile_index ) const
+  {
+    auto filename = base_t::get_filename ( tile_index ) ;
+    auto const & p_data ( p_tile->p_data ) ;
+
+    assert ( p_data != nullptr ) ;
+    std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
+    std::cout << "would write " << nbytes << " bytes to "
+              << filename << std::endl ;
+    return true ;
+  }
+} ;
 
 void third()
 {
@@ -162,6 +182,8 @@ void third()
   // tiles store and write 'modified' data back.
 
   zimt::bill_t bill ;
+  // bill.njobs = 2 ;
+  bill.segment_size = 95 ;
 
   // we'll just access a small notional shape, and of this shape
   // we'll only access a window.
@@ -174,8 +196,14 @@ void third()
   // we have to pass the shape, the tile size and the basename
   // to construct the tile store
 
-  zimt::tile_store_t < short , 2 , 2 >
+  mod_tile_store_t < short , 2 , 2 >
     tile_source ( shape , { 95 , 113 } , "extract" ) ;
+
+  // to test a derived tile_store class with overloads of
+  // tile_store_t's virtual member functions
+
+  // mod_tile_store_t < short , 2 , 2 >
+  //   tile_source ( shape , { 95 , 113 } , "extract" ) ;
 
   // this is the 'ordinary' array we'll use as target
 
@@ -190,7 +218,7 @@ void third()
   // the way zimt::process traverses the data: tiles will be
   // accessed first for reading, and in the same cycle also for
   // writing. The batch of data to fill a vector is extracted
-  // from the tile, processed by the act functor and stored
+  // from the tile(s), processed by the act functor and stored
   // back - now to the same location. Both the tile_loader
   // and the tile_storer object will hold a copy to the tile
   // pointer, user count will be at least two. The write access
@@ -213,13 +241,14 @@ void third()
   // go!
 
   zimt::process ( shape , tl , act , tp , bill ) ;
-
-  tile_source.cleanup = false ;
 }
 
 int main ( int argc , char * argv[] )
 {
+  std::cout << "*********** first" << std::endl ;
   first() ;
+  std::cout << "*********** second" << std::endl ;
   second() ;
+  std::cout << "*********** third" << std::endl ;
   third() ;
 }
