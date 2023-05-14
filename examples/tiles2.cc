@@ -38,22 +38,53 @@
 
 // set up and fill a tile store holding self-referential discrete
 // coordinates. The coordinates are pairs of short, and the resulting
-// tile files can be examined easily with od -x
+// tile files can be examined easily with the likes of od -x or od -d
 
 #include <zimt/zimt.h>
 #include <zimt/tiles.h>
 
 int main ( int argc , char * argv[] )
 {
-  long width = std::atol ( argv[1] ) ;
-  long height = std::atol ( argv[2] ) ;
-  long tile_width = std::atol ( argv[3] ) ;
-  long tile_height = std::atol ( argv[4] ) ;
-  long segment_size = std::atol ( argv[5] ) ;
-  long njobs = std::atol ( argv[6] ) ;
-  long axis = std::atol ( argv[7] ) ;
+  // without arguments, use default values. This also produces the
+  // ouptput which tiles3.cc requires as input.
 
-  // notional shape for zimt::process. Here we use a moderate
+  long width = 2048 ;
+  long height = 2048 ;
+  long tile_width = 256 ;
+  long tile_height = 256 ;
+  long segment_size = 512 ;
+  long njobs = 8 ;
+  long axis = 0 ;
+  long limbo_size = 10000000 ;
+
+  // I use this program for testing, so I like to have a way to
+  // pass in arguments.
+
+  if ( argc > 1 )
+    width = std::atol ( argv[1] ) ;
+
+  if ( argc > 2 )
+    height = std::atol ( argv[2] ) ;
+
+  if ( argc > 3 )
+    tile_width = std::atol ( argv[3] ) ;
+
+  if ( argc > 4 )
+    tile_height = std::atol ( argv[4] ) ;
+
+  if ( argc > 5 )
+    segment_size = std::atol ( argv[5] ) ;
+
+  if ( argc > 6 )
+    njobs = std::atol ( argv[6] ) ;
+
+  if ( argc > 7 )
+    axis = std::atol ( argv[7] ) ;
+
+  if ( argc > 8 )
+    limbo_size = std::atol ( argv[8] ) ;
+
+  // notional shape for zimt::process. By default we use a moderate
   // size, but this shape could become very large in 'real' code.
   // Try and play with this value: like, what happens with 'odd'
   // sizes, small sizes...
@@ -66,7 +97,7 @@ int main ( int argc , char * argv[] )
 
   zimt::tile_store_t < dtype , 2 , 2 >
     tile_drain ( shape , { tile_width , tile_height } ,
-                 "crd_tiles" , axis ) ;
+                 "crd_tiles" , limbo_size ) ;
 
   zimt::bill_t bill ;
   bill.segment_size = segment_size ;

@@ -259,7 +259,6 @@ struct tile_store_t
   const shape_type array_shape ; // 'notional' shape
   const shape_type tile_shape ;  // shape of individual tiles
   const shape_type store_shape ; // shape of the array of tether_t
-  const std::size_t d ; // hot axis
 
   // if this flag is set, tiles will be written to disk when they
   // are 'dropped'.
@@ -283,7 +282,6 @@ struct tile_store_t
 
   typedef tether_t < tile_type > tether_type ;
   array_t < D , tether_type > store ;
-  // array_t < D , std::atomic < int > > row_tags ;
 
   // base name of the files the store will access
 
@@ -293,7 +291,7 @@ private:
 
   std::deque < index_type > limbo ;
   std::mutex limbo_mutex ;
-  std::size_t limbo_threshold = 256 ;
+  std::size_t limbo_threshold ;
 
   // helper function to provide store_shape in the c'tor
 
@@ -310,16 +308,6 @@ private:
     }
     return store_shape ;
   }
-
-  // static shape_type get_row_tags_shape
-  //   ( const shape_type & array_shape ,
-  //     const shape_type & tile_shape ,
-  //     const std::size_t & d )
-  // {
-  //   auto shape = get_store_shape ( array_shape , tile_shape ) ;
-  //   shape [ d ] = 1 ;
-  //   return shape ;
-  // }
 
   // 'dropping' a tile optionally flushes it's content to
   // a file, then frees the memory for data. this should only
@@ -444,29 +432,30 @@ public:
   // tile_store_t's c'tor receives the 'notional' shape of the
   // entire workload, the intended - or given - shape of an
   // individual tile, and the base name of files associated
-  // with tiles.
+  // with tiles. The last parameter gives the size of the
+  // 'limbo', in bytes. This is the maximal amount of storage
+  // tiles 'in limbo' will occupy, and when there are too many
+  // tiles in limbo, so that this limit is exceeded, they are
+  // flushed to disk. I haven't yet settled on a good heuristic
+  // for this value; I assume it should be in the order of
+  // magnitude of two rows of tiles in the store. The code will
+  // work even with small limbo, but then there will be many
+  // store-then-reload operations and performance will suffer.
 
   tile_store_t ( shape_type _array_shape ,
                  shape_type _tile_shape ,
                  std::string _basename ,
-                 const std::size_t & _d = 0 ,
-                 const std::size_t & _limbo_threshold = 256 )
+                 const std::size_t & _limbo_size = 10000000 )
   : array_shape ( _array_shape ) ,
     tile_shape ( _tile_shape ) ,
     store_shape ( get_store_shape ( _array_shape , _tile_shape ) ) ,
     store ( get_store_shape ( _array_shape , _tile_shape ) ) ,
-    limbo_threshold ( _limbo_threshold ) ,
-    basename ( _basename ) ,
-    d ( _d )
+    basename ( _basename )
   {
-    // zimt::mcs_t < D > mcs ( store_shape ) ;
-    // for ( std::size_t i = 0 ; i < store_shape.size() ; i++ )
-    // {
-    //   auto inx = mcs() ;
-    //   auto & tether ( store [ inx ] ) ;
-    //   tether.nusers = 0 ;
-    //   tether.p_tile = nullptr ;
-    // }
+    std::size_t tile_size = tile_shape.prod() * sizeof ( value_t ) ;
+    limbo_threshold = 1 + _limbo_size / tile_size ;
+    std::cout << "limbo will hold " << limbo_threshold
+              << " tiles" << std::endl ;
   }
 
   // 'get' provides a pointer to the tile at 'tile_index'. If the
