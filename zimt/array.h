@@ -568,10 +568,8 @@ public:
   // the array is destructed. If the T which the array holds via it's
   // shared_ptr 'store' has an explicit destructor, we add code to
   // destruct all T in the store explicitly.
-  // Note that the array's memory is not initialized. it may contain
-  // anything.
 
-  array_t ( const shape_type & _shape )
+  array_t ( const shape_type & _shape , bool init = false )
   : base_t ( new T [ _shape.prod() ] ,
              make_strides ( _shape ) ,
              _shape )
@@ -582,15 +580,23 @@ public:
          std::is_destructible < T > :: value
       && ! std::is_trivially_destructible < T > :: value ;
 
-    // dispatch accordingly
+    // dispatch accordingly. this sets 'base'.
 
     reset ( std::integral_constant < bool , test >() ) ;
+
+    // if 'init' is true, initialize the memory with zero
+
+    if ( init )
+    {
+      std::memset ( origin , 0 , size() * sizeof ( T ) ) ;
+    }
+
   }
 
-  // array's window function also copies the shared_ptr, base. This makes
-  // sure that the returned subarray will hold on to the memory. The down
-  // side of this is of course that even a tiny subarry may hold on to
-  // a large chunk of memory.
+  // array's window function also copies the shared_ptr, base.
+  // This makes sure that the returned subarray will hold on to the
+  // memory. The down side of this is of course that even a tiny
+  // subarry may 'hold on to' a large chunk of memory.
 
   array_t window ( const index_type & start ,
                    const index_type & end )
@@ -598,8 +604,8 @@ public:
     return array_t ( base , base_t::window ( start , end ) ) ;
   }
 
-  // slicing of an array_t 'holds on' to the shared_ptr, base, just as
-  // windowing does.
+  // slicing of an array_t 'holds on' to the shared_ptr, base,
+  // just as windowing does.
 
   typedef typename std::conditional
                      < dimension == 1 ,
@@ -616,9 +622,10 @@ public:
 } ;
 
 // coordinate iterators. For now, we don't implement 'proper'
-// c++ standard operators, but just two stripped-down ones.
+// c++ standard iterators, but just two stripped-down ones.
 // zimt views are suitable for random access iteration, but it
-// would require extra coding effort to provide that.
+// would require extra coding effort to provide the usual
+// begin/end semantics - I may add this later.
 
 // stripped-down version of vigra::MultiCoordinateIterator which only
 // produces the nth nD index into an array of given shape. This class

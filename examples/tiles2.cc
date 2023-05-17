@@ -95,23 +95,28 @@ int main ( int argc , char * argv[] )
 
   typedef short dtype ;
 
-  zimt::tile_store_t < dtype , 2 , 2 >
-    tile_drain ( shape , { tile_width , tile_height } ,
-                 "crd_tiles" , limbo_size ) ;
+  {
+    zimt::tile_store_t < dtype , 2 , 2 >
+      tile_drain ( shape , { tile_width , tile_height } ,
+                  "crd_tiles" , limbo_size ) ;
 
-  zimt::bill_t bill ;
-  bill.segment_size = segment_size ;
-  bill.njobs = njobs ;
-  bill.axis = axis ;
+    zimt::bill_t bill ;
+    bill.segment_size = segment_size ;
+    bill.njobs = njobs ;
+    bill.axis = axis ;
 
-  // we feed discrete coordinates as input, don't modify them
-  // and store to the tile store.
+    // we feed discrete coordinates as input, don't modify them
+    // and store to the tile store.
 
-  zimt::get_crd < dtype , 2 , 2 > gc ( bill ) ;
-  zimt::pass_through < dtype , 2 > act ;
-  zimt::tile_storer < dtype , 2 , 2 > tp ( tile_drain , bill ) ;
+    zimt::get_crd < dtype , 2 , 2 > gc ( bill ) ;
+    zimt::pass_through < dtype , 2 > act ;
+    zimt::tile_storer < dtype , 2 , 2 > tp ( tile_drain , bill ) ;
 
-  // showtime!
+    // showtime!
 
-  zimt::process ( shape , gc , act , tp , bill ) ;
+    zimt::process ( shape , gc , act , tp , bill ) ;
+  }
+
+  std::cout << load_count << " load operations" << std::endl ;
+  std::cout << store_count << " store operations" << std::endl ;
 }

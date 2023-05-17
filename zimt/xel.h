@@ -288,14 +288,6 @@ operator C < value_type , nch > ()
   return result ;
 }
 
-value_type prod() const
-{
-  value_type s ( _store[0] ) ;
-  for ( std::size_t e = 1 ; e < nch ; e++ )
-    s *= _store[e] ;
-  return s ;
-}
-
 bool operator== ( const xel_t < value_type , nch > rhs ) const
 {
   for ( std::size_t i = 0 ; i < nch ; i++ )

@@ -353,8 +353,17 @@ CLAMP(at_most,<)
 
 value_type sum() const
 {
-  value_type s ( 0 ) ;
-  for ( std::size_t e = 0 ; e < N ; e++ )
+  value_type s ( _store[0] ) ;
+  for ( std::size_t e = 1 ; e < N ; e++ )
     s += (*this) [ e ] ;
   return s ;
 }
+
+value_type prod() const
+{
+  value_type s ( _store[0] ) ;
+  for ( std::size_t e = 1 ; e < N ; e++ )
+    s *= (*this) [ e ] ;
+  return s ;
+}
+
