@@ -37,7 +37,7 @@ On top of 'zimt's own', zimt currently supports three SIMD backends:
 
 My recommendation is to use [highway](https://github.com/google/highway/ "Performance-portable, length-agnostic SIMD with run-time dispatch") - it's the most recent development, supports a wide variety of hardware, and the integration into zimt is well-used because it's now the default back-end for [lux](https://bitbucket.org/kfj/pv/ "git repository of the lux image and panorama viewer"). highway is available from github, and it's also quite available via package managers, so it's a good idea to see if your package manager offers it. zimt currently relies on highway 1.0.4. To use this backend with zimt, #define USE_HWY
 
-[Vc](https://github.com/VcDevel/Vc/ "SIMD Vector Classes for C++") is good for intel/AMD processors up to AVX2, and it has dedicated AVX support, which highway does not provide - there, the next-bast thing is SSE4.2, which is quite similar but a bit slower. Apart from that, using Vc with zimt offers few advantages over using the highway backend. You may find Vc packages via your package manager - if you install from source, pick the 1.4 branch explicitly. To use this backend with zimt, #define USE_VC, and link with -lVc. Vc's 'spirit' is to provide a generic interface to SIMD programming, whereas highway tends to provide 'what is there', failing to compile code which requests features which can't be provided by the hardware, rather than falling back to using small loops to provide an implementation, which is Vc style. Using Vc, your code may compile just fine, but if it 'falls back to scalar' you may not notice the fact. highway will instead fail to compile the code. I prefer the generic approach and I've made great efforts to 'bend' my highway interface to behave more like Vc, but there's only so much I can do.
+[Vc](https://github.com/VcDevel/Vc/ "SIMD Vector Classes for C++") is good for intel/AMD processors up to AVX2, and it has dedicated AVX support, which highway does not provide - there, the next-best thing is SSE4.2, which is quite similar but a bit slower. Apart from that, using Vc with zimt offers few advantages over using the highway backend. You may find Vc packages via your package manager - if you install from source, pick the 1.4 branch explicitly. To use this backend with zimt, #define USE_VC, and link with -lVc. Vc's 'spirit' is to provide a generic interface to SIMD programming, whereas highway tends to provide 'what is there', failing to compile code which requests features which can't be provided by the hardware, rather than falling back to using small loops to provide an implementation, which is Vc style. Using Vc, your code may compile just fine, but if it 'falls back to scalar' you may not notice the fact. highway will instead fail to compile the code. I prefer the generic approach and I've made great efforts to 'bend' my highway interface to behave more like Vc, but there's only so much I can do.
 
 [std::simd](https://en.cppreference.com/w/cpp/experimental/simd/ "cppreference.com page: Data-parallel vector library") is part of the C++ standard and requires C++17. Some C++ libraries now provide an implementation of std::simd, but the implementation coming with g++ is - IMHO and of this writing - not very comprehensive, e.g. missing explict SIMD implementations of some math routines (like atan2). It is often a step up from no backend, though, and if you have a recent libstdc++ installed, it's definitely worth a try. To use this backend with zimt, #define USE_STDSIMD, and use -std=c++17.
 
@@ -53,7 +53,7 @@ Next in line is a unary functor type which I call a 'bimodal functor', because i
 
 What brings it all together is a body of code which performs a concurrent iteration over arbitrary nD arrays of fundamentals or 'xel' data, picking out chunks of data, vectorizing them to SIMD-capable types and invoking the bimodal functors on them, storing back the results to the same or another array. These functions go by the name of 'transform-like' functions, because they are similar to std::transform. There's a variety of these functions, allowing processing of the data or their coordinates, including - with a bit of extra coding effort on behalf of the functor - reductions. Note here that zimt is designed for 'reasonably large bodies of data' - e.g. pixels in an image. The multithreading will - by default - employ twice as many threads as the CPU has cores, which is clearly overkill for small arrays. For such arrays, consider using less 'jobs' by specifying a smaller number in the 'loading bill' (class zimt::bill_t, see bill.h), down to using just one which will effectively singlethread the operation with no threading overhead. Why use more jobs than there are physical cores? I found that this increases performance, because more jobs get more time slices. It's simply 'elbowing' in. Try and experiment with the number of jobs - my rule-of-thumb value may not be optimal everywhere, and finding a good heuristic to produce the optimal number of jobs for a given task is an open issue.
 
-Beyond the 'transform family' there is the lower-level 'engine' function template zimt::process which is covered in more detail in #`An Abstraction`.
+Beyond the 'transform family' there is the lower-level 'engine' function template zimt::process which is covered in more detail in `#An Abstraction`.
 
 ## How does 'multi-backend' work?
 
@@ -148,7 +148,7 @@ assigns value to all lanes for which 'mask' is true. Because this is such a succ
 What do I mean by 'building block'? zimt offers 'chaining' of functors. This combines two zimt::unary_functors so that the first one's output is taken as the second one's input. The combined functor is a new unary functor in it's own right. using 'f' from above:
 
     auto ff = f + f ;
-    f.eval ( pxv1 , pxv2 ) ;
+    ff.eval ( pxv1 , pxv2 ) ;
     std::cout << pxv1 << " -> " << pxv2 << std::endl ;
 
 Now you can see that all results are capped at 255, even the R component has exceeded the limit after having been doubled twice. Chaining functors is a bit like lambda calculus, and takes some getting used to. But it's possible to structure code so that it becomes a chain of unary functors, so chaining gets you a long way. Of course you're free to extend on the basic functional programming offered by zimt. Note, again, that the scalar form is nice-to-have, but the zimt::transform family of functions won't use it. I recommend to code it nevertheless - it's quite feasible to code so that an initial version of the pipeline code relies only on the scalar code (using 'broadcasting'). Once you have ascertained that the code does what it's supposed to do, you can tackle the simdized form, and you can doublecheck it's results against the scalar form, so you can be assured that the simdized form is equally correct. With complex pipeline code, this is more useful than you may think. Finally, if your code stands 'both ways', if you are pressed for binary volume, you can just comment out the scalar version.
@@ -165,7 +165,7 @@ Please note that this feature is currently 'evolving', so the act of moving from
 
 ## using several ISAs/backends in one binary
 
-If you look at the zimt code, you'll notice that there is no inherent facility to use several ISAs in one binary - instead, everything is made so that you can compile the code for one specific ISA. But there is a simple method to combine code for several ISAs in one binary which I have established in lux, and I'll outline it here.
+If you look at the zimt code, you'll notice that there is no inherent facility to use several ISAs in one binary - instead, everything is made so that you can compile the code for one specific ISA. But there is a simple method to combine code for several ISAs in one binary which I have established in lux, and I'll outline it here; the code I quote below is in the examples/multi_isa folder, where there's also a small shall script 'compile.sh' which compiles and runs the example.
 
 The trick is to 'dub' the zimt namespace to something ISA-specific with a simple preprocessor #define, and then compile separate TUs, each with it's own set of compiler switches. The calling code can then pick the ISA-specific version. So if we have ISA specific code like this (file isa-specific.cc):
 
@@ -182,9 +182,9 @@ The trick is to 'dub' the zimt namespace to something ISA-specific with a simple
       }
     } ;
 
-We might wrap it in the 'dubbing' code like this for an AVX version (foo_avx.cc):
+We might wrap it in the 'dubbing' code like this for an AVX2 version (foo_avx.cc):
 
-    #define zimt zimt_AVX
+    #define zimt zimt_AVX2
     #include "isa_specific.cc"
 
 And like this for an SSE version:
@@ -194,7 +194,7 @@ And like this for an SSE version:
 
 Calling code can pick the ISA-specific code like this (main.cc):
 
-    namespace zimt_AVX
+    namespace zimt_AVX2
     {
       extern void foo() ;
     } ;
@@ -207,23 +207,26 @@ Calling code can pick the ISA-specific code like this (main.cc):
     int main ( int argc , char * argv[] )
     {
       zimt_SSE::foo() ;
-      zimt_AVX::foo() ;
+      zimt_AVX2::foo() ;
     }
 
-Now we can put it all together:
+Now we can put it all together. Note that to get AVX2 code with highway, you need to add a few more compiler flags beyond the obvious -mavx2:
+
 
     $ g++ -msse2 -c -DUSE_HWY -o foo_sse.o foo_sse.cc
-    $ g++ -mavx2 -c -DUSE_HWY -o foo_avx.o foo_avx.cc
+    $ g++ -mavx2 -march=haswell -mpclmul -maes -c -DUSE_HWY -o foo_avx.o foo_avx2.cc
     $ g++ main.cc *.o
     $ ./a.out
-      base vector size: 4
-      (* 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 *)
       base vector size: 16
       (* 0, 1, 2, 3 | 4, 5, 6, 7 | 8, 9, 10, 11 | 12, 13, 14, 15 *)
+      base vector size: 32
+      (* 0, 1, 2, 3, 4, 5, 6, 7 | 8, 9, 10, 11, 12, 13, 14, 15 *)
 
-I've picked the highway backend for this example because hwy_simd_type has a vec_t member, and we can actually see a difference in the output, USE_VC works as well. With this technique, you can combine any number of TUs with different compiler directives into a single binary, and you can also combine code from different backends - e.g. if you intend to compare performance and want everything else to be the same.
+I've picked the highway backend for this example because hwy_simd_type has a vec_t member, and we can actually see a difference in the output, USE_VC works as well, but the output would be the same for both versions. With this technique, you can combine any number of TUs with different compiler directives into a single binary, and you can also combine code from different backends - e.g. if you intend to compare performance and want everything else to be the same.
 
-Having to declare each function in the dubbed namespace can become annoying and error-prone - a simple way out is to use a 'dispatcher' object: a class with pure virtual member functions which you instantiate in each ISA-specific TU. With a bit of header artistry, you can make this to work so that you only need to write the function declaration once, to see this in action have a look at how it's done in [lux](https://bitbucket.org/kfj/pv/ "git repository of the lux image and panorama viewer"), see interface.h and dispatch.h there. Then you use a set of dispatcher objects, one for each ISA-specific TU, and call the member functions through them, resulting in calls to the ISA-specific overloads via the virtual member functions.
+Having to declare each function in the dubbed namespace can become annoying and error-prone - a simple way out is to use a 'dispatcher' object: a class with pure virtual member functions which you instantiate in each ISA-specific TU. With a bit of header artistry, you can make this to work so that you only need to write the function declaration once, to see this in action have a look at how it's done in [lux](https://bitbucket.org/kfj/pv/ "git repository of the lux image and panorama viewer"), see interface.h and dispatch.h there. Then you use a set of dispatcher objects, one for each ISA-specific TU, and call the member functions through them via base class pointers or references, resulting in calls to the ISA-specific overloads via the virtual member functions.
+
+The 'namespace dubbing' works because zimt is header-only template metacode - there is no binary to link to, and if you compile a source to object code where 'zimt' is #defined as something else, the mangled names in the object will be distinct and the code won't 'come back together' somewhere 'further down the line' to some common external routine in a shared library because there is no such thing. highway actually offers automatic dispatch, but I prefer to dispatch at the highest level of code possible, which gives the compiler the best opportunities to optimize the code below this level. I think this is the way to get the fastest possible code, even if it requires some doing. In my code base, it's usually clear which functions will need ISA-specific vector code - in lux, for example, only two files are handled that way, and the remainder is simply scalar code which is not critical to performance.
 
 ## n-dimensional arrays, zimt::transform and relatives
 
