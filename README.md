@@ -169,7 +169,7 @@ If you look at the zimt code, you'll notice that there is no inherent facility t
 
 The trick is to 'dub' the zimt namespace to something ISA-specific with a simple preprocessor #define, and then compile separate TUs, each with it's own set of compiler switches. The calling code can then pick the ISA-specific version. So if we have ISA specific code like this (file isa-specific.cc):
 
-    #include "../../zimt.h"
+    #include <zimt/zimt.h>
 
     namespace zimt
     {

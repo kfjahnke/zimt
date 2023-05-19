@@ -40,107 +40,68 @@
 
     \brief feeding vigra data to zimt::transform
 
-    vigra::TinyVectors and zimt::xel_t are binary-compatible,
-    and vigra::MultiArrayView and zimt::view_t are close relatives,
-    sharing the same notion of nD arrays. This makes it quite easy
-    to feed vigra data to zimt::transform and relatives, allowing
-    legacy code to use zimt for fast multihtreaded SIMD processing
-    of vigra data rather than relying on vigra::transformMultiArray.
-    In this example, I demonstrate use of simple factory functions to
-    create zimt views of vigra arrays and show how they can be
-    used to feed the data to a zimt transform with a given zimt
-    functor.
+    this example program demonstrates how we can employ vigraimpex
+    to load image files into zimt arrays and to store zimt arrays to
+    image files using vigraimpex.
 
 */
 
 #include <zimt/zimt_vigra.h>
 #include <zimt/zimt.h>
+#include <vigra/imageinfo.hxx>
+#include <vigra/impex.hxx>
 
-// Type for typical xel datum consisting of three float values
-// and binary-compatible vigra::TinyVector
+// type for colour pixels: xel_t of three unsigned char
 
-typedef zimt::xel_t < float , 3 > f3_t ;
-typedef vigra::TinyVector < float , 3 > vf3_t ;
+typedef zimt::xel_t < unsigned char , 3 > px_t ;
 
-typedef typename zimt::vector_traits < float > :: type fv_t ;
-typedef zimt::xel_t < fv_t , 3 > fv3_t ;
-typedef vigra::TinyVector < fv_t , 3 > vg_vf3_t ;
+// simple zimt pixel functor, rotating the colour channels
 
-// simple zimt functor, taking some type T as input and
-// producing f3_t as output.
-
-template < typename T >
-struct amp13_t
-: public zimt::unary_functor < T , f3_t , 16 >
+struct rotate_rgb_t
+: public zimt::unary_functor < px_t >
 {
-  const float factor ;
-
-  amp13_t ( const float & _factor )
-  : factor ( _factor )
-  { }
-
   template < typename I , typename O >
   void eval ( const I & in , O & out ) const
   {
-    out = in * factor ;
-  }
-} ;
-
-template < typename T >
-struct amp11_t
-: public zimt::unary_functor < T , T , 16 >
-{
-  const float factor ;
-
-  amp11_t ( const float & _factor )
-  : factor ( _factor )
-  { }
-
-  template < typename I , typename O >
-  void eval ( const I & in , O & out ) const
-  {
-    out = in * factor ;
+    out [ 0 ] = in [ 1 ] ;
+    out [ 1 ] = in [ 2 ] ;
+    out [ 2 ] = in [ 0 ] ;
   }
 } ;
 
 int main ( int argc , char * argv[] )
 {
-  // extent of the array we'll process (deliberately odd shape)
+  if ( argc < 2 )
+  {
+    std::cerr << "pass a coulour image on the command line"
+              << std::endl ;
+    exit ( 1 ) ;
+  }
 
-  const int w = 1921 , h = 1081 ;
+  // find the image's shape with an imageInfo
 
-  // we create a vigra::MultiArray holding the data and
-  // initialize it
+  vigra::ImageImportInfo imageInfo ( argv[1] ) ;
 
-  vigra::MultiArray < 2 , vf3_t > a ( vigra::Shape2 ( w , h ) ) ;
-  a = vf3_t { 1.0f , 2.0f , 3.0f } ;
+  // set up a zimt::array_t with this shape
 
-  // create a zimt functor which prouces twice it's input
+  zimt::array_t < 2 , px_t >
+    a ( zimt::to_zimt ( imageInfo.shape() ) ) ;
 
-  amp13_t < f3_t > twice ( 2.0f ) ;
+  // import the image
 
-  // now we apply the functor to the array, using to_zimt to
-  // present the data.
+  vigra::importImage ( imageInfo , zimt::to_vigra ( a ) ) ;
 
-  zimt::apply < 2 > ( twice , zimt::to_zimt ( a ) ) ;
+  // run the channel rotating functor over the array
 
-  // let's see a sample of the result
+  zimt::apply ( rotate_rgb_t() , a ) ;
 
-  std::cout << a [ { 100 , 100 } ] << std::endl ;
+  // create an exportInfo
 
-  vigra::MultiArray < 2 , float > b ( vigra::Shape2 ( w , h ) ) ;
-  b = 4.0f ;
+  vigra::ImageExportInfo eximageInfo ( "rotated.jpg" ) ;
 
-  // create a zimt functor which prouces twice it's input
+  // and export the array
 
-  amp11_t < float > quadruple ( 4.0f ) ;
+  vigra::exportImage ( zimt::to_vigra ( a ) , eximageInfo ) ;
 
-  // now we apply the functor to the array, using to_zimt to
-  // present the data.
-
-  zimt::apply < 2 > ( quadruple , zimt::to_zimt ( b ) ) ;
-
-  // let's see a sample of the result
-
-  std::cout << b [ { 100 , 100 } ] << std::endl ;
+  std::cout << "result was stored to 'rotated.jpg'" << std::endl ;
 }
