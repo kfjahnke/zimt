@@ -336,7 +336,7 @@ OP_FUNC(operator~,~,INTEGRAL_ONLY)
     XEL result ( threshold ) ; \
     for ( std::size_t i = 0 ; i < N ; i++ ) \
     { \
-      if ( (*this) [ i ] REL threshold ) \
+      if ( (*this) [ i ] REL threshold [ i ] ) \
         result [ i ] = (*this) [ i ] ; \
     } \
     return result ; \

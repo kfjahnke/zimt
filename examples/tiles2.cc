@@ -39,6 +39,12 @@
 // set up and fill a tile store holding self-referential discrete
 // coordinates. The coordinates are pairs of short, and the resulting
 // tile files can be examined easily with the likes of od -x or od -d
+// This program also allows playing with various parameters, to see
+// how they affect performance. Note that if you invoke this program
+// for the first time and there are no tile files yet, it may
+// terminate very quickly, but the write access to mass storge may
+// still go on for a good while (depending on the mass storage) because
+// this is often buffered by the OS.
 
 #include <zimt/zimt.h>
 #include <zimt/tiles.h>
@@ -55,7 +61,6 @@ int main ( int argc , char * argv[] )
   long segment_size = 512 ;
   long njobs = 8 ;
   long axis = 0 ;
-  long limbo_size = 10000000 ;
 
   // I use this program for testing, so I like to have a way to
   // pass in arguments.
@@ -81,9 +86,6 @@ int main ( int argc , char * argv[] )
   if ( argc > 7 )
     axis = std::atol ( argv[7] ) ;
 
-  if ( argc > 8 )
-    limbo_size = std::atol ( argv[8] ) ;
-
   // notional shape for zimt::process. By default we use a moderate
   // size, but this shape could become very large in 'real' code.
   // Try and play with this value: like, what happens with 'odd'
@@ -98,7 +100,7 @@ int main ( int argc , char * argv[] )
   {
     zimt::tile_store_t < dtype , 2 , 2 >
       tile_drain ( shape , { tile_width , tile_height } ,
-                  "crd_tiles" , limbo_size ) ;
+                   "crd_tiles" ) ;
 
     zimt::bill_t bill ;
     bill.segment_size = segment_size ;

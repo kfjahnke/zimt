@@ -36,7 +36,9 @@
 /*                                                                      */
 /************************************************************************/
 
-// simple demo of the use of tiled storage with zimt.
+// more demo code for the use of tiled storage with zimt.
+// A bit of a mixed collection. should be run after running
+// tiles2 without arguments.
 
 #include <zimt/zimt.h>
 #include <zimt/tiles.h>
@@ -182,7 +184,6 @@ void third()
   // tiles store and write 'modified' data back.
 
   zimt::bill_t bill ;
-  // bill.njobs = 2 ;
   bill.segment_size = 95 ;
 
   // we'll just access a small notional shape, and of this shape
@@ -194,16 +195,11 @@ void third()
   bill.upper_limit = { 299 , 203 } ;
 
   // we have to pass the shape, the tile size and the basename
-  // to construct the tile store
+  // to construct the tile store. For fun, we use a modified
+  // tile store which does not actually write to disk.
 
   mod_tile_store_t < short , 2 , 2 >
     tile_source ( shape , { 95 , 113 } , "extract" ) ;
-
-  // to test a derived tile_store class with overloads of
-  // tile_store_t's virtual member functions
-
-  // mod_tile_store_t < short , 2 , 2 >
-  //   tile_source ( shape , { 95 , 113 } , "extract" ) ;
 
   // this is the 'ordinary' array we'll use as target
 

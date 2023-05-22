@@ -193,7 +193,8 @@ struct tile_t
   // a specific tile, it becomes manifest.
 
   tile_t ( const shape_type & _shape )
-  : shape ( _shape ) { }
+  : shape ( _shape )
+  { }
 
   // 'provide' obtains a pointer into the tile at location 'crd'
   // and writes it to 'p_memory'. 'tail' receives the number of
@@ -201,7 +202,11 @@ struct tile_t
   // tile-based get_t/put_t objects to obtain the appropriate
   // data pointer and number of values which the current tile
   // can still provide until the 'right edge' of the tile is
-  // reached.
+  // reached. Every call to 'provid' also marks the entry into
+  // a new 'transit', and when you look at the invocations of
+  // 'provide', you can see that each of them is followed by
+  // code counting up the 'done' values which record the number
+  // of transits the code performs.
 
   void provide ( const index_type & crd , // in-tile coordinate
                  const std::size_t & d ,  // hot axis
@@ -251,21 +256,21 @@ struct tether_t
   std::mutex tile_mutex ;
 #endif
 
-  // this flag indicates whether the current process has written
-  // thie tile to disk. At times, tiles which were already stored
-  // only have a partial result and need to be reloaded to add
-  // (more of the) remainder. If the 'modified' flag is set, this
-  // will be done unconditionally. If it is not set, the flag
-  // read_from_disk determines whether tiles are loaded from
-  // disk initially or not.
+  // at the beginning of a 'run', this value is set to the
+  // number of 'fragments'' the tile will 'provide' during the
+  // run. tile_loader and tile_storer objects cumulate the number
+  // of fragments they provide in their own buffers and only
+  // interact with the tile's (so, this) datum when they move
+  // on to a new row of tiles, minimizing mutex-protected
+  // access. When a new row is encountered, the cumulated
+  // values are subtracted from this here datum. The result
+  // of the subtraction is monitored, and when it sinks to
+  // zero, this is the signal that the tile has played out
+  // it's role in the zimt::process invocation and can safely
+  // be 'dropped', because it won't be accessed any more
+  // during the run.
 
-  bool modified = false ;
-
-  // nusers records the number of threads which hold and may
-  // access a copy of the tile pointer, and which may access
-  // the tile's array of data concurrently.
-
-  std::size_t nusers = 0 ;
+  std::size_t due = 0 ;
 
   // this is the tile pointer itself
 
@@ -299,6 +304,7 @@ struct tile_store_t
   typedef xel_t < T , N > value_t ;
   typedef xel_t < std::size_t , D > shape_type ;
   typedef xel_t < long , D > index_type ;
+  typedef tether_t < tile_type > tether_type ;
 
   const shape_type array_shape ; // 'notional' shape
   const shape_type tile_shape ;  // shape of individual tiles
@@ -314,17 +320,8 @@ struct tile_store_t
 
   bool read_from_disk = false ;
 
-  // this flag is used to assert that the d'tor can proceed
-  // without looking for open tiles and closing them: if
-  // processing closes all tiles after use, there's no need
-  // to go through the entire set again. The default is to
-  // check all tiles, set it to false to avoid the check.
-
-  bool cleanup = true ;
-
   // array holding tether_type, controlling access to the tiles
 
-  typedef tether_t < tile_type > tether_type ;
   array_t < D , tether_type > store ;
 
   // base name of the files the store will access
@@ -332,10 +329,6 @@ struct tile_store_t
   std::string basename ;
 
 private:
-
-  std::deque < index_type > limbo ;
-  std::mutex limbo_mutex ;
-  std::size_t limbo_threshold ;
 
   // helper function to provide store_shape in the c'tor
 
@@ -372,7 +365,110 @@ private:
       delete tether.p_tile->p_data ;
       delete tether.p_tile ;
       tether.p_tile = nullptr ;
-      tether.nusers = 0 ;
+      // tether.nusers = 0 ;
+    }
+  }
+
+  // calculate_due set the 'due' member in the tether_t objects
+  // in the store. This is done separately for read and write
+  // access - if the tile store is opened for read/write
+  // operation, this function will be called twice, once with
+  // 'read_not_write' true and once false. this is due to the
+  // offsets in the bill, which can be different for the read
+  // and write part. Apart from that, the code is the same.
+  // Using two distinct calls allows us all trhee use cases:
+  // reading only, writing only, and read/write.
+
+  void calculate_due ( const zimt::bill_t & bill ,
+                       bool read_not_write )
+  {
+    // what is the range of coordinates we'll see in this run?
+
+    index_type offset ;
+
+    // decode the limits and offsets in the bill
+
+    if ( read_not_write )
+      offset = zimt::decode_bill_vector < D > ( bill.get_offset ) ;
+    else
+      offset = zimt::decode_bill_vector < D > ( bill.put_offset ) ;
+
+    auto low = zimt::decode_bill_vector < D > ( bill.lower_limit ) ;
+
+    auto high = array_shape ;
+
+    if ( bill.upper_limit.size() )
+      high = zimt::decode_bill_vector < D > ( bill.upper_limit ) ;
+
+    // add the offset to the limits, to obtain the range of
+    // coordinates in the reference frame of the tile user, so
+    // the coordinates the tile_loader and tile_storer objects
+    // receive in their 'init' calls.
+
+    low += offset ;
+    high += offset ;
+
+    auto & sgsz ( bill.segment_size ) ; // shorthand
+
+    // now we'll iterate over all tiles and find out their relation
+    // to segment boundaries
+
+    zimt::mcs_t < D > mcs ( store_shape ) ;
+    for ( std::size_t i = 0 ; i < store_shape.prod() ; i++ )
+    {
+      // this is the tile we're looking at:
+
+      auto tile_index = mcs() ;
+      auto & tether ( store [ tile_index ] ) ; // shorthand
+
+      // find the range of coordinates which this tile covers
+
+      auto tile_lower = tile_index * tile_shape ;
+      auto tile_upper = tile_lower + tile_shape ;
+
+      // now we intersect this range with the range of coordinates
+      // which the entire run covers
+
+      auto intersect_lower = tile_lower.at_least ( low ) ;
+      auto intersect_upper = tile_upper.at_most ( high ) ;
+
+      // test whether there actually is an intersection
+
+      bool filled = true ;
+
+      for ( std::size_t d = 0 ; d < D && filled == true ; d++ )
+      {
+        if ( intersect_lower [ d ] >= intersect_upper [ d ] )
+          filled = false ;
+      }
+
+      if ( filled )
+      {
+        // to calculate the number of intersections with segments,
+        // - the 'transit count' - we need to re-base the range to
+        // the beginning of the very first *segment*
+
+        intersect_lower -= low ;
+        intersect_upper -= low ;
+
+        auto head = intersect_lower [ bill.axis ] / sgsz ;
+        head *= sgsz ;
+
+        auto nfragments
+          = ( intersect_upper [ bill.axis ] - head ) / sgsz ;
+
+        if ( ( intersect_upper [ bill.axis ] - head ) % sgsz )
+          nfragments++ ;
+
+        auto frag_shape = ( intersect_upper - intersect_lower ) ;
+        frag_shape [ bill.axis ] = nfragments ;
+
+        // finally we *add* this value to what may already be in
+        // the due member - read/write access needs the sum of
+        // both the values for read and write access.
+
+        tether.due += frag_shape.prod() ;
+      }
     }
   }
 
@@ -456,11 +552,7 @@ protected:
 
   // Store a tile's storage array to a file. The function assumes
   // that the tile holds a single compact block of data, as it is
-  // created by the allocation routine. Note that store-then-reload
-  // situations can happen, so if your override writes the data,
-  // make sure they are flushed to mass storage so that a subsequent
-  // read can reload them. Here, we close the file, which flushes
-  // it to mass storage.
+  // created by the allocation routine.
 
   virtual bool store_tile ( tile_type * p_tile ,
                             const index_type & tile_index ) const
@@ -487,37 +579,96 @@ protected:
 
 public:
 
+  // open() is called when the tile store is actually put to
+  // use. The call is done by the tile_loader/tile_storer objects.
+  // The call serves to set the 'due' member in the tether objects
+  // in the store - these values will be counted down as processing
+  // proceeds, finally reaching zero for each tile, which is when
+  // the tile's contribution to the 'run' ends and it's stored to
+  // mass storage. After zimt::process terminates, the 'due'
+  // values should all be zero again - currently, we test this
+  // in the 'close' function, but this is only a precaution while
+  // development isn't finished and can go later.
+  // There are three scenarios for the call to 'open': with only
+  // one of the flags set, resulting in preparation of the store
+  // for either read or write access, and with both flags set,
+  // when the store is used in read/write mode. The latter will
+  // result in two calls to calculate_due.
+
+  void open ( const zimt::bill_t & bill ,
+              bool _read_from_disk ,
+              bool _write_to_disk )
+  {
+    if ( _read_from_disk )
+    {
+      calculate_due ( bill , true ) ;
+      read_from_disk = true ;
+    }
+
+    if ( _write_to_disk )
+    {
+      calculate_due ( bill , false ) ;
+      write_to_disk = true ;
+    }
+  }
+
+  // close the tile store altogether - i.e. after it was processed.
+  // The 'read_from_disk' and 'write_to_disk' flags are cleared,
+  // in case this object is to be re-used. User code should call
+  // close() when re-using the tile store, or use a new tile_store
+  // object (which is more RAII style) - the tile_store object
+  // in itself is not a very valuable asset.
+
+  void close()
+  {
+    read_from_disk = false ;
+    write_to_disk = false ;
+
+    // test: have all data duly been processed by now?
+    // can go later. We rely on the zimt::process run to
+    // result in zero due transits, so the tile store can
+    // bo opened again without having to reset the due
+    // values in the tether.
+
+    zimt::mcs_t < D > mcs ( store_shape ) ;
+    for ( std::size_t i = 0 ; i < store_shape.prod() ; i++ )
+    {
+      // this is the tile we're looking at:
+
+      auto tile_index = mcs() ;
+      auto & tether ( store [ tile_index ] ) ; // shorthand
+
+      if ( tether.due != 0 )
+        std::cerr << "for tile " << tile_index
+                  << " due is nonzero: " << tether.due << std::endl ;
+
+      assert ( tether.due == 0 ) ;
+    }
+  }
+
   // tile_store_t's c'tor receives the 'notional' shape of the
   // entire workload, the intended - or given - shape of an
   // individual tile, and the base name of files associated
-  // with tiles. The last parameter gives the size of the
-  // 'limbo', in bytes. This is the maximal amount of storage
-  // tiles 'in limbo' will occupy, and when there are too many
-  // tiles in limbo, so that this limit is exceeded, they are
-  // flushed to disk. I haven't yet settled on a good heuristic
-  // for this value; I assume it should be in the order of
-  // magnitude of two rows of tiles in the store. The code will
-  // work even with small limbo, but then there will be many
-  // store-then-reload operations and performance will suffer.
+  // with tiles.
 
   tile_store_t ( shape_type _array_shape ,
                  shape_type _tile_shape ,
-                 std::string _basename ,
-                 const std::size_t & _limbo_size = 10000000 )
+                 std::string _basename )
   : array_shape ( _array_shape ) ,
     tile_shape ( _tile_shape ) ,
     store_shape ( get_store_shape ( _array_shape , _tile_shape ) ) ,
     store ( get_store_shape ( _array_shape , _tile_shape ) ) ,
     basename ( _basename )
+  { }
+
+  // this d'tor is not really necessary, but while the design
+  // solidifies, we call close() to make sure all due transits
+  // have indeed happened, so we'll be alerted if the logic
+  // isn't right.
+
+  ~tile_store_t()
   {
-    // the _limbo_size parameter gives the size in bytes, but
-    // internally we use the corresponding number of tiles:
-
-    std::size_t tile_size = tile_shape.prod() * sizeof ( value_t ) ;
-    limbo_threshold = 1 + _limbo_size / tile_size ;
-
-    // std::cout << "limbo will hold " << limbo_threshold
-    //           << " tiles" << std::endl ;
+    close() ;
   }
 
   // 'get' provides a pointer to the tile at 'tile_index'. If the
@@ -530,7 +681,7 @@ public:
   // threads are blocked until the access is over. Note that access
   // to the tile's data array is allowed concurrently - it's assumed
   // that all threads will only access 'their' share and that the
-  // shares don't overlap. This is - in the context of zimt::process -
+  // shares don't overlap. In the context of zimt::process this is
   // guaranteed, because each 'joblet index' stands for a distinct,
   // unique part of the total workload.
   // Note also that - since this member function is called by the
@@ -542,34 +693,8 @@ public:
   // tile is ready. With this granular approach and a suitable
   // number of threads, the CPU cores can still be kept busy
   // even if some threads are busy loading data from files.
-
-  // threads can claim a tile right when they run 'init',
-  // because then the set of tiles they'll access is already known.
-  // The 'claim' only increases the user count, so that the tile
-  // won't be dropped, but the time-consuming read-from-disk
-  // operation is deferred until the access to the tile actually
-  // requires it. Disadvantage: an additional mutex-protected
-  // access. To activate this feature, #define PREEMPTIVE_CLAIM,
-  // I make this default behaviour for now:
-
-#define PREEMPTIVE_CLAIM
-
-#ifdef PREEMPTIVE_CLAIM
-
-  void claim ( const index_type & tile_index )
-  {
-    auto & tether ( store [ tile_index ] ) ; // shorthand
-
-#ifndef ZIMT_SINGLETHREAD
-
-      std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
-
-#endif // ZIMT_SINGLETHREAD
-
-    ++ tether.nusers ;
-  }
-
-#endif // PREEMPTIVE_CLAIM
+  // The design goes for the process to self-organize, rather
+  // than controlling every aspect rigidly.
 
   tile_type * get ( const index_type & tile_index )
   {
@@ -592,88 +717,27 @@ public:
     {
       // the tile isn't yet manifest. create the tile_t object,
       // allocate it's memory and, optionally, read data from
-      // a file. If 'read_from_disk' is false, some tiles may
-      // still be read from disk, if they were previously written
-      // to disk and therefore may only contain a partial result.
-      // Such tiles are marked 'modified' in their tether. Such
-      // write-then-reload situations are annoying, but they
-      // can only be made to disapper by running the code with
-      // a single thread or by using a large 'limbo'. How often
-      // they occur depends on the notional shape, the tile shape,
-      // the number of threads, the scheduling... it's hard to
-      // tell beforehand. It may be wise to have an external
-      // monitoring process which can modify the limbo size of
-      // several processes, so that when many processes compete
-      // for resources (i.e. when co-processing many tile stores)
-      // limbo sizes are lowered to avoid unduely high RAM need
-      // at the cost of suffering more write-then-reload cycles,
-      // and if there is less resource demand, rising the limbo
-      // size, which will make the individual processes use more
-      // RAM but avoid more write-then-reload cycles.
-      // write-then-reload cycles may be mitigated by I/O caching.
-      // Other strategies to deal with the problem would be to
-      // process the store tile by tile (assigning entire tiles
-      // to each participating thread), which reduces granularity
-      // but may come out on top, especially with large tile stores.
-      // Workload subdivision is also an option, running the partial
-      // workloads with a single thread. This works well when the
-      // divisions are along tile boundaries, if not, the processes
-      // may clash on tiles they share (TODO test, I'm not sure
-      // whether this is a problem or not). If it can be avoided that
-      // threads are halted by the scheduler, this should also make
-      // the problem go away - i.e. by running one thread less than
-      // the number of CPU cores, which reduces the likelyhood for
-      // worker threads being scheduled out. Reducing the number
-      // of threads may be less of an issue than it seems: unless
-      // the act functor is very CPU-intensive, the process is
-      // I/O-bound anyway.
+      // a file.
 
       tether.p_tile = new tile_type ( tile_shape ) ;
       tether.p_tile->allocate() ;
 
-      if ( read_from_disk || tether.modified )
+      if ( read_from_disk )
         load_tile ( tether.p_tile , tile_index ) ;
     }
-
-#ifndef PREEMPTIVE_CLAIM
-
-    // if we don't use preemptive claiming (to save one mutex-protected
-    // access to the tile's tether) we need to increase the user count
-    // here.
-
-    ++tether.nusers ;
-
-#endif // PREEMPTIVE_CLAIM
 
     // the tile is (now) available. Pass back the pointer.
 
     return tether.p_tile ;
   }
 
-  // 'releasing' a tile counts down the tile's user count and
-  // pushes the tile to the 'limbo' queue if the user count
-  // reaches zero. It is not called by tile_loader/tile_storer
-  // immediately when processing leaves the scope of a tile, but
-  // only when processing enters a new set of tiles; the release
-  // comes typically after all processing affecting the tile
-  // is over: as zimt::process moves through the notional shape
-  // processing lines collinear to the 'hot axis', subsequent
-  // lines in the tile are accessed, until processing leaves the
-  // tile's scope. Only once all processing threads have left
-  // the current row of tiles (as recorded in their 'working set')
-  // user count will drop to zero, triggering the pushing of the
-  // tile to limbo, from where it will eventually be dropped
-  // if the limbo queue's size exceeds the threshold.
-  // With this logic, the need for 'overseeing' the process is
-  // minimal - it's, in a way, self-organizing, just as the
-  // joblet-based code in zimt::process, which drives processing.
-  // But if the OS's scheduler halts a thread in mid-operation
-  // before it can 'claim' a specific tile, and other threads all
-  // 'pass through' this tile, the halted thread may need to
-  // reload the tile when it had already passed beyond the limbo
-  // and was written to disk.
+  // 'releasing' a tile counts down the tile's 'due' count
+  // and drops the tile when the 'due' count reaches zero,
+  // indicating that the tile has contributed all it's due
+  // to the current run.
 
-  void release ( const index_type & tile_index )
+  void release ( const index_type & tile_index ,
+                 const long & done )
   {
     {
       auto & tether ( store [ tile_index ] ) ; // shorthand
@@ -684,125 +748,13 @@ public:
 
 #endif // ZIMT_SINGLETHREAD
 
-      // we are strict here - at least as long as the design
-      // hasn't 'solidified' entirely: release should only be
-      // called 'if there is something to release', and if
-      // there are no more users, the tile should have been
-      // dropped earlier.
+      tether.due -= done ;
 
-      assert ( tether.nusers > 0 ) ;
-
-      // count down the user count and 'drop' the tile if it
-      // reaches zero
-
-      -- tether.nusers ;
-
-      // initially I coded to drop the tile now, but then there
-      // are a lot of store-then-reload situations. So now I defer
-      // dropping the tile to 'later' when it's more likely that
-      // another thread won't need to reload a tile we've already
-      // stored.
-
-      if ( tether.nusers == 0 )
-      {
-        // push the tile to the limbo queue. Note how the entry
-        // in the tile's tether remains untouched by this - the
-        // entry simply persists, albeit with zero user count.
-        // But if the tile is accessed again, user count will
-        // rise above zero again. When entries are removed from
-        // the limbo queue (when it is too full, or at the end
-        // when the tile_store is destructed) and found to have
-        // zero users *then*, they are finally dropped. This
-        // leaves room for store-then-load-again situations,
-        // which can be handled with very little ado: the user
-        // count simply rises again, and if the tile is still
-        // in use when it's pushed out of the queue, it's
-        // simply not dropped, assuming that it will 'come back'
-        // again when the current use ends and user count drops
-        // to zero again, triggering the tile to be pushed to
-        // limbo again *then*.
-
-        std::lock_guard < std::mutex > lk ( limbo_mutex ) ;
-        limbo.push_back ( tile_index ) ;
-      }
-    }
-
-    // if we find now that the limbo queue is too full, we
-    // consume so many tile indices from the tip of the queue
-    // that the size is below threshold again. Tiles which
-    // have no users when popped from the queue are finally
-    // dropped, and if they should be needed again they have
-    // to be re-loaded from disk - but this should be rare.
-
-    while ( limbo.size() > limbo_threshold )
-    {
-      index_type tip ;
-      {
-        std::lock_guard < std::mutex > lk ( limbo_mutex ) ;
-        tip = limbo.front() ;
-        limbo.pop_front() ;
-      }
-
-      auto & tether ( store [ tip ] ) ; // shorthand
-
-#ifndef ZIMT_SINGLETHREAD
-
-      std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
-
-#endif // ZIMT_SINGLETHREAD
-
-      // if the tile index from limbo refers to a zero-user
-      // tile, we drop that tile. If not, the tile has been
-      // taken into use again, in which case it will 'come back'
-      // some time later when the last current user releases it,
-      // so we needn't actually do anything with it here.
-
-      if ( tether.nusers == 0 )
-      {
-        // we set a flag to indicate that this tile was written
-        // to disk by the current process. Only such tiles should
-        // be read again from disk (they contain a partial result)
-        // whereas - if the process really generates data rather
-        // than modify them - they should not be read even if they
-        // are available initially, because that would be futile:
-        // the data are simply overwritten.
-
-        drop ( tip ) ;
-        tether.modified = true ;
-      }
+      if ( tether.due == 0 )
+        drop ( tile_index ) ;
     }
   }
 
-  // close the tile store altogether - i.e. after it was processed.
-  // if write_to_disk is set, all tiles marked are written to
-  // their associated files. Since this is not multithreaded code,
-  // we can proceed without the lock_guard. All tiles still in
-  // limbo are dropped now, and the 'read_from_disk' and
-  // 'write_to_disk' flags are cleared, in case this object is
-  // to be reused.
-
-  void close()
-  {
-    // zimt::process should not have left any 'active' tiles
-    // 'tethered', only the 'limbo' may still hold active tiles.
-    // Note that if you use tile_store_t outside the context of
-    // zimt::process, this may not be the case and you may need
-    // to go through the entire store and drop active frames.
-
-    for ( index_type inx : limbo )
-    {
-      drop ( inx ) ;
-    }
-    read_from_disk = false ;
-    write_to_disk = false ;
-  }
-
-  // calling close drops all tiles still in limbo
-
-  ~tile_store_t()
-  {
-    close() ;
-  }
 } ;
 
 // classes tile_loader and tile_storer share the code to interface
@@ -818,7 +770,23 @@ public:
 // we'd have to work with timestamps, limits on the number of
 // open tiles, etc. - but for the dedicated purpose of working
 // with zimt::process, this class should perform well with little
-// overhead.
+// overhead. To figure out when a tile which was loaded previously
+// is no longer needed, the tile_store object calculates the amount
+// of 'due transits' which will occur during the zimt::process
+// run, and these are 'ticked off' as they occur. Once all expected
+// 'transits' have occured, the tile can be sent (back) to mass
+// storage. The 'ticking off' is done in two stages: first, the
+// 'transits' which a thread performs while it's busy in a given
+// row of tiles is collected by this thread (in the 'done' vector),
+// then, when the next row of tiles is entered, the cumulated 'done'
+// values are subtracted from the precalculated 'due' counts in the
+// tether (this does require mutex protection) - and here the drop
+// of 'due' to zero is detected, resulting in 'dropping' the tile in
+// question to mass storage. The two-stage process ensures two things:
+// That the count-down only happens when processing has already left
+// the row of tiles, and that mutex-protected access to the tether
+// is minimized to once per row of tiles rather than once per row
+// of data.
 
 template < typename T ,
            std::size_t N ,
@@ -841,6 +809,7 @@ struct tile_user_t
   crd_t in_tile_crd ;
 
   std::vector < tile_type * > working_set ;
+  std::vector < long > done ;
   crd_t set_marker ;
 
 private:
@@ -865,8 +834,18 @@ private:
       if ( working_set [ i ] != nullptr )
       {
         index [ d ] = i ;
-        tile_store.release ( index ) ;
+
+        // 'release' receives the tile index plus the cumulated
+        // 'done' count, which it subtracts from the 'due' value
+        // to see if the tile has maybe 'done it's due' already
+        // and can be 'dropped' to mass storage.
+
+        tile_store.release ( index , done [ i ] ) ;
+
+        // clear these entries for the next row of tiles:
+
         working_set [ i ] = nullptr ;
+        done [ i ] = 0 ;
       }
     }
   }
@@ -880,7 +859,7 @@ public:
   // along a linear subset of tiles along the 'hot' axis, and
   // once the tile_user accesses the next linear subset,
   // there will not be any more accesses to the previous linear
-  // subset. So the tile loader accumulates tile pointers in
+  // subset. So the tile user accumulates tile pointers in
   // it's 'working set' until a new subset is touched, and then
   // the tiles in the working set are released. With this
   // intermediate layer, the need for mutex-protected access
@@ -896,11 +875,6 @@ public:
   // tile is locked for other threads which will block if they
   // attempt to gain access, but they will gain access as soon
   // as they can acquire the lock on the tile's mutex.
-  // The second place where mutex-protected access happens is
-  // when user count sinks to zero and the tile is released.
-  // Then, the tile 'spends some time in limbo', and when it
-  // is released from limbo and still has zero users, it's
-  // finally 'dropped' to disk.
 
   tile_type * get_tile ( const zimt::xel_t < long , D > & index )
   {
@@ -937,7 +911,8 @@ public:
   // executed before the working set is populated (this copy
   // happens in zimt::process when per-thread copies of get_t
   // and put_t object are made) we can get away without coding
-  // a copy c'tor for tile_user_t.
+  // a copy c'tor for tile_user_t. zero-initialization also
+  // takes care of correct initial values for 'done'.
 
   tile_user_t ( tile_store_type & _tile_store ,
                 const bill_t & bill )
@@ -948,7 +923,8 @@ public:
       ( _tile_store.tile_shape ) [ bill.axis ] ) ,
     set_marker ( -1 ) ,
     segment_size ( bill.segment_size ) ,
-    working_set ( _tile_store.store_shape [ bill.axis ] )
+    working_set ( _tile_store.store_shape [ bill.axis ] ) ,
+    done ( _tile_store.store_shape [ bill.axis ] )
   { }
 
   tile_user_t ( const tile_user_t & other ) = default ;
@@ -971,54 +947,14 @@ public:
     }
   }
 
-#ifdef PREEMPTIVE_CLAIM
-
-  // starting at notional coordinate start_crd, claim all tiles
-  // which will be needed until the end of the segment.
-  // This implements the 'preemptive claiming' mechanism, which
-  // increases the user count of all tiles which will be used
-  // during the processing of the current segment by one
-  // 'preemptively': this would happen later anyway when these
-  // tiles are actually accessed, but in the meantime this
-  // thread my be scheduled out, other threads may collectively
-  // 'pass through' the row of tiles, then detect a zero user
-  // count and send the tiles to limbo. When this thread is
-  // scheduled to run again, it would have to reactivate the
-  // tile from limbo, or, much worse, reload it from disk. If
-  // the user count was preemptively raised right at 'init' time,
-  // the tile will not reach zero user count and stay available
-  // in the tiles store.
-
-  void claim ( const xel_t < long , D > & start_crd ,
-               const long segment_size ,
-               std::size_t d )
-  {
-    std::size_t first_pos = start_crd [ d ] ;
-    std::size_t last_pos = ( first_pos + segment_size - 1 ) ;
-
-    auto last_crd = start_crd ;
-    last_crd [ d ] = last_pos ;
-
-    auto first_index = start_crd / tile_shape ;
-    auto last_index = last_crd / tile_shape ;
-
-    while ( true )
-    {
-      if ( working_set [ first_index [ d ] ] == nullptr )
-        tile_store.claim ( first_index ) ;
-
-      if ( first_index [ d ] == last_index [ d ] )
-        break ;
-
-      first_index [ d ] ++ ;
-    }
-  }
-
-#endif // PREEMPTIVE_CLAIM
-
   // tile_user_t's init function figures out the first tile
   // index for this cycle and calls get_tile. It also figures
-  // out the in-tile coordinate
+  // out the in-tile coordinate. This is the point where
+  // zimt::process first interacts with the tile_user object
+  // and sets it onto a specific segment by passing the
+  // segment's start in 'crd'. This function is called by
+  // the tile_loader/tile_storer's init functions to handle
+  // store-keeping tasks needed by both.
 
   void init ( const crd_t & crd )
   {
@@ -1026,12 +962,12 @@ public:
     auto match_index = hot_tile ;
     match_index [ d ] = 0 ;
 
-    // are we still in the same linear subset?
+    // are we still in the same row of tiles?
 
     if ( match_index != set_marker )
     {
       // set_marker is only ever -1 right after construction.
-      // So if it's not -1, it's from a previous subset and
+      // So if it's *not* -1, it's from a previous row and
       // we release all tiles which are held in working_set
 
       if ( set_marker != -1 )
@@ -1039,42 +975,14 @@ public:
         clear_working_set() ;
       }
 
-     // set the set_marker to refer to the new linear subset
+     // set the set_marker to refer to the new row of tiles
 
       set_marker = match_index ;
     }
 
-#ifdef PREEMPTIVE_CLAIM
-
-    // now we 'claim' all tiles which will be used for this segment.
-    // most of the time, the tiles are already in the working set, so
-    // this is fast, because then claiming does nothing - the tile has
-    // already been claimed earlier. Only if it wasn't claimed before
-    // while processing this row of tiles, the user count will be raised
-    // by one - preemptively; with the conviction that the actual access
-    // to the tile must surely come (all tiles used by this segmemnt must
-    // be visited). The preemptive raise of the user count is to avoid
-    // write-then-reload situation as best as possible: If the raise of
-    // the user count is only done once the tile in question has actually
-    // been loaded from disk, much time passes (including I/O) and the
-    // thread may be scheduled out by the OS. Meanwhile, other threads
-    // can work through an entire row of tiles and finally all let go
-    // of 'their' access, and the the user count becoming zero produces
-    // a 'spurious drop' because it does not take into account the tiles
-    // which the interrupted thread still has 'in the pipeline'. Even with
-    // the code as it is, this is possible, but the time window for it to
-    // happen is minimized: 'claiming' happens befor the lengthy I/O and
-    // only takes a few cycles. A disadvantage of this scheme is the need
-    // for an additional mutex-protected access to the new tile in the
-    // working set and then another one when it's finally obtained via
-    // get_tile. The preemptive claiming should reduce write-then-reload
-    // situations so that the limbo size can be reduced.
-
-    claim ( crd , segment_size , d ) ;
-
-#endif
-
-    // finally, call get_tile to obtain the first tile for this segment
+    // call get_tile to obtain the tile pointer to first tile
+    // 'touched' by this segment, and calculate the in-tile
+    // coordinate
 
     current_tile = get_tile ( hot_tile ) ;
     in_tile_crd = crd % tile_shape ;
@@ -1120,6 +1028,7 @@ struct tile_loader
   using tile_user::get_tile ;
   using tile_user::stride ;
   using tile_user::tile_store ;
+  using tile_user::done ;
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
@@ -1127,41 +1036,32 @@ struct tile_loader
   const value_t * p_src ;
   std::size_t tail ;
 
+  // the tile_loader's c'tor calls the tile store's open member
+  // function to set up the number of 'due transits', which is
+  // neded to determine when used tiles can be released from
+  // RAM.
+
   tile_loader ( tile_store_type & _tile_store ,
                 const bill_t & bill )
   : tile_user ( _tile_store , bill )
   {
-    // we set read_from_disk true unconditionally, but user code
-    // can change the settings later on. Since we only set the
-    // single flag, write_to_disk is unaffected and may or may not
-    // be set: if it's also set, the tile store is in read/write
-    // mode, which is an expected and accepted modus operandi.
-    // With this mode, tiles will be read from disk before they
-    // are processed and written back afterwards. If the tile
-    // store is only used as data drain, the tiles will be read
-    // but not written back.
-    // TODO: these flags persist in the tile store after the
-    // zimt::process run ends, which may be problematic.
-
-    tile_store.read_from_disk = true ;
-  }
-
-  tile_loader ( const tile_loader & other )
-  : tile_user ( other )
-  {
-    tile_store.read_from_disk = true ;
+    tile_store.open ( bill , true , false ) ;
   }
 
   // tile_loader's init function figures out the first tile index
-  // for this cycle obtains the current tile. Then the tile's
+  // for this cycle and obtains the current tile. Then the tile's
   // function 'provide' is called to set 'p_src' and 'tail' to
   // appropriate values, and 'increase' is called to initialize
-  // the first batch of vectorized data in 'trg'.
+  // the first batch of vectorized data in 'trg'. Note the
+  // incremetation of the 'done' value: every call to 'provide'
+  // marks the entry into a new 'transit', which is the metric
+  // we use to determine when a used tile is no longer needed.
 
   void init ( value_v & trg , const crd_t & crd )
   {
     tile_user::init ( crd ) ;
     current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
+    done [ hot_tile [ d ] ] ++ ;
     increase ( trg ) ;
   }
 
@@ -1172,7 +1072,7 @@ struct tile_loader
   // 'stuff' set true to affect the stuffing. Note that this is a
   // rare exception which only occurs if a segment is very short,
   // i.e. because the notional shape is very short along the hot
-  // axis. Most of the time, segments are larger ans stuffing is
+  // axis. Most of the time, segments are larger and stuffing is
   // not necessary because the previous cycle has already filled
   // the simdized datum with valid content.
 
@@ -1182,13 +1082,15 @@ struct tile_loader
   {
     tile_user::init ( crd ) ;
     current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
+    done [ hot_tile [ d ] ] ++ ;
     increase ( trg , cap , true ) ;
   }
 
 private:
 
   // helper function advance enters the next chunk and sets
-  // 'p_src' and 'tail' accordingly
+  // 'p_src' and 'tail' accordingly. Again, the call to
+  // 'provide' is followed by the incremetation of 'done'.
 
   void advance()
   {
@@ -1196,12 +1098,14 @@ private:
     in_tile_crd [ d ] = 0 ;
     current_tile = get_tile ( hot_tile ) ;
     current_tile->provide ( in_tile_crd , d , p_src , tail ) ;
+    done [ hot_tile [ d ] ] ++ ;
   }
 
 public:
 
   // 'increase' fetches a full vector of data from the tile store
-  // and increments the pointer to the data to the next read position.
+  // and increments the pointer into the tile's data to the next
+  // read position.
 
   void increase ( value_v & trg )
   {
@@ -1274,7 +1178,7 @@ public:
 
   // The 'capped' variant only fetches a part of a full vector
   // and doesn't increase the pointer: the capped increase is
-  // always the last call in a run. Because the run ends with
+  // always the last call in a cycle. Because the cycle ends with
   // this invocation, we can do without updating some member
   // variables: the'll be reset by the subsequent call to
   // 'init' anyway.
@@ -1342,7 +1246,7 @@ public:
 // tile_storer uses the same techniques as tile_loader, just the
 // flow of data is reversed. One might code the processing with
 // a flag indicating direction of data flow (i.e. true meaning
-// simsized datum -> memory and false meaning the reverse, but
+// simsized datum -> memory and false meaning the reverse), but
 // for now I stick with copy-and-paste and swappig source and
 // target of the relevant assignments, assuming that this code
 // will remain static later on.
@@ -1368,6 +1272,7 @@ class tile_storer
   using tile_user::in_tile_crd ;
   using tile_user::stride ;
   using tile_user::get_tile ;
+  using tile_user::done ;
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
@@ -1381,26 +1286,17 @@ public:
                 const bill_t & bill )
   : tile_user ( _tile_store , bill )
   {
-    tile_store.write_to_disk = true ;
+    tile_store.open ( bill , false , true ) ;
   }
-
-  tile_storer ( const tile_storer & other )
-  : tile_user ( other )
-  {
-    tile_store.write_to_disk = true ;
-  }
-
-  // tile_storer's init function figures out the first tile
-  // index for this cycle and calls get_tile. Then the tile's
-  // function 'provide' is called to set 'p_trg' and 'tail'
-  // to correct values, and 'increase' is called to initialize
-  // the first batch of vectorized data in 'trg'.
 
   void init ( const crd_t & crd )
   {
     tile_user::init ( crd ) ;
     current_tile->provide ( in_tile_crd , d , p_trg , tail ) ;
+    done [ hot_tile [ d ] ] ++ ;
   }
+
+private:
 
   // helper function advance enters the next chunk and sets
   // 'p_trg' and 'tail' accordingly
@@ -1411,7 +1307,10 @@ public:
     in_tile_crd [ d ] = 0 ;
     current_tile = get_tile ( hot_tile ) ;
     current_tile->provide ( in_tile_crd , d , p_trg , tail ) ;
+    done [ hot_tile [ d ] ] ++ ;
   }
+
+public:
 
   void save ( value_v & trg )
   {
@@ -1550,7 +1449,6 @@ public:
     }
   }
 } ; // class tile_storer
-
 
 } ; // namespace zimt
 

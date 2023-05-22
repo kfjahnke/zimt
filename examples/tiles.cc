@@ -85,10 +85,4 @@ int main ( int argc , char * argv[] )
   // basename (like, 'tile_drain_2'). Now the data should be read
   // from the tiles from the previous run and stored to a new set
   // of tiles.
-
-  // we can clear the 'cleanup' flag in the tile stores, all tiles
-  // should already be flushed.
-
-  tile_source.cleanup = false ;
-  tile_drain.cleanup = false ;
 }
