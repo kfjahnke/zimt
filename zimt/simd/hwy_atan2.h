@@ -14,6 +14,8 @@
 /*                                                                      */
 /************************************************************************/
 
+#ifndef HWY_ATAN2_H
+
 // This file has a port af Vc's atan2 implementation to highway.
 // The implementation of atan2 which I have ported to highway was originally
 // found in https://github.com/VcDevel/Vc/blob/1.4/src/trigonometric.cpp
@@ -262,3 +264,5 @@ HWY_INLINE V Atan2(const D d, V y, V x) {
 }  // namespace HWY_NAMESPACE
 }  // namespace hwy
 HWY_AFTER_NAMESPACE();
+
+#endif // #define HWY_ATAN2_H
