@@ -265,4 +265,5 @@ HWY_INLINE V Atan2(const D d, V y, V x) {
 }  // namespace hwy
 HWY_AFTER_NAMESPACE();
 
-#endif // #define HWY_ATAN2_H
+#define HWY_ATAN2_H
+#endif // #ifndef HWY_ATAN2_H
