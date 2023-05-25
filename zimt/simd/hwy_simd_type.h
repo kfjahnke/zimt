@@ -98,7 +98,9 @@
 #include <hwy/contrib/math/math-inl.h>
 #include <hwy/aligned_allocator.h>
 #include <hwy/print-inl.h>
+#ifndef HWY_HAVE_ATAN2
 #include "hwy_atan2.h"
+#endif
 
 HWY_BEFORE_NAMESPACE();
 

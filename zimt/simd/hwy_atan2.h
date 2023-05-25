@@ -16,6 +16,9 @@
 
 #ifndef HWY_ATAN2_H
 
+// This file can go once the highway implementation of atan2 'trickles
+// down'.
+
 // This file has a port af Vc's atan2 implementation to highway.
 // The implementation of atan2 which I have ported to highway was originally
 // found in https://github.com/VcDevel/Vc/blob/1.4/src/trigonometric.cpp

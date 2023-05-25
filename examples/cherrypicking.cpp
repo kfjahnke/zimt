@@ -59,32 +59,70 @@
 // the backend headers - if we were to go through the usual motions
 // and #define USE_... already, we'd only have either header included.
 
-#include "../include/common.h"
-#include "../include/simd/std_simd_type.h"
-#include "../include/simd/vc_simd_type.h"
+#include <zimt/common.h>
+#include <zimt/simd/std_simd_type.h>
+#include <zimt/simd/vc_simd_type.h>
+#include <zimt/simd/gen_simd_type.h>
+#include <zimt/simd/hwy_simd_type.h>
 
-typedef simd::std_simd_type < float , 16 > stdf16_t ;
-typedef simd::vc_simd_type < float , 16 > vcf16_t ;
+typedef simd::std_simd_type < float , 4 > stdf4_t ;
+typedef simd::vc_simd_type < float , 4 > vcf4_t ;
+typedef simd::hwy_simd_type < float , 4 > hwyf4_t ;
+typedef simd::gen_simd_type < float , 4 > genf4_t ;
 
 // first version: use std_simd_type's (inefficient) atan2 function
 
-void f ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
+void f ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
 {
   out = atan2 ( y , x ) ;
 }
 
 // second version: delegate to vc_simd_type instead. As in f(), we
-// have stdf16_t incoming and outgoing, but here, the values are moved
+// have stdf4_t incoming and outgoing, but here, the values are moved
 // to corresponding vc_simd_type objects, Vc's atan2 function is used
 // to produce a vc_simd_type result which is moved to 'out'. Even
 // with the copying around of the values, this one is much faster.
 // The optimzer likely takes care of the unnecessary loads and stores
 // and keeps the arguments 'afloat' in registers.
 
-void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
+void g ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
 {
-  vcf16_t h_x , h_y , h_out ;
-  float help [ 16 ] ;
+  vcf4_t h_x , h_y , h_out ;
+  float help [ 4 ] ;
+
+  x.store ( help ) ;
+  h_x.load ( help ) ;
+
+  y.store ( help ) ;
+  h_y.load ( help ) ;
+
+  h_out = atan2 ( h_y , h_x ) ;
+
+  h_out.store ( help ) ;
+  out.load ( help ) ;
+}
+
+void h ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
+{
+  hwyf4_t h_x , h_y , h_out ;
+  float help [ 4 ] ;
+
+  x.store ( help ) ;
+  h_x.load ( help ) ;
+
+  y.store ( help ) ;
+  h_y.load ( help ) ;
+
+  h_out = atan2 ( h_y , h_x ) ;
+
+  h_out.store ( help ) ;
+  out.load ( help ) ;
+}
+
+void k ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
+{
+  genf4_t h_x , h_y , h_out ;
+  float help [ 4 ] ;
 
   x.store ( help ) ;
   h_x.load ( help ) ;
@@ -106,12 +144,8 @@ void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 // we build unary functors, the first uses f() , the second g():
 
 struct atan_f1
-: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
 {
-  // void eval ( const in_type & in , out_type & out ) const
-  // {
-  //   out = std::atan2 ( in[1] , in[0] ) ;
-  // }
   void eval ( const in_v & in , out_v & out ) const
   {
     f ( in[1] , in[0] , out ) ;
@@ -119,15 +153,29 @@ struct atan_f1
 } ;
 
 struct atan_f2
-: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
 {
-  // void eval ( const in_type & in , out_type & out ) const
-  // {
-  //   out = std::atan2 ( in[1] , in[0] ) ;
-  // }
   void eval ( const in_v & in , out_v & out ) const
   {
     g ( in[1] , in[0] , out ) ;
+  }
+} ;
+
+struct atan_f3
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
+{
+  void eval ( const in_v & in , out_v & out ) const
+  {
+    h ( in[1] , in[0] , out ) ;
+  }
+} ;
+
+struct atan_f4
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
+{
+  void eval ( const in_v & in , out_v & out ) const
+  {
+    k ( in[1] , in[0] , out ) ;
   }
 } ;
 
@@ -149,9 +197,11 @@ struct atan_f2
 
 int main ( int argc , char * argv[] )
 {
-  if ( argc < 2 || ( argv[1][0] != '1' && argv[1][0] != '2' ) )
+  if ( argc < 2 )
   {
-    std::cerr << "pass '1' to use std::simd's atan2, or '2' to use Vc's"
+    std::cerr << "pass '1' to use std::simd's atan2, '2' to use Vc's"
+              << std::endl ;
+    std::cerr << "pass '3' to use highway's atan2, '4' to use goading"
               << std::endl ;
     exit ( 1 ) ;
   }
@@ -174,8 +224,17 @@ int main ( int argc , char * argv[] )
   {
     if ( argv[1][0] == '1' )
       zimt::transform ( atan_f1() , in , out ) ;
-    else
+    else if ( argv[1][0] == '2' )
       zimt::transform ( atan_f2() , in , out ) ;
+    else if ( argv[1][0] == '3' )
+      zimt::transform ( atan_f3() , in , out ) ;
+    else if ( argv[1][0] == '4' )
+      zimt::transform ( atan_f4() , in , out ) ;
+    else
+    {
+      std::cerr << "pass a value between one and four" << std::endl ;
+      exit ( -1 ) ;
+    }
   }
 
   auto end = std::chrono::system_clock::now();
