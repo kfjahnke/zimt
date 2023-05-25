@@ -65,30 +65,30 @@
 #include <zimt/simd/gen_simd_type.h>
 #include <zimt/simd/hwy_simd_type.h>
 
-typedef simd::std_simd_type < float , 4 > stdf4_t ;
-typedef simd::vc_simd_type < float , 4 > vcf4_t ;
-typedef simd::hwy_simd_type < float , 4 > hwyf4_t ;
-typedef simd::gen_simd_type < float , 4 > genf4_t ;
+typedef simd::std_simd_type < float , 16 > stdf16_t ;
+typedef simd::vc_simd_type < float , 16 > vcf16_t ;
+typedef simd::hwy_simd_type < float , 16 > hwyf16_t ;
+typedef simd::gen_simd_type < float , 16 > genf16_t ;
 
 // first version: use std_simd_type's (inefficient) atan2 function
 
-void f ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
+void f ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 {
   out = atan2 ( y , x ) ;
 }
 
 // second version: delegate to vc_simd_type instead. As in f(), we
-// have stdf4_t incoming and outgoing, but here, the values are moved
+// have stdf16_t incoming and outgoing, but here, the values are moved
 // to corresponding vc_simd_type objects, Vc's atan2 function is used
 // to produce a vc_simd_type result which is moved to 'out'. Even
 // with the copying around of the values, this one is much faster.
 // The optimzer likely takes care of the unnecessary loads and stores
 // and keeps the arguments 'afloat' in registers.
 
-void g ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
+void g ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 {
-  vcf4_t h_x , h_y , h_out ;
-  float help [ 4 ] ;
+  vcf16_t h_x , h_y , h_out ;
+  float help [ 16 ] ;
 
   x.store ( help ) ;
   h_x.load ( help ) ;
@@ -102,10 +102,10 @@ void g ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
   out.load ( help ) ;
 }
 
-void h ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
+void h ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 {
-  hwyf4_t h_x , h_y , h_out ;
-  float help [ 4 ] ;
+  hwyf16_t h_x , h_y , h_out ;
+  float help [ 16 ] ;
 
   x.store ( help ) ;
   h_x.load ( help ) ;
@@ -119,10 +119,10 @@ void h ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
   out.load ( help ) ;
 }
 
-void k ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
+void k ( const stdf16_t & x , const stdf16_t & y , stdf16_t & out )
 {
-  genf4_t h_x , h_y , h_out ;
-  float help [ 4 ] ;
+  genf16_t h_x , h_y , h_out ;
+  float help [ 16 ] ;
 
   x.store ( help ) ;
   h_x.load ( help ) ;
@@ -144,7 +144,7 @@ void k ( const stdf4_t & x , const stdf4_t & y , stdf4_t & out )
 // we build unary functors, the first uses f() , the second g():
 
 struct atan_f1
-: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
 {
   void eval ( const in_v & in , out_v & out ) const
   {
@@ -153,7 +153,7 @@ struct atan_f1
 } ;
 
 struct atan_f2
-: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
 {
   void eval ( const in_v & in , out_v & out ) const
   {
@@ -162,7 +162,7 @@ struct atan_f2
 } ;
 
 struct atan_f3
-: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
 {
   void eval ( const in_v & in , out_v & out ) const
   {
@@ -171,7 +171,7 @@ struct atan_f3
 } ;
 
 struct atan_f4
-: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 4 >
+: public zimt::unary_functor < zimt::xel_t < float , 2 > , float , 16 >
 {
   void eval ( const in_v & in , out_v & out ) const
   {
@@ -179,8 +179,8 @@ struct atan_f4
   }
 } ;
 
-// main transforms array 'in' to array 'out' 100 times, using either
-// the first or the second functor. To get an informative result, compile
+// main transforms array 'in' to array 'out' 1000 times, using one of
+// the back-end-specififc functors. To get an informative result, compile
 // the .cc files with -Ofast and -march=native, then link and time. On my
 // system, the first version takes significantly longer. This shows that
 // std::simd's atan2 is inefficient. It also shows that it's feasible
@@ -190,6 +190,9 @@ struct atan_f4
 // which a particular backend excels in can amend deficiencies in others.
 // Of course, there's an overhead due to moving the data from one simd type
 // to another.
+// With the code as it stands, the compiler is also a big issue. With
+// g++, as of this writing, using no SIMD library (choice 4) is faster
+// than all the others.
 
 #include <random>
 #include <ctime>
@@ -201,7 +204,7 @@ int main ( int argc , char * argv[] )
   {
     std::cerr << "pass '1' to use std::simd's atan2, '2' to use Vc's"
               << std::endl ;
-    std::cerr << "pass '3' to use highway's atan2, '4' to use goading"
+    std::cerr << "pass '3' to use highway's atan2, '16' to use goading"
               << std::endl ;
     exit ( 1 ) ;
   }
