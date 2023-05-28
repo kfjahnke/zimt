@@ -106,6 +106,27 @@ to_zimt ( vigra::MultiArrayView < D , T > & v )
            to_zimt ( v.shape() ) } ;
 }
 
+template < unsigned int D , typename T , int N >
+zimt::view_t < D , zimt::xel_t < T , N > >
+to_zimt ( const vigra::MultiArrayView
+            < D , vigra::TinyVector < T , N > > & v )
+{
+  typedef zimt::xel_t < T , N > dtype ;
+
+  return { (dtype*) v.data() ,
+           to_zimt ( v.stride() ) ,
+           to_zimt ( v.shape() ) } ;
+}
+
+template < unsigned int D , typename T >
+zimt::view_t < D , T >
+to_zimt ( const vigra::MultiArrayView < D , T > & v )
+{
+  return { v.data() ,
+           to_zimt ( v.stride() ) ,
+           to_zimt ( v.shape() ) } ;
+}
+
 // and the other way round.
 
 template < std::size_t D , typename T >

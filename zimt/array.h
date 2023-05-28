@@ -569,7 +569,7 @@ public:
   // shared_ptr 'store' has an explicit destructor, we add code to
   // destruct all T in the store explicitly.
 
-  array_t ( const shape_type & _shape , bool init = false )
+  array_t ( const shape_type & _shape )
   : base_t ( new T [ _shape.prod() ] ,
              make_strides ( _shape ) ,
              _shape )
@@ -583,14 +583,6 @@ public:
     // dispatch accordingly. this sets 'base'.
 
     reset ( std::integral_constant < bool , test >() ) ;
-
-    // if 'init' is true, initialize the memory with zero
-
-    if ( init )
-    {
-      std::memset ( origin , 0 , size() * sizeof ( T ) ) ;
-    }
-
   }
 
   // array's window function also copies the shared_ptr, base.

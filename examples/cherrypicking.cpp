@@ -37,11 +37,11 @@
 /************************************************************************/
 
 // This example demonstrates 'cherrypicking': Here, we use std::simd as
-// the standard backend, but implement two functors calculating atan2
+// the standard backend, but implement four functors calculating atan2
 // of a 2D float coordinate: one using std::simd, and one using Vc.
 // Then we apply the functor 1000 times to a 1000000-coordinate array,
 // measuring the time. The difference between the two is significant
-// (ca. fourfold on my system) and shows shat the std::simd implementation
+// (ca. fourfold on my system) and shows that the std::simd implementation
 // (as of this writing, and as far as I can tell) simply uses a loop over
 // the vector's lanes, whereas Vc uses dedicated hand-written SIMD code.
 // So even with the move from the std::simd data type to the Vc type and
@@ -54,7 +54,7 @@
 #include <memory>
 #include <assert.h>
 
-// we want to use two of zimt's 'backend' SIMD types, the one using
+// we want to use all of zimt's 'backend' SIMD types, the one using
 // std::simd and the one using Vc. Note how we directly include
 // the backend headers - if we were to go through the usual motions
 // and #define USE_... already, we'd only have either header included.

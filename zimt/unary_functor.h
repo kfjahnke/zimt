@@ -165,6 +165,8 @@ template < typename IN ,       // argument or input type
 struct unary_functor
 : public unary_functor_tag < _vsize >
 {
+  static const bool has_capped_eval = false ;
+
   // number of fundamentals in simdized data.
 
   enum { vsize = _vsize } ;
@@ -307,46 +309,46 @@ struct vs_adapter
         reinterpret_cast < typename inner_type::out_v & > ( out ) ) ;
   }
 
-private:
-
-  // To detect if a unary functor has a capped eval overload, I use code
-  // adapted from from Valentin Milea's anser to
-  // https://stackoverflow.com/questions/87372/check-if-a-class-has-a-member-function-of-a-given-signature
-  // when providing a capped eval overload of your eval function, please
-  // note that it will only be recognized if one of the three signatures
-  // tested below is matched precisely.
-
-  template < class C >
-  class has_capped_eval_t
-  {
-      typedef typename C::in_v in_v ;
-      typedef typename C::out_v out_v ;
-
-      // we allow the cap to be passed as const&, &, and by value,
-      // the remainder of the signature is 'as usual'
-
-      template < class T , class cap_t >
-      static std::true_type testSignature
-        (void (T::*)(const in_v&, out_v&, const cap_t&));
-
-      template < class T , class cap_t >
-      static std::true_type testSignature
-        (void (T::*)(const in_v&, out_v&, cap_t&));
-
-      template < class T , class cap_t >
-      static std::true_type testSignature
-        (void (T::*)(const in_v&, out_v&, cap_t));
-
-      template <class T>
-      static decltype(testSignature(&T::eval)) test(std::nullptr_t);
-
-      template <class T>
-      static std::false_type test(...);
-
-  public:
-      using type = decltype(test<C>(nullptr));
-      static const bool value = type::value;
-  };
+// private:
+//
+//   // To detect if a unary functor has a capped eval overload, I use code
+//   // adapted from from Valentin Milea's anser to
+//   // https://stackoverflow.com/questions/87372/check-if-a-class-has-a-member-function-of-a-given-signature
+//   // when providing a capped eval overload of your eval function, please
+//   // note that it will only be recognized if one of the three signatures
+//   // tested below is matched precisely.
+//
+//   template < class C >
+//   class has_capped_eval_t
+//   {
+//       typedef typename C::in_v in_v ;
+//       typedef typename C::out_v out_v ;
+//
+//       // we allow the cap to be passed as const&, &, and by value,
+//       // the remainder of the signature is 'as usual'
+//
+//       template < class T , class cap_t >
+//       static std::true_type testSignature
+//         (void (T::*)(const in_v&, out_v&, const cap_t&));
+//
+//       template < class T , class cap_t >
+//       static std::true_type testSignature
+//         (void (T::*)(const in_v&, out_v&, cap_t&));
+//
+//       template < class T , class cap_t >
+//       static std::true_type testSignature
+//         (void (T::*)(const in_v&, out_v&, cap_t));
+//
+//       template <class T>
+//       static decltype(testSignature(&T::eval)) test(std::nullptr_t);
+//
+//       template <class T>
+//       static std::false_type test(...);
+//
+//   public:
+//       using type = decltype(test<C>(nullptr));
+//       static const bool value = type::value;
+//   };
 
   // does inner_type have a capped eval function? If so, the adapter
   // will dispatch to it, otherwise it will call eval without cap.
@@ -362,8 +364,7 @@ private:
   // to handle the masked/capped vectors, and I much prefer to keep
   // the code as simple and straightforward as I can.
 
-  static const bool has_capped_eval
-    = has_capped_eval_t<inner_type>::value ;
+  static const bool has_capped_eval = inner_type::has_capped_eval ;
 
   void _eval ( std::true_type ,
                const in_v & in ,
@@ -1173,13 +1174,16 @@ public:
 } ;
 
 /// class uf_adapter 'bends' a unary functor to a zimt::unary_functor
-/// handling xel_t arguments. For now this is mainly to adapt vspline
-/// code and it blindly assumes that the arguments are binary-compatible.
-/// The resulting functor processes 'synthetic' arguments, which are
-/// always xel_t, also for fundamentals, which are accessed via a xel_t
-/// with one element. With this type of signature, the adapted functor
-/// is also immediately usable by the 'wielding code' which expects
-/// xel_t only arguments.
+/// handling fundamentals or xel_t arguments. For now this is mainly
+/// to adapt vspline code and it blindly assumes that the arguments
+/// are binary-compatible.
+/// the previous implementation produced 'synthetic' in/out types
+/// which were all xel_t, but now the switch from fundamentals to
+/// xel_t of one T is made in zimt_process, so the in/out types
+/// of the functor can be preserved as fundamentals if they come
+/// in that way. So this adapter passes the wrappee's in/out
+/// types unchanged if they are single-channel, and produce
+/// a xel_t if they are multi-channel.
 
 template < typename W >
 struct uf_adapter
@@ -1196,21 +1200,37 @@ struct uf_adapter
   typedef zimt::xel_t < in_ele_type , dim_in > in_nd_ele_type ;
   typedef zimt::xel_t < out_ele_type , dim_out > out_nd_ele_type ;
 
-  typedef in_nd_ele_type in_type ;
-  typedef out_nd_ele_type out_type ;
+  typedef typename std::conditional
+    < dim_in == 1 ,
+      typename W::in_type ,
+      in_nd_ele_type > :: type in_type ;
+
+  typedef typename std::conditional
+    < dim_out == 1 ,
+      typename W::out_type ,
+      out_nd_ele_type > :: type out_type ;
 
   typedef typename vector_traits < in_ele_type , vsize >
                      :: ele_v in_ele_v ;
+
   typedef typename vector_traits < out_ele_type , vsize >
                      :: ele_v out_ele_v ;
 
   typedef typename vector_traits < in_type , vsize >
                      :: nd_ele_v in_nd_ele_v ;
+
   typedef typename vector_traits < out_type , vsize >
                      :: nd_ele_v out_nd_ele_v ;
 
-  typedef in_nd_ele_v in_v ;
-  typedef out_nd_ele_v out_v ;
+  typedef typename std::conditional
+    < dim_in == 1 ,
+      typename W::in_v ,
+      in_nd_ele_v > :: type in_v ;
+
+  typedef typename std::conditional
+    < dim_out == 1 ,
+      typename W::out_v ,
+      out_nd_ele_v > :: type out_v ;
 
   // accomodate the wrappee
 
@@ -1226,15 +1246,109 @@ struct uf_adapter
   // for granted, because vspline always provides it.
 
   void eval ( const in_type & in ,
-                   out_type & out ) const
+                   out_type & out )
   {
     inner.eval
       ( reinterpret_cast < const typename W::in_type & > ( in ) ,
         reinterpret_cast < typename W::out_type & > ( out ) ) ;
   }
 
+// private:
+
+  // // To detect if a unary functor has a capped eval overload, I use code
+  // // adapted from from Valentin Milea's anser to
+  // // https://stackoverflow.com/questions/87372/check-if-a-class-has-a-member-function-of-a-given-signature
+  // // when providing a capped eval overload of your eval function, please
+  // // note that it will only be recognized if one of the three signatures
+  // // tested below is matched precisely. Providing a template which would
+  // // match the signature does *not* work.
+  //
+  // template < class C >
+  // class has_capped_eval_t
+  // {
+  //     typedef typename C::in_v in_v ;
+  //     typedef typename C::out_v out_v ;
+  //
+  //     // we allow the cap to be passed as const&, &, and by value,
+  //     // the remainder of the signature is 'as usual'
+  //
+  //     template < class T , class cap_t >
+  //     static std::true_type testSignature
+  //       (void (T::*)(const in_v&, out_v&, const cap_t&));
+  //
+  //     template < class T , class cap_t >
+  //     static std::true_type testSignature
+  //       (void (T::*)(const in_v&, out_v&, cap_t&));
+  //
+  //     template < class T , class cap_t >
+  //     static std::true_type testSignature
+  //       (void (T::*)(const in_v&, out_v&, cap_t));
+  //
+  //     template <class T>
+  //     static decltype(testSignature(&T::eval)) test(std::nullptr_t);
+  //
+  //     template <class T>
+  //     static std::false_type test(...);
+  //
+  // public:
+  //     using type = decltype(test<C>(nullptr));
+  //     static const bool value = type::value;
+  // };
+  //
+  // does inner_type have a capped eval function? If so, the adapter
+  // will dispatch to it, otherwise it will call eval without cap.
+  // Most of the time, inner_type won't have a capped variant - this
+  // is only useful for reductions, all evaluations inside the
+  // wiedling code are coded so that all vectors passed to eval are
+  // padded if necessary and therefore 'technically' full and safe
+  // to process. The cap is only a hint that some of the lanes were
+  // generated by padding wih the last 'genuine' lane, but a reduction
+  // needs to be aware of the fact and ignore the lanes filled with
+  // padding. An alternative to this method would be the use of
+  // masked code, but this would require additional coding effort
+  // to handle the masked/capped vectors, and I much prefer to keep
+  // the code as simple and straightforward as I can.
+
+  typedef W inner_type ;
+
+  static const bool has_capped_eval = inner_type::has_capped_eval ;
+
+  void _eval ( std::true_type ,
+               const in_v & in ,
+                    out_v & out ,
+               const std::size_t & cap )
+  {
+    inner.eval
+      ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
+        reinterpret_cast < typename inner_type::out_v & > ( out ) ,
+        cap ) ;
+  }
+
+  void _eval ( std::false_type ,
+               const in_v & in ,
+                    out_v & out ,
+               const std::size_t & cap )
+  {
+    inner.eval
+      ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
+        reinterpret_cast < typename inner_type::out_v & > ( out ) ) ;
+  }
+
+public:
+
+  // the adapter's capped eval will invoke inner_type's capped eval
+  // if it's present, and 'normal' uncapped eval otherwise.
+
   void eval ( const in_v & in ,
-                   out_v & out ) const
+                   out_v & out ,
+              const std::size_t & cap )
+  {
+    _eval ( std::integral_constant < bool , has_capped_eval >() ,
+            in , out , cap ) ;
+  }
+
+  void eval ( const in_v & in ,
+                   out_v & out )
   {
     inner.eval
       ( reinterpret_cast < const typename W::in_v & > ( in ) ,
@@ -1266,8 +1380,8 @@ template < typename W >
 zimt::uf_adapter < W >
 uf_adapt ( const W & inner )
 {
-  return zimt::uf_adapter < W >
-    ( inner ) ;
+  auto adapted = zimt::uf_adapter < W > ( inner ) ;
+  return adapted ;
 }
 
 } ; // end of namespace zimt
