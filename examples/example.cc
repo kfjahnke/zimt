@@ -115,6 +115,12 @@ struct amp13_t
 template < typename dtype > struct sum_up
 : public zimt::unary_functor < dtype , dtype >
 {
+  // we need to set this flag to communicate the presence
+  // of a capped eval overload - the test for it's presence
+  // which I used doesn't really work for me.
+
+  static const bool has_capped_eval = true ;
+
   typedef zimt::unary_functor < dtype > base_type ;
   using typename base_type::in_type ;
   using typename base_type::in_v ;
@@ -176,6 +182,12 @@ template < typename dtype > struct sum_up
 template < typename T , std::size_t N > struct sum_up_fcpy
 : public zimt::unary_functor < zimt::xel_t < T , N > >
 {
+  // we need to set this flag to communicate the presence
+  // of a capped eval overload - the test for it's presence
+  // which I used doesn't really work for me.
+
+  static const bool has_capped_eval = true ;
+
   typedef zimt::xel_t < T , N > dtype ;
 
   typedef zimt::unary_functor < dtype > base_type ;
