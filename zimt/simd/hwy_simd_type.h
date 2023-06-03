@@ -1539,39 +1539,22 @@ public:
 
   #define BROADCAST_HWY_FUNC2(FUNC,HFUNC) \
     friend simd_t FUNC ( const simd_t & arg1 , \
-                            const simd_t & arg2 ) \
+                         const simd_t & arg2 ) \
     { \
       simd_t result ; \
       for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += arg1.L() ) \
-        result.take ( i , hn::HFUNC ( arg1.yield ( i ) , \
+        result.take ( i , hn::HFUNC ( D() , \
+                                      arg1.yield ( i ) , \
                                       arg2.yield ( i ) ) ) ; \
       return result ; \
     }
 
-  // hn function not available for atan2, pow
+  BROADCAST_HWY_FUNC2(atan2,Atan2)
 
-//   BROADCAST_HWY_FUNC2(pow,Pow)
+  // no hwy function available for pow
 
-  // implementation of atan2 relying on a highway function Atan2.
-  // The implementation of that is a port from Vc, in hwy_atan2.h
+  // BROADCAST_HWY_FUNC2(pow,Pow)
 
-  friend simd_t atan2 ( const simd_t & y , const simd_t & x )
-  {
-    simd_t result ;
-    for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += x.L() )
-      result.take ( i , hn::Atan2 ( D() , y.yield(i) , x.yield(i) ) ) ;
-    return result ;
-  }
-
-  // goading version
-
-//   friend simd_t atan2 ( simd_t y , const simd_t & x )
-//   {
-//     static const bin_f f = [](const T & y, const T & x)
-//       { return T ( std::atan2 ( y , x ) ) ; } ;
-//     return y.broadcast ( f , x ) ;
-//   }
-  
   friend simd_t pow ( const simd_t & base , const simd_t & exponent )
   {
     simd_t result ;
@@ -2037,17 +2020,11 @@ namespace simd
     using base_t::base_t ;
   } ;
 
-  // // Im fixing this allocator via std::allocator_traits, but it
-  // // does not seem to be picked for all allocations - I had, e.g.
-  // // a std::vector of hwy_simd_type which contained unaligned
-  // // memory and caused a crash (only with c++11, 17 is okay)
-  // // - I worked around it in lux, but the problem is not solved.
-  //
-  // template < typename T , std::size_t N >
-  // struct allocator_traits < hwy_simd_type < T , N > >
-  // {
-  //   typedef simd_allocator < hwy_simd_type < T , N > > type ;
-  // } ;
+  template < typename T , std::size_t N >
+  struct allocator_traits < hwy_simd_type < T , N > >
+  {
+    typedef simd_allocator < hwy_simd_type < T , N > > type ;
+  } ;
 } ;
 
 namespace std

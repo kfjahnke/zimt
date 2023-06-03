@@ -219,7 +219,12 @@ using scalar =
 // necessary.
 
 #define PROMOTE(A,B)  \
-decltype ( std::declval < A > () + std::declval < B > () )
+typename std::conditional \
+           < std::is_same < A , B > :: value , \
+             A , \
+             decltype (   std::declval < A > () \
+                        + std::declval < B > () ) \
+           > :: type
 
 /// zimt creates views/arrays of vectorized types. As long as
 /// the vectorized types are Vc::SimdArray or zimt::simd_type, using

@@ -51,6 +51,15 @@
 
 #ifndef ZIMT_SIMD_H // sentinel
 
+namespace simd
+{
+template < typename T >
+struct allocator_traits
+{
+  typedef std::allocator < T > type ;
+} ;
+} ;
+
 // we have two back-ends which can provide data types for the entire
 // range zimt intends to cover: arbitrary fundamentals and any number
 // of lanes. One of these is 'zimt's own' - a simple container type

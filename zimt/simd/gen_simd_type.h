@@ -121,6 +121,7 @@
 #include <iostream>
 #include <initializer_list>
 #include "simd_tag.h"
+#include "../common.h"
 
 // we'll include some headers with repetetive definitions where
 // we use 'XEL' for the types which are elaborated

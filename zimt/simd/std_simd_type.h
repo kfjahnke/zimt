@@ -60,6 +60,7 @@
 #include <experimental/simd>
 
 #include "simd_tag.h"
+#include "../common.h"
 
 namespace simd
 {

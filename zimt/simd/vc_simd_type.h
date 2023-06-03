@@ -804,6 +804,24 @@ struct vc_simd_type
   }
 } ;
 
+template < typename T , std::size_t N >
+struct allocator_traits < vc_simd_type < T , N > >
+{
+  typedef Vc::Allocator < vc_simd_type < T , N > >
+    type ;
 } ;
+
+} ; // namespace simd
+
+namespace std
+{
+  template < typename T , std::size_t N >
+  struct allocator_traits < simd::vc_simd_type < T , N > >
+  {
+    typedef Vc::Allocator < simd::vc_simd_type < T , N > >
+      allocator_type ;
+  } ;
+} ;
+
 
 #endif // #define VC_SIMD_TYPE_H
