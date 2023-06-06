@@ -124,6 +124,10 @@ using gen_simd_type = std_simd_type < U , M > ;
 
 #else
 
+// note that hwy_simd_type.h #defines this value already, so with
+// the hwy back-end, the lane count depends on the value used there,
+// currently four hardware vectors' worth.
+
 #define ZIMT_VECTOR_NBYTES 64
 
 #endif

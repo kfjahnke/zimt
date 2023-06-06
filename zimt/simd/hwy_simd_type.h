@@ -2039,4 +2039,22 @@ namespace std
 
 #endif // HWY_SIMD_ALLOCATOR
 
+#ifndef ZIMT_VECTOR_NBYTES
+
+// this is tentative, but an informed guess, because the data handled
+// by the rendering code are single precision float or int at most,
+// but the smallest data are unsigned char.
+// A full hardware vector of unsigned char amounts to HWY_MAX_BYTES
+// lanes (one lane <=> one byte), and a full hwy_simd_type of float
+// needs four times as many bytes (one lane <=> four bytes), hence
+// the choice of 4*HWY_MAX_BYTES.
+// But TODO for very large HWY_MAX_BYTES this may become very large,
+// and HWY_MAX_BYTES is a loose upper bound, so it may well exceed
+// what the current CPU actually needs. This may become a problem
+// with, e.g. SVE.
+
+#define ZIMT_VECTOR_NBYTES (4*HWY_MAX_BYTES)
+
+#endif
+
 #endif // #define HWY_SIMD_TYPE_H
