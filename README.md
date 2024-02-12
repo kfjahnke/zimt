@@ -27,6 +27,10 @@ extension. The files with the .cpp extension won't work with examples.sh, they r
     ./examples.sh *.cc
     for f in *++; do echo $f; ./$f >> /dev/null; done
 
+## zimt in action
+
+I have created a branch 'zimt' in my project [lux](https://bitbucket.org/kfj/pv/ "git repository of the lux image and panorama viewer") which uses zimt to implement some functionality of the vspline code base which is packaged with lux. This 'exercises' the zimt data types and transform family of functions in a real application, and it's helped me to do some debugging and tweaking, so that the 'zimt flavour' for lux now runs roughly as fast as the original. If you're interested to see zimt 'in action', check out lux' zimt branch and build as usual. 'to see' is meant quite literally: with an image processing software, if anything goes wrong, you're likely to see it.
+
 ### zimt backends
 
 On top of 'zimt's own', zimt currently supports three SIMD backends:
@@ -35,13 +39,16 @@ On top of 'zimt's own', zimt currently supports three SIMD backends:
   - Vc
   - std::simd
 
-My recommendation is to use [highway](https://github.com/google/highway/ "Performance-portable, length-agnostic SIMD with run-time dispatch") - it's the most recent development, supports a wide variety of hardware, and the integration into zimt is well-used because it's now the default back-end for [lux](https://bitbucket.org/kfj/pv/ "git repository of the lux image and panorama viewer"). highway is available from github, and it's also quite available via package managers, so it's a good idea to see if your package manager offers it. zimt currently relies on highway 1.0.4. To use this backend with zimt, #define USE_HWY
+My recommendation is to use [highway](https://github.com/google/highway/ "Performance-portable, length-agnostic SIMD with run-time dispatch") - it's the most recent development, supports a wide variety of hardware, and the integration into zimt is well-used because it's now the default back-end for [lux](https://bitbucket.org/kfj/pv/ "git repository of the lux image and panorama viewer"). highway is available from github, and it's also quite available via package managers, so it's a good idea to see if your package manager offers it. zimt currently relies on highway 1.0.5. To use this backend with zimt, #define USE_HWY
+
+Note that to get specific code for a given ISA with the highway back-end, you may need additional compiler flags beyond '-march=native' - please refer to highway's documentation, or have a look at [lux' CMakeLists.txt](https://bitbucket.org/kfj/pv/src/master/CMakeLists.txt), where these flags are used for the ISAs lux supports.
 
 [Vc](https://github.com/VcDevel/Vc/ "SIMD Vector Classes for C++") is good for intel/AMD processors up to AVX2, and it has dedicated AVX support, which highway does not provide - there, the next-best thing is SSE4.2, which is quite similar but a bit slower. Apart from that, using Vc with zimt offers few advantages over using the highway backend. You may find Vc packages via your package manager - if you install from source, pick the 1.4 branch explicitly. To use this backend with zimt, #define USE_VC, and link with -lVc. Vc's 'spirit' is to provide a generic interface to SIMD programming, whereas highway tends to provide 'what is there', failing to compile code which requests features which can't be provided by the hardware, rather than falling back to using small loops to provide an implementation, which is Vc style. Using Vc, your code may compile just fine, but if it 'falls back to scalar' you may not notice the fact. highway will instead fail to compile the code. I prefer the generic approach and I've made great efforts to 'bend' my highway interface to behave more like Vc, but there's only so much I can do.
 
 [std::simd](https://en.cppreference.com/w/cpp/experimental/simd/ "cppreference.com page: Data-parallel vector library") is part of the C++ standard and requires C++17. Some C++ libraries now provide an implementation of std::simd, but the implementation coming with g++ is - IMHO and of this writing - not very comprehensive, e.g. missing explict SIMD implementations of some math routines (like atan2). It is often a step up from no backend, though, and if you have a recent libstdc++ installed, it's definitely worth a try. To use this backend with zimt, #define USE_STDSIMD, and use -std=c++17.
 
 For all compiles, it's crucial to use optimization (use -O3) and to specify use of the native CPU (unless you need portability). The latter is affected by '-march=native' on intel/AMD CPUs; for other platforms you may need to specify the actual CPU - e.g. -mcpu=apple-m1 for builds on Apple's M1. I prefer using clang++ over g++, but I'll refrain from a clear recommendation.
+
 
 ## zimt components
 

@@ -268,7 +268,7 @@ struct unary_functor
 /// last 'genuine' value. The padding is applied so that functors
 /// which ignore 'cap' (this should be the majority) can do so without
 /// causing exceptions due to unsuitable input, provided that the
-/// 'genuine' lanes don't causes such exceptions.
+/// 'genuine' lanes don't cause such exceptions.
 /// If the wrapped functor, 'inner_type', does not have a capped eval
 /// overload, vs_adapter will route to inner_type's 'uncapped' eval,
 /// ignoring the cap value.

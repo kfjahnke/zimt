@@ -100,7 +100,7 @@ namespace zimt
 {
 typedef std::size_t ic_type ;
 
-/// 'process' is the central function in zimt  and used to
+/// 'process' is the central function in zimt and used to
 /// implement all 'transform-like' operations. It is  a
 /// generalization of the 'transform' concept, adding choosable
 /// 'get' and 'put' functors generating input for the 'act'

@@ -133,7 +133,7 @@
 /// them to other uses, you may at times find they are not perfectly
 /// general or make certain assumptions. I try and point this out in
 /// the comments, so to use the code outside the zimt::process
-/// context will require careful planning. With zimt:::process,
+/// context will require careful planning. With zimt::process,
 /// everything should 'snap into place'.
 
 #ifndef ZIMT_TILES_H
@@ -177,6 +177,42 @@ struct tile_t
   // contiguous, compact block of memory with as many value_t
   // as the shape's inner product.
 
+  // TODO: introduce tiles with additional support around the
+  // edges, e.g. for b-spline coeffcients, to allow evaluation
+  // without having to assemble a coefficient window from
+  // several tiles
+
+  // TODO: abstraction of allocation. I'd like to have allocation
+  // obtain memory from a pool of tiles held in one large-ish
+  // contiguous block of memory. Then each tile manifest in this
+  // pool (rather than latent in the form of a file on disk) can
+  // be characterized uniquely by a fixed offset from the pool's
+  // base address. The scheme would work with power-of-two tile
+  // extents. Notional coordinates coming in can be split into
+  // a tile coordinate and an in-tile coordinate (this can be
+  // done efficiently with mask and shift operations due to the
+  // power-of-two-based extent), and the tile coordinate can be
+  // translated into an tile index from the pool base address.
+  // Using the pool's shape and strides (stride one in dimension
+  // zero can be prescribed), the combination of the tile's index
+  // from the pool base address and the in-tile coordinate yields
+  // an offset from the pool base address where the corresponding
+  // data can be found. If an access attempts to acces a tile which
+  // is not manifest, an exception is thrown and all the tiles which
+  // are needed to satisfy the access are loaded into the pool.
+  // This access scheme can easily be simdized: a set of incoming
+  // notional coordinates yields a set of tile coordinates and a
+  // set of in-tile coordinates. The tile coordinates are converted
+  // to offsets (by multiplication with the tile store's strides
+  // amd summing up) and the offsets used in a gather operation to
+  // retrieve the tile indexes into the pool. If any of these come
+  // out invalid (null, negative, any easily detectable property)
+  // the exception is thrown, resultig in the - likely slow -
+  // process of making all needed tiles manifest. 'Regular'
+  // processing (without the exception) is fast, though, and if
+  // especially detrimental access patterns (like, truly random
+  // access) are avoided, exceptions should be relatively rare.
+
   void allocate()
   {
     assert ( p_data == nullptr ) ;
@@ -202,7 +238,7 @@ struct tile_t
   // tile-based get_t/put_t objects to obtain the appropriate
   // data pointer and number of values which the current tile
   // can still provide until the 'right edge' of the tile is
-  // reached. Every call to 'provid' also marks the entry into
+  // reached. Every call to 'provide' also marks the entry into
   // a new 'transit', and when you look at the invocations of
   // 'provide', you can see that each of them is followed by
   // code counting up the 'done' values which record the number
@@ -245,7 +281,15 @@ struct tile_t
 // This is an important optimization, reducing the use of
 // mutex-protected access dramatically, but it's scope is
 // limited to use cases where it's guaranteed that threads
-// won't 'step on each other's toes', like in zimt::process.
+// won't 'step on each other's toes', like in zimt::process:
+// there, each value is accessed precisely once, it's a
+// plain traversal of the data. With the multithreaded access,
+// the precise sequence in which data are processed and the
+// concrete thread which processes them is knot known and
+// 'sorts itself out', but it's guaranteed that no datum is
+// accessed more than once, so there doesn't have to be
+// a protection against conflicting data access by several
+// concurrent threads.
 
 template < typename tile_t >
 struct tether_t
@@ -257,7 +301,7 @@ struct tether_t
 #endif
 
   // at the beginning of a 'run', this value is set to the
-  // number of 'fragments'' the tile will 'provide' during the
+  // number of 'fragments' the tile will 'provide' during the
   // run. tile_loader and tile_storer objects cumulate the number
   // of fragments they provide in their own buffers and only
   // interact with the tile's (so, this) datum when they move
@@ -291,7 +335,7 @@ struct tether_t
 // allocate and initialize some memory, but there won't be any
 // access to mass storage or other lengthy operations. It's
 // coded to fit well into an RAII scheme, so that it's set up
-// right befor it's used with zimt::process and destructed
+// right before it's used with zimt::process and destructed
 // afterwards. Note that, if you intend to re-use a tile_store_t
 // object after the zimt::process run, you should call 'close'
 // afterwards - if the tile_store_t object is destructed, this
@@ -331,6 +375,13 @@ struct tile_store_t
 private:
 
   // helper function to provide store_shape in the c'tor
+  // for the sake of efficiency, we only use precisely one size
+  // of tile, even though tiles on the edges of the notional
+  // shape may be only partially filled with data. We assume
+  // that this will not produce a significant amount of 'dead'
+  // memory. Of course this assumption is false if the tile
+  // size is large compared to the notionaly shape, and the
+  // waste gets worse with higher dimensionality of the construct.
 
   static shape_type get_store_shape
     ( const shape_type & array_shape ,
@@ -365,18 +416,17 @@ private:
       delete tether.p_tile->p_data ;
       delete tether.p_tile ;
       tether.p_tile = nullptr ;
-      // tether.nusers = 0 ;
     }
   }
 
-  // calculate_due set the 'due' member in the tether_t objects
+  // calculate_due sets the 'due' member in the tether_t objects
   // in the store. This is done separately for read and write
   // access - if the tile store is opened for read/write
   // operation, this function will be called twice, once with
   // 'read_not_write' true and once false. this is due to the
   // offsets in the bill, which can be different for the read
   // and write part. Apart from that, the code is the same.
-  // Using two distinct calls allows us all trhee use cases:
+  // Using two distinct calls allows us all three use cases:
   // reading only, writing only, and read/write.
 
   void calculate_due ( const zimt::bill_t & bill ,
@@ -702,7 +752,7 @@ public:
 
 #ifndef ZIMT_SINGLETHREAD
 
-      std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
+    std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
 
 #endif // ZIMT_SINGLETHREAD
 
@@ -744,7 +794,7 @@ public:
 
 #ifndef ZIMT_SINGLETHREAD
 
-        std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
+      std::lock_guard < std::mutex > lk ( tether.tile_mutex ) ;
 
 #endif // ZIMT_SINGLETHREAD
 
@@ -1246,7 +1296,7 @@ public:
 // tile_storer uses the same techniques as tile_loader, just the
 // flow of data is reversed. One might code the processing with
 // a flag indicating direction of data flow (i.e. true meaning
-// simsized datum -> memory and false meaning the reverse), but
+// "simdized datum -> memory" and false meaning the reverse), but
 // for now I stick with copy-and-paste and swappig source and
 // target of the relevant assignments, assuming that this code
 // will remain static later on.
