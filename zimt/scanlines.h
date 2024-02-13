@@ -39,7 +39,10 @@
 /*! \file scanlines.h
 
     \brief using tiled storage access to interface with files providing
-           data as individual scanlines, like many image files do.
+           data as individual scanlines, like many image files do. This
+           is more a proposition/example than 'library code proper' -
+           derived classes might override load_tile and store_tile
+           directly.
 
 */
 
@@ -48,17 +51,20 @@
 namespace zimt
 {
 
-template < typename T , std::size_t N , std::size_t D >
+template < typename T , std::size_t N >
 struct line_store_t
-: public tile_store_t < T , N , D >
+: public basic_tile_store_t < T , N , 2 >
 {
-  typedef tile_store_t < T , N , D > base_t ;
+  typedef basic_tile_store_t < T , N , 2 > base_t ;
   using typename base_t::tile_type ;
   using typename base_t::value_t ;
   using typename base_t::shape_type ;
   using typename base_t::index_type ;
   using base_t::base_t ;
   using base_t::tile_shape ;
+
+  // we will use two std::functions to move scanlines from external
+  // storage to the tile's memory and back. These are their types:
 
   typedef std::function < bool ( unsigned char* ,
                                  std::size_t ,
@@ -68,19 +74,25 @@ struct line_store_t
                                  std::size_t,
                                  std::size_t ) > line_cf ;
 
+  // And these are the corresponding objects, as passed to the 'ctor
+
   line_f load_line ;
   line_cf store_line ;
 
-  line_store_t ( shape_type _array_shape ,
-                 shape_type _tile_shape ,
+  // the c'tor takes the width and height of the image and the two
+  // std::functions moving data.
+
+  line_store_t ( std::size_t width ,
+                 std::size_t height ,
                  line_f _load_line ,
                  line_cf _store_line )
-  : base_t ( _array_shape , _tile_shape , "" ) ,
+  : base_t ( { width , height } , { width , 1UL } , "" ) ,
     load_line ( _load_line ) ,
     store_line ( _store_line )
-  {
-    assert ( tile_shape[1] == 1 ) ;
-  }
+  { }
+
+  // load_tile and store_tile adapt the simple load_line and store_line
+  // functions to the zimt tile store logic and conventions.
 
   virtual bool load_tile ( tile_type * p_tile ,
                            const index_type & tile_index ) const

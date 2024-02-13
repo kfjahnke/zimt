@@ -51,10 +51,10 @@ int main ( int argc , char * argv[] )
   // we set up two tile stores: one as data source, and one as
   // data drain.
 
-  zimt::tile_store_t < float , 3 , 2 >
+  zimt::basic_tile_store_t < float , 3 , 2 >
     tile_source ( shape , { 256 , 256 } , "tile_source" ) ;
 
-  zimt::tile_store_t < float , 3 , 2 >
+  zimt::basic_tile_store_t < float , 3 , 2 >
     tile_drain ( shape , { 256 , 256 } , "tile_drain" ) ;
 
   // we set up a common 'bill'

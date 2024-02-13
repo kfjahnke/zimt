@@ -98,7 +98,7 @@ int main ( int argc , char * argv[] )
   typedef short dtype ;
 
   {
-    zimt::tile_store_t < dtype , 2 , 2 >
+    zimt::basic_tile_store_t < dtype , 2 , 2 >
       tile_drain ( shape , { tile_width , tile_height } ,
                    "crd_tiles" ) ;
 

@@ -41,9 +41,13 @@
 // applies the functor to the scanlines and stores the scanlines to
 // a second file after having processed them with the functor. Use
 // this example with two image file names, first the input, then the
-// output. Use a coulour image without an alpha channel as input,
+// output. Use a colour image without an alpha channel as input,
 // e.g. a JPEG file. The output should be a file with the same shape,
 // but the colour channels rotated.
+// This is to demonstrate that we can 'bend' zimt's tile storage
+// logic to handle the problem at hand - of course we might simply
+// code a program directly reading, modifying and writing scanlines
+// without accessing zimt tile code at all.
 
 #include <zimt/zimt.h>
 #include <zimt/scanlines.h>
@@ -52,27 +56,75 @@
 
 using namespace OIIO;
 
-// we use fake_load and fake_store from the 'scanlines.cc' example.
-// They won't actually be called - but this is instructive: it shows
-// that the store function of a tile loader and the load function
-// of a tile storer are not used - if they were, we'd see console
-// output.
-
-bool fake_load ( unsigned char * p_trg ,
-                     std::size_t nbytes ,
-                     std::size_t line )
+namespace zimt
 {
-  std::cout << "scanline load of " << nbytes << " to " << (void*)p_trg
-            << " line " << line << std::endl ;
-  return true ;
-}
 
-bool fake_store ( const unsigned char * p_trg ,
-                  std::size_t nbytes ,
-                  std::size_t line )
+template < typename T , std::size_t N >
+struct st_line_store_t
+: public line_store_t < T , N >
 {
-  std::cout << "fake store of " << nbytes << " from " << (const void*)p_trg
-            << " line " << line << std::endl ;
+  typedef line_store_t < T , N > base_t ;
+  using typename base_t::tile_type ;
+  using typename base_t::value_t ;
+  using typename base_t::shape_type ;
+  using typename base_t::index_type ;
+  using typename base_t::line_f ;
+  using typename base_t::line_cf ;
+  using base_t::base_t ;
+  using base_t::tile_shape ;
+
+  // we'll run this example with single-threaded code only, and there
+  // will only be one single scan line being processed. So we needn't
+  // allocate or deallocate the 'tile' - instead, we use the same one
+  // all over again:
+
+  tile_type single_line ;
+
+  // this single tile needs to be initialized, so we have to code
+  // a c'tor for this class which passes on the arguments to the base
+  // class and does the single-tile initialization:
+
+  st_line_store_t ( std::size_t width ,
+                    std::size_t height ,
+                    line_f _load_line ,
+                    line_cf _store_line )
+  : base_t ( width , height , _load_line , _store_line ) ,
+    single_line ( { width , 1UL } )
+  {
+    single_line.p_data = new typename tile_type::storage_t ( tile_shape ) ;
+  }
+
+  // good style: we allocate memory, so we also delete it.
+
+  ~st_line_store_t()
+  {
+    delete single_line.p_data ;
+  }
+
+  // instead of actually allocating memory, we use the same memory
+  // all over. This is to demonstrate overriding the tile de/allocation.
+
+  virtual tile_type * allocate_tile()
+  {
+    return & single_line ;
+  }
+
+  virtual void deallocate_tile ( tile_type * p_tile )
+  { }
+} ;
+
+} ;
+
+// further down, we'll construct two st_line_store_t objects.
+// st_line_store_t's c'tor expects a tile loading and a tile
+// storing function, but since we're only loading with one and
+// storing with the other, we have to pass something for the
+// other function: this one, pass. It does nothing.
+
+bool pass ( const unsigned char * p_trg ,
+            std::size_t nbytes ,
+            std::size_t line )
+{
   return true ;
 }
 
@@ -80,7 +132,12 @@ bool fake_store ( const unsigned char * p_trg ,
 
 typedef zimt::xel_t < unsigned char , 3 > px_t ;
 
-// simple zimt pixel functor, rotating the colour channels
+// simple zimt pixel functor, rotating the colour channels.
+// Note how we use a template for the incoming and outgoing
+// data type. This is possible because we don't need SIMD-
+// specific code for the 'simdized' version. And since we're
+// not doing a reduction, we needn't code a 'capped' variant
+// either.
 
 struct rotate_rgb_t
 : public zimt::unary_functor < px_t >
@@ -104,9 +161,9 @@ int main ( int argc , char * argv[] )
   auto inp = ImageInput::open ( argv[1] ) ;
   assert ( inp != nullptr ) ;
   const ImageSpec & spec = inp->spec() ;
-  auto w = spec.width ;
-  auto h = spec.height ;
-  auto c = spec.nchannels ;
+  std::size_t w = spec.width ;
+  std::size_t h = spec.height ;
+  std::size_t c = spec.nchannels ;
   assert ( c == 3 ) ;
 
   // Next we open the output with matching parameters
@@ -135,11 +192,6 @@ int main ( int argc , char * argv[] )
     return out->write_scanline ( line , 0 , TypeDesc::UINT8 , p_src );
   } ;
 
-  // notional shape for zimt::process. This has to be the size of
-  // the image, as gleaned from inp->spec.
-
-  zimt::xel_t < std::size_t , 2 > shape { w , h } ;
-
   // we set up two tile stores: one as data source, and one as
   // data drain. Note how, for this special use case, we pick a
   // tile shape as wide as the scanline and only a single line
@@ -148,11 +200,11 @@ int main ( int argc , char * argv[] )
   // complex scenarios, but it will faithfully do the job we
   // expect, namely load and store individual scanlines.
 
-  zimt::line_store_t < unsigned char , 3 , 2 >
-    line_source ( shape , { w , 1 } , load_line , fake_store ) ;
+  zimt::st_line_store_t < unsigned char , 3 >
+    line_source ( w , h , load_line , pass ) ;
 
-  zimt::line_store_t < unsigned char , 3 , 2 >
-    line_drain ( shape , { w , 1 } , fake_load , store_line ) ;
+  zimt::st_line_store_t < unsigned char , 3 >
+    line_drain ( w , h , pass , store_line ) ;
 
   // we set up a common 'bill'
 
@@ -185,6 +237,11 @@ int main ( int argc , char * argv[] )
   // and even quite complex functionality can 'fit into' this
   // scheme of operation without causing much delay, even though
   // the operation isn't multithreaded.
+  // Why not load the entire image, process it and store it again?
+  // Because this here scheme needs much less memory: two line's
+  // worth - one for the input, one for the output. So we can
+  // process huge files, and even several of them, without too
+  // much memory load and with better cache efficiency.
 
-  zimt::process ( shape , tl , rotate_rgb_t() , tp , bill ) ;
+  zimt::process < 2 > ( { w , h } , tl , rotate_rgb_t() , tp , bill ) ;
 }

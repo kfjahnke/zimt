@@ -80,13 +80,18 @@ int main ( int argc , char * argv[] )
   zimt::xel_t < std::size_t , 2 > shape { 2048 , 16 } ;
 
   // we set up two tile stores: one as data source, and one as
-  // data drain.
+  // data drain. Note how, for this special use case, we pick a
+  // tile shape as wide as the scanline and only a single line
+  // in height. The tiled storage code will produce a bit of
+  // overhead because the logic is capable of handling much more
+  // complex scenarios, but it will faithfully do the job we
+  // expect, namely load and store individual scanlines.
 
   zimt::line_store_t < float , 3 , 2 >
-    tile_source ( shape , { 2048 , 1 } , fake_load , fake_store ) ;
+    line_source ( shape , { 2048 , 1 } , fake_load , fake_store ) ;
 
   zimt::line_store_t < float , 3 , 2 >
-    tile_drain ( shape , { 2048 , 1 } , fake_load , fake_store ) ;
+    line_drain ( shape , { 2048 , 1 } , fake_load , fake_store ) ;
 
   // we set up a common 'bill'
 
@@ -96,25 +101,18 @@ int main ( int argc , char * argv[] )
   // now we set up get_t, act and put_t for zimt::process. This is
   // just the same for tile_loader and tile_storer as it is for any
   // of the other get_t/put_t objects, making the tiled storage
-  // a 'zimt standard' source/sink.
+  // a 'zimt standard' source/sink. Note how we pass in line_source
+  // and line_drain as reference to tile_store_t - their base class.
+  // This routes the scanline access to fake_load/fake_store, and
+  // there is no need to make the remainder of the tiled storage
+  // processing code aware of the 'change of substrate', because the
+  // 'tile' access code is coded via virtual member functions.  
 
-  zimt::tile_loader < float , 3 , 2 > tl ( tile_source , bill ) ;
+  zimt::tile_loader < float , 3 , 2 > tl ( line_source , bill ) ;
   zimt::pass_through < float , 3 > act ;
-  zimt::tile_storer < float , 3 , 2 > tp ( tile_drain , bill ) ;
+  zimt::tile_storer < float , 3 , 2 > tp ( line_drain , bill ) ;
 
   // showtime!
 
   zimt::process ( shape , tl , act , tp , bill ) ;
-
-  // If there weren't any tiles before, there should be now:
-  // the tile_storer writes data to disk, producing one file per
-  // tile with 'obvious' names. If you want to 'play' with the data,
-  // next use 'tile_drain' as tile store for both the loader and
-  // the storer the next run and observe how the data are read and
-  // rewritten within the same tile store. Next you might set up
-  // the source tile store to read the tiles (adapt the basename
-  // to 'tile_drain' and set up the target tile store with a new
-  // basename (like, 'tile_drain_2'). Now the data should be read
-  // from the tiles from the previous run and stored to a new set
-  // of tiles.
 }

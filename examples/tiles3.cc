@@ -54,13 +54,13 @@ void first()
   // data drain. As source, we use the tile store which was made
   // by tiles2.cc, tiles with 'self-referential' coordinates
 
-  zimt::tile_store_t < short , 2 , 2 >
+  zimt::basic_tile_store_t < short , 2 , 2 >
     tile_source ( shape , { 256 , 256 } , "crd_tiles" ) ;
 
   // Here we test the extraction of a subarray to a new tile
   // store with deliberately 'odd' metrics.
 
-  zimt::tile_store_t < short , 2 , 2 >
+  zimt::basic_tile_store_t < short , 2 , 2 >
     tile_drain ( shape , { 95 , 113 } , "extract" ) ;
 
   // we set up a common 'bill'
@@ -117,7 +117,7 @@ void second()
   // tile size, and we have a bit of 'wasted space'. We need to use
   // the same base name as well to get the tiles we want.
 
-  zimt::tile_store_t < short , 2 , 2 >
+  zimt::basic_tile_store_t < short , 2 , 2 >
     tile_source ( shape , { 95 , 113 } , "extract" ) ;
 
   // this is the 'ordinary' array we'll use as target
@@ -148,13 +148,14 @@ void second()
 }
 
 template < typename T , std::size_t N , std::size_t D >
-struct mod_tile_store_t
-: public zimt::tile_store_t < T , N , D >
+struct mod_basic_tile_store_t
+: public zimt::basic_tile_store_t < T , N , D >
 {
-  typedef zimt::tile_store_t < T , N , D > base_t ;
+  typedef zimt::basic_tile_store_t < T , N , D > base_t ;
   using typename base_t::index_type ;
   using typename base_t::tile_type ;
   using typename base_t::value_t ;
+  using base_t::basename ;
   using base_t::base_t ;
 
 private:
@@ -163,10 +164,24 @@ private:
   // by not writing to disk and instead only emitting a message
   // about what would have been written.
 
+  std::string get_filename
+            ( const index_type & tile_index ) const
+  {
+    auto filename = basename ;
+    for ( std::size_t i = 1 ; i <= D ; i++ )
+    {
+      filename += "_" ;
+      filename += std::to_string ( tile_index [ D - i ] ) ;
+    }
+    filename += std::string ( ".ztl" ) ;
+    return filename ;
+  }
+
   virtual bool store_tile ( tile_type * p_tile ,
                             const index_type & tile_index ) const
   {
-    auto filename = base_t::get_filename ( tile_index ) ;
+    // auto filename = base_t::get_filename ( tile_index ) ;
+    auto filename = get_filename ( tile_index ) ;
     auto const & p_data ( p_tile->p_data ) ;
 
     assert ( p_data != nullptr ) ;
@@ -198,7 +213,7 @@ void third()
   // to construct the tile store. For fun, we use a modified
   // tile store which does not actually write to disk.
 
-  mod_tile_store_t < short , 2 , 2 >
+  mod_basic_tile_store_t < short , 2 , 2 >
     tile_source ( shape , { 95 , 113 } , "extract" ) ;
 
   // this is the 'ordinary' array we'll use as target

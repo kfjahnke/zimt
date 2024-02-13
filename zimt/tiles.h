@@ -213,11 +213,11 @@ struct tile_t
   // especially detrimental access patterns (like, truly random
   // access) are avoided, exceptions should be relatively rare.
 
-  void allocate()
-  {
-    assert ( p_data == nullptr ) ;
-    p_data = new storage_t ( shape ) ;
-  }
+  // void allocate()
+  // {
+  //   assert ( p_data == nullptr ) ;
+  //   p_data = new storage_t ( shape ) ;
+  // }
 
   // tile_t's c'tor only sets the shape; allocating storage or
   // access to files is done later with specific functions as
@@ -372,6 +372,16 @@ struct tile_store_t
 
   std::string basename ;
 
+  // creating and destroying the in-memory representation of tiles
+  // is done with virtual functions, so that derived classes can
+  // override the de/allocation process, e.g. to use a tile pool.
+
+protected:
+
+  virtual tile_type * allocate_tile() = 0 ;
+
+  virtual void deallocate_tile ( tile_type * p_tile ) = 0 ;
+
 private:
 
   // helper function to provide store_shape in the c'tor
@@ -413,8 +423,9 @@ private:
       {
         store_tile ( tether.p_tile , tile_index ) ;
       }
-      delete tether.p_tile->p_data ;
-      delete tether.p_tile ;
+      // delete tether.p_tile->p_data ;
+      // delete tether.p_tile ;
+      deallocate_tile ( tether.p_tile ) ;
       tether.p_tile = nullptr ;
     }
   }
@@ -524,108 +535,24 @@ private:
 
 protected:
 
-  // Here we have a set of virtual member functions which can be
-  // overridden in derived classes to 'bend' I/O and filename
-  // generation to the user's needs. The code in this header
-  // doing I/O will access these routines via a base class
-  // reference. The member functions in this base class are
-  // simple but usable, what's missing is error handling.
-  // If something is amiss, they will rather terminate.
-
-  // helper function to construct a filename for a file associated
-  // with a specific tile index. For now, this function attaches
-  // an identifier and a suffix to the basename; other schemes
-  // might produce tree-like naming schemes to avoid overcrowding
-  // a single folder when the tile count gets very large. Since
-  // this is a virtual function, user code can easily provide
-  // their own scheme. Note also that this function is only called
-  // by load_tile and store_tile (below) and it's up to potential
-  // overrides of these two functions to use it as-is, override it,
-  // or ignore it.
-
-  virtual std::string get_filename
-            ( const index_type & tile_index ) const
-  {
-    auto filename = basename ;
-    for ( std::size_t i = 1 ; i <= D ; i++ )
-    {
-      filename += "_" ;
-      filename += std::to_string ( tile_index [ D - i ] ) ;
-    }
-    filename += std::string ( ".ztl" ) ;
-    return filename ;
-  }
+  // moving the data drom the external representation - e.g.
+  // a file - and back to it, are coded as pure virtual member
+  // functions in this (base) class:
 
   // load data from a file to a tile's storage array. If the
   // file can't be opened, this is accepted and the data off
-  // p_data are left as they are. file access is coded very
-  // simply in C for this class, but classes inheriting from
-  // tile_store_t may use their own code. Note that holding
-  // tiles as distinct files on mass storage is only one way
-  // of providing data - other schemes might read parts of
-  // a large file, or blobs from a database etc - the only
-  // requirement is to fill the tile_type object's buffer
-  // with data corresponding with the given tile index.
+  // p_data are left as they are. When this function returns,
+  // the tile is deemed operational.
 
   virtual bool load_tile ( tile_type * p_tile ,
-                           const index_type & tile_index ) const
-  {
-    auto filename = get_filename ( tile_index ) ;
-    auto & p_data ( p_tile->p_data ) ;
+                           const index_type & tile_index ) const = 0 ;
 
-    assert ( p_data != nullptr ) ; // might alocate instead
-    FILE* input = fopen ( filename.c_str() , "rb" ) ;
-
-    if ( input != NULL )
-    {
-      fseek ( input , 0L , SEEK_END ) ;
-      auto size = ftell ( input ) ;
-      std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
-      if ( size >= nbytes )
-      {
-        fseek ( input , 0L , SEEK_SET ) ;
-        fread ( p_data->data() , 1 , nbytes , input ) ;
-      }
-      fclose ( input ) ;
-
-      ++ load_count ; // for statistics, can go later
-
-      // std::lock_guard < std::mutex > lk ( stdout_mutex ) ;
-      // std::cout << std::this_thread::get_id()
-      //           << ": read  " << nbytes << " bytes from "
-      //           << filename << std::endl ;
-
-      return true ;
-    }
-    return false ;
-  }
-
-  // Store a tile's storage array to a file. The function assumes
-  // that the tile holds a single compact block of data, as it is
-  // created by the allocation routine.
+  // Store a tile's storage array to the external representation.
+  // When this function returns, it's expected that the external
+  // representation is complete and usable.
 
   virtual bool store_tile ( tile_type * p_tile ,
-                            const index_type & tile_index ) const
-  {
-    auto filename = get_filename ( tile_index ) ;
-    auto const & p_data ( p_tile->p_data ) ;
-
-    assert ( p_data != nullptr ) ;
-    FILE* output = fopen ( filename.c_str() , "wb" ) ;
-    assert ( output != NULL ) ;
-    std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
-    fwrite ( p_data->data() , 1 , nbytes , output ) ;
-    fclose ( output ) ;
-
-    ++ store_count ; // for statistics, can go later
-
-    // std::lock_guard < std::mutex > lk ( stdout_mutex ) ;
-    // std::cout << std::this_thread::get_id() <<
-    //           ": wrote " << nbytes << " bytes to "
-    //           << filename << std::endl ;
-
-    return true ;
-  }
+                            const index_type & tile_index ) const = 0 ;
 
 public:
 
@@ -769,8 +696,9 @@ public:
       // allocate it's memory and, optionally, read data from
       // a file.
 
-      tether.p_tile = new tile_type ( tile_shape ) ;
-      tether.p_tile->allocate() ;
+      // tether.p_tile = new tile_type ( tile_shape ) ;
+      // tether.p_tile->allocate() ;
+      tether.p_tile = allocate_tile() ;
 
       if ( read_from_disk )
         load_tile ( tether.p_tile , tile_index ) ;
@@ -805,6 +733,144 @@ public:
     }
   }
 
+} ;
+
+/// reference implementation of a simple tile store. A tile store
+/// implementation must override four pure virtual functions in the
+/// base class:
+/// - allocate_tile
+/// - deallocate_tile
+/// - load_tile
+/// - store_tile
+
+template < typename T , std::size_t N , std::size_t D >
+struct basic_tile_store_t
+: public zimt::tile_store_t < T , N , D >
+{
+  typedef zimt::tile_store_t < T , N , D > base_t ;
+  using typename base_t::index_type ;
+  using typename base_t::tile_type ;
+  using typename base_t::value_t ;
+  using base_t::tile_shape ;
+  using base_t::basename ;
+  using base_t::base_t ;
+
+protected:
+
+  // Here we have a set of virtual member functions which can be
+  // overridden in derived classes to 'bend' I/O and filename
+  // generation to the user's needs. The code in this header
+  // doing I/O will access these routines via a base class
+  // reference. The member functions in this base class are
+  // simple but usable, what's missing is error handling.
+  // If something is amiss, they will rather terminate.
+
+  virtual tile_type * allocate_tile()
+  {
+    auto p_tile = new tile_type ( tile_shape ) ;
+    p_tile->p_data = new typename tile_type::storage_t ( tile_shape ) ;
+    return p_tile ;
+  }
+
+  virtual void deallocate_tile ( tile_type * p_tile )
+  {
+    delete p_tile->p_data ;
+    delete p_tile ;
+  }
+
+  // helper function to construct a filename for a file associated
+  // with a specific tile index. For now, this function attaches
+  // an identifier and a suffix to the basename; other schemes
+  // might produce tree-like naming schemes to avoid overcrowding
+  // a single folder when the tile count gets very large. Since
+  // this is a virtual function, user code can easily provide
+  // their own scheme. Note also that this function is only called
+  // by load_tile and store_tile (below) and it's up to potential
+  // overrides of these two functions to use it as-is, override it,
+  // or ignore it.
+
+  std::string get_filename ( const index_type & tile_index ) const
+  {
+    auto filename = basename ;
+    for ( std::size_t i = 1 ; i <= D ; i++ )
+    {
+      filename += "_" ;
+      filename += std::to_string ( tile_index [ D - i ] ) ;
+    }
+    filename += std::string ( ".ztl" ) ;
+    return filename ;
+  }
+
+  // load data from a file to a tile's storage array. If the
+  // file can't be opened, this is accepted and the data off
+  // p_data are left as they are. file access is coded very
+  // simply in C for this class, but classes inheriting from
+  // tile_store_t may use their own code. Note that holding
+  // tiles as distinct files on mass storage is only one way
+  // of providing data - other schemes might read parts of
+  // a large file, or blobs from a database etc - the only
+  // requirement is to fill the tile_type object's buffer
+  // with data corresponding with the given tile index.
+
+  virtual bool load_tile ( tile_type * p_tile ,
+                           const index_type & tile_index ) const
+  {
+    auto filename = get_filename ( tile_index ) ;
+    auto & p_data ( p_tile->p_data ) ;
+
+    assert ( p_data != nullptr ) ; // might alocate instead
+    FILE* input = fopen ( filename.c_str() , "rb" ) ;
+
+    if ( input != NULL )
+    {
+      fseek ( input , 0L , SEEK_END ) ;
+      auto size = ftell ( input ) ;
+      std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
+      if ( size >= nbytes )
+      {
+        fseek ( input , 0L , SEEK_SET ) ;
+        fread ( p_data->data() , 1 , nbytes , input ) ;
+      }
+      fclose ( input ) ;
+
+      ++ load_count ; // for statistics, can go later
+
+      // std::lock_guard < std::mutex > lk ( stdout_mutex ) ;
+      // std::cout << std::this_thread::get_id()
+      //           << ": read  " << nbytes << " bytes from "
+      //           << filename << std::endl ;
+
+      return true ;
+    }
+    return false ;
+  }
+
+  // Store a tile's storage array to a file. The function assumes
+  // that the tile holds a single compact block of data, as it is
+  // created by the allocation routine.
+
+  virtual bool store_tile ( tile_type * p_tile ,
+                            const index_type & tile_index ) const
+  {
+    auto filename = get_filename ( tile_index ) ;
+    auto const & p_data ( p_tile->p_data ) ;
+
+    assert ( p_data != nullptr ) ;
+    FILE* output = fopen ( filename.c_str() , "wb" ) ;
+    assert ( output != NULL ) ;
+    std::size_t nbytes = p_tile->shape.prod() * sizeof ( value_t ) ;
+    fwrite ( p_data->data() , 1 , nbytes , output ) ;
+    fclose ( output ) ;
+
+    ++ store_count ; // for statistics, can go later
+
+    // std::lock_guard < std::mutex > lk ( stdout_mutex ) ;
+    // std::cout << std::this_thread::get_id() <<
+    //           ": wrote " << nbytes << " bytes to "
+    //           << filename << std::endl ;
+
+    return true ;
+  }
 } ;
 
 // classes tile_loader and tile_storer share the code to interface
