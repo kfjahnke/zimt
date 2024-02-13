@@ -128,4 +128,93 @@ struct line_store_t
 
 } ;
 
+// this class presents an interface for external storage in the form
+// of square tiles.
+
+template < typename T , std::size_t N >
+struct square_store_t
+: public basic_tile_store_t < T , N , 2 >
+{
+  typedef basic_tile_store_t < T , N , 2 > base_t ;
+  using typename base_t::tile_type ;
+  using typename base_t::value_t ;
+  using typename base_t::shape_type ;
+  using typename base_t::index_type ;
+  using base_t::base_t ;
+  using base_t::tile_shape ;
+
+  // we will use two std::functions to move tile data from external
+  // storage to the tile's memory and back. The column and line parameters
+  // refer to image coordinates, we'll pass the upper left corner.
+  // These are their types
+
+  typedef std::function < bool ( unsigned char* ,         // target
+                                 std::size_t ,            // nbytes
+                                 std::size_t ,            // column
+                                 std::size_t ) > line_f ; // line
+
+  typedef std::function < bool ( const unsigned char* ,    // source
+                                 std::size_t,              // nbytes
+                                 std::size_t ,             // column
+                                 std::size_t ) > line_cf ; // line
+
+  // And these are the corresponding objects, as passed to the 'ctor
+
+  line_f load_line ;
+  line_cf store_line ;
+
+  // the c'tor takes the width and height of the image and the two
+  // std::functions moving data.
+
+  square_store_t ( std::size_t width ,
+                   std::size_t height ,
+                   std::size_t tile_size ,
+                   line_f _load_line ,
+                   line_cf _store_line )
+  : base_t ( { width , height } , { tile_size , tile_size } , "" ) ,
+    load_line ( _load_line ) ,
+    store_line ( _store_line )
+  { }
+
+  // load_tile and store_tile adapt the simple load_line and store_line
+  // functions to the zimt tile store logic and conventions.
+
+  virtual bool load_tile ( tile_type * p_tile ,
+                           const index_type & tile_index ) const
+  {
+    auto p_data ( p_tile->p_data->data() ) ;
+    assert ( p_data != nullptr ) ; // might alocate instead
+
+    std::size_t nbytes = tile_shape[0] * tile_shape[1] * sizeof(T) * N ;
+    bool success = load_line ( (unsigned char*) p_data ,
+                               nbytes ,
+                               tile_index[0] * tile_shape[0] ,
+                               tile_index[1] * tile_shape[1] ) ;
+    if ( success )
+      ++ load_count ; // for statistics, can go later
+    return success ;
+  }
+
+  // Store a tile's storage array to a file. The function assumes
+  // that the tile holds a single compact block of data, as it is
+  // created by the allocation routine.
+
+  virtual bool store_tile ( tile_type * p_tile ,
+                            const index_type & tile_index ) const
+  {
+    auto const p_data ( p_tile->p_data->data() ) ;
+    assert ( p_data != nullptr ) ;
+
+    std::size_t nbytes = tile_shape[0] * tile_shape[1] * sizeof(T) * N ;
+    bool success = store_line ( (const unsigned char*) p_data ,
+                                nbytes ,
+                                tile_index[0] * tile_shape[0] ,
+                                tile_index[1] * tile_shape[1] ) ;
+    if ( success )
+      ++ store_count ; // for statistics, can go later
+    return success ;
+  }
+
+} ;
+
 } ; // namespace zimt
