@@ -115,22 +115,34 @@ struct st_line_store_t
 
 } ;
 
+// type used for internal storage of data and corresponding OIIO typedesc
+// we can use unsigned char and UINT8 here for all SIMD backends except
+// std::simd, which does not support SIMD types based on ele_type.
+
+typedef unsigned short ele_type ;
+auto typedesc = TypeDesc::UINT16 ;
+
+// to use floats internally, use this spec:
+
+// typedef float ele_type ;
+// auto typedesc = TypeDesc::FLOAT ;
+
 // further down, we'll construct two st_line_store_t objects.
 // st_line_store_t's c'tor expects a tile loading and a tile
 // storing function, but since we're only loading with one and
 // storing with the other, we have to pass something for the
 // other function: this one, pass. It does nothing.
 
-bool pass ( const unsigned char * p_trg ,
+bool pass ( const ele_type * p_trg ,
             std::size_t nbytes ,
             std::size_t line )
 {
   return true ;
 }
 
-// type for colour pixels: xel_t of three unsigned char
+// type for colour pixels: xel_t of three ele_type
 
-typedef zimt::xel_t < unsigned char , 3 > px_t ;
+typedef zimt::xel_t < ele_type , 3 > px_t ;
 
 // simple zimt pixel functor, rotating the colour channels.
 // Note how we use a template for the incoming and outgoing
@@ -178,18 +190,18 @@ int main ( int argc , char * argv[] )
   // parameters OIIO needs and call the appropriate OIIO functions
   // to read/write an individual scanline.
 
-  auto load_line = [&] ( unsigned char * p_trg ,
+  auto load_line = [&] ( ele_type * p_trg ,
                          std::size_t nbytes ,
                          std::size_t line ) -> bool
   {
-    return inp->read_scanline ( line , 0 , TypeDesc::UINT8 , p_trg ) ;
+    return inp->read_scanline ( line , 0 , typedesc , p_trg ) ;
   } ;
 
-  auto store_line = [&] ( const unsigned char * p_src ,
+  auto store_line = [&] ( const ele_type * p_src ,
                           std::size_t nbytes ,
                           std::size_t line ) -> bool
   {
-    return out->write_scanline ( line , 0 , TypeDesc::UINT8 , p_src );
+    return out->write_scanline ( line , 0 , typedesc , p_src );
   } ;
 
   // we set up two tile stores: one as data source, and one as
@@ -200,10 +212,10 @@ int main ( int argc , char * argv[] )
   // complex scenarios, but it will faithfully do the job we
   // expect, namely load and store individual scanlines.
 
-  zimt::st_line_store_t < unsigned char , 3 >
+  zimt::st_line_store_t < ele_type , 3 >
     line_source ( w , h , load_line , pass ) ;
 
-  zimt::st_line_store_t < unsigned char , 3 >
+  zimt::st_line_store_t < ele_type , 3 >
     line_drain ( w , h , pass , store_line ) ;
 
   // we set up a common 'bill'
@@ -227,8 +239,8 @@ int main ( int argc , char * argv[] )
   // processing code aware of the 'change of substrate', because the
   // 'tile' access code is coded via virtual member functions.  
 
-  zimt::tile_loader < unsigned char , 3 , 2 > tl ( line_source , bill ) ;
-  zimt::tile_storer < unsigned char , 3 , 2 > tp ( line_drain , bill ) ;
+  zimt::tile_loader < ele_type , 3 , 2 > tl ( line_source , bill ) ;
+  zimt::tile_storer < ele_type , 3 , 2 > tp ( line_drain , bill ) ;
 
   // showtime! We use a rotate_rgb_t object as act functor, which
   // affects the RGB rotation, so that we can see in the output that

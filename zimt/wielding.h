@@ -105,10 +105,10 @@ typedef std::size_t ic_type ;
 /// generalization of the 'transform' concept, adding choosable
 /// 'get' and 'put' functors generating input for the 'act'
 /// functor  and disposing of it's output. By factoring these
-/// two activities  out, the code becomes much more flexible,
-/// and by selecting  simple appropriate 'get' and 'put' objects,
-/// zimt::transform  can easily be implemented as a specialized
-/// application of the  more general code in 'process'.
+/// two activities out, the code becomes much more flexible,
+/// and by selecting simple appropriate 'get' and 'put' objects,
+/// zimt::transform can easily be implemented as a specialized
+/// application of the more general code in 'process'.
 /// So 'process' uses a three-step process: the 'get' object
 /// produces data the 'act' functor can process, the 'act'
 /// functor produces output data from this input, and the 'put'

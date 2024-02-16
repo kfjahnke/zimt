@@ -36,7 +36,7 @@
 /*                                                                      */
 /************************************************************************/
 
-// This example demonstrates processing an image file with a simple
+// This example demonstrates processing a tiled image file with a
 // functor. It opens an image using OpenImageIO, reads the tiles,
 // applies the functor and stores the tiles to a second file. Use
 // this example with two image file names, first the input, then the
@@ -45,8 +45,23 @@
 // but the colour channels rotated.
 // This is to demonstrate that we can 'bend' zimt's tile storage
 // logic to handle the problem at hand - of course we might simply
-// code a program directly reading, modifying and writing scanlines
+// code a program directly reading, modifying and writing tiles
 // without accessing zimt tile code at all.
+// If the input is not tiled, that's okay, this program will read
+// scanline-based files as well. The output format must support tiles,
+// though, and there aren't many which do - I found TIFF, exr and webp
+// to work, the latter two being slow to write on my system, likely due
+// to the use of compression and the likes. TIFF via OIIO accepts the
+// compression = none specification, which I pass here, and that makes
+// writing tiled TIFFs quite fast - close to writing individual tiles
+// with a basic_tile_store_t object used for data storage, which is
+// still a bit faster on my machine.
+// Reading from scanline-based files and writing to tile-based ones
+// shows the versatility of handling the process with zimt: The 'point
+// of contact' is just a SIMD vector's worth of data, and picking them
+// up from a scanline on the source side and depositing them in a tile
+// on the target side is handled transparently by the zimt::transform
+// logic, which fetches and stores data as needed.
 
 #include <zimt/zimt.h>
 #include <zimt/scanlines.h>
@@ -117,20 +132,34 @@ struct st_line_store_t
 
 } ;
 
-// further down, we'll construct two st_line_store_t objects.
+// type used for internal storage of data and corresponding OIIO typedesc
+// we can use unsigned char and UINT8 here for all SIMD backends except
+// std::simd, which does not support SIMD types based on unsigned char.
+
+typedef unsigned short ele_type ;
+auto typedesc = TypeDesc::UINT16 ;
+
+// to use floats internally, use this spec:
+
+// typedef float ele_type ;
+// auto typedesc = TypeDesc::FLOAT ;
+
+// further down, we'll construct an st_line_store_t object.
 // st_line_store_t's c'tor expects a tile loading and a tile
 // storing function, but since we're only loading with one and
 // storing with the other, we have to pass something for the
 // other function: this one, pass. It does nothing.
 
-bool pass_line ( const unsigned char * p_trg ,
+bool pass_line ( const ele_type * p_trg ,
                  std::size_t nbytes ,
                  std::size_t line )
 {
   return true ;
 }
 
-bool pass_tile ( const unsigned char * p_trg ,
+// for tile-based access, there's this 'pass' variant:
+
+bool pass_tile ( const ele_type * p_trg ,
                  std::size_t nbytes ,
                  std::size_t column ,
                  std::size_t line )
@@ -140,7 +169,7 @@ bool pass_tile ( const unsigned char * p_trg ,
 
 // type for colour pixels: xel_t of three unsigned char
 
-typedef zimt::xel_t < unsigned char , 3 > px_t ;
+typedef zimt::xel_t < ele_type , 3 > px_t ;
 
 // simple zimt pixel functor, rotating the colour channels.
 // Note how we use a template for the incoming and outgoing
@@ -161,6 +190,8 @@ struct rotate_rgb_t
   }
 } ;
 
+// main takes two arguments: input and output filename.
+
 int main ( int argc , char * argv[] )
 {
   assert ( argc == 3 ) ;
@@ -178,13 +209,29 @@ int main ( int argc , char * argv[] )
   std::size_t tile_width = spec.tile_width ;
   std::size_t tile_height = spec.tile_height ;
   assert ( tile_width == tile_height ) ;
+  std::cout << "input spec's tile_width: " << tile_width << std::endl ;
 
   // Next we open the output with matching parameters
 
   auto out = ImageOutput::create ( argv[2] );
   assert ( out != nullptr ) ;
   assert ( out->supports ("tiles") ) ;
+  // note how the Typedesc::UINT8 here prescribes the data type used
+  // in the output file, whereas 'typedesc' defined further up refers
+  // to the type used for internal data storage. OIIO translates the
+  // data automatically.
   ImageSpec ospec ( w , h , c , TypeDesc::UINT8 ) ;
+
+  // we want maximum speed here, so no compression. This will only affect
+  // some formats, but for TIFF, it works. Some tiled formats can be very
+  // slow - you'll see that the input was closed, but it may take a while
+  // until the output also closes and the program terminates. This time
+  // is taken to encode the data to the target format - I think they are
+  // held in 'raw' form until then. AFAICR, working with uncompressed
+  // TIFF tiles, the data are written 'straight through' and even large
+  // datasets are processed quickly (provided disk I/O is fast).
+
+  ospec [ "compression" ] = "none" ;
   ospec.tile_width = 256 ;
   ospec.tile_height = 256 ;
   out->open ( argv[2] , ospec ) ;
@@ -193,31 +240,31 @@ int main ( int argc , char * argv[] )
   // we use in image_lines.cc. It will be used if the input does not
   // contain tiles.
 
-  auto load_line = [&] ( unsigned char * p_trg ,
+  auto load_line = [&] ( ele_type * p_trg ,
                          std::size_t nbytes ,
                          std::size_t line ) -> bool
   {
-    return inp->read_scanline ( line , 0 , TypeDesc::UINT8 , p_trg ) ;
+    return inp->read_scanline ( line , 0 , typedesc , p_trg ) ;
   } ;
 
   // if the input contains tiles, we use this function for read access:
 
-  auto load_tile = [&] ( unsigned char * p_trg ,
+  auto load_tile = [&] ( ele_type * p_trg ,
                          std::size_t nbytes ,
                          std::size_t column ,
                          std::size_t line ) -> bool
   {
-    return inp->read_tile ( column , line , 0 , TypeDesc::UINT8 , p_trg ) ;
+    return inp->read_tile ( column , line , 0 , typedesc , p_trg ) ;
   } ;
 
   // and this one for write access:
 
-  auto store_tile = [&] ( const unsigned char * p_src ,
+  auto store_tile = [&] ( const ele_type * p_src ,
                           std::size_t nbytes ,
                           std::size_t column ,
                           std::size_t line ) -> bool
   {
-    return out->write_tile ( column , line , 0 , TypeDesc::UINT8 , p_src ) ;
+    return out->write_tile ( column , line , 0 , typedesc , p_src ) ;
   } ;
 
   // we set up three tile stores: two as data sources, and one as
@@ -229,14 +276,14 @@ int main ( int argc , char * argv[] )
   // of data from/to the respective stores, which are completely
   // decoupled otherwise.
 
-  zimt::st_line_store_t < unsigned char , 3 >
+  zimt::st_line_store_t < ele_type , 3 >
     line_source ( w , h , load_line , pass_line ) ;
 
-  zimt::square_store_t < unsigned char , 3 >
+  zimt::square_store_t < ele_type , 3 >
     tile_source ( w , h , tile_width ? tile_width : 256 ,
                   load_tile , pass_tile ) ;
 
-  zimt::square_store_t < unsigned char , 3 >
+  zimt::square_store_t < ele_type , 3 >
     tile_drain ( w , h , 256 , pass_tile , store_tile ) ;
 
   // we set up a common 'bill'
@@ -254,20 +301,16 @@ int main ( int argc , char * argv[] )
   // just the same for tile_loader and tile_storer as it is for any
   // of the other get_t/put_t objects, making the tiled storage
   // a 'zimt standard' source/sink. Note how we pass in line_source
-  // and line_drain as reference to tile_store_t - their base class.
-  // This routes the scanline access to fake_load/fake_store, and
-  // there is no need to make the remainder of the tiled storage
-  // processing code aware of the 'change of substrate', because the
-  // 'tile' access code is coded via virtual member functions.  
+  // and tile_source as references to tile_store_t - their base class.
 
-  zimt::basic_tile_store_t < unsigned char , 3 , 2 > * p_source ;
+  zimt::basic_tile_store_t < ele_type , 3 , 2 > * p_source ;
   if ( tile_width == 0 )
     p_source = & line_source ;
   else
     p_source = & tile_source ;
 
-  zimt::tile_loader < unsigned char , 3 , 2 > tl ( *p_source , bill ) ;
-  zimt::tile_storer < unsigned char , 3 , 2 > tp ( tile_drain , bill ) ;
+  zimt::tile_loader < ele_type , 3 , 2 > tl ( *p_source , bill ) ;
+  zimt::tile_storer < ele_type , 3 , 2 > tp ( tile_drain , bill ) ;
 
   // showtime! We use a rotate_rgb_t object as act functor, which
   // affects the RGB rotation, so that we can see in the output that
@@ -277,10 +320,23 @@ int main ( int argc , char * argv[] )
   // scheme of operation without causing much delay, even though
   // the operation isn't multithreaded.
   // Why not load the entire image, process it and store it again?
-  // Because this here scheme needs much less memory: two line's
-  // worth - one for the input, one for the output. So we can
+  // Because this here scheme needs much less memory: two rows
+  // of tiles - one for the input, one for the output. So we can
   // process huge files, and even several of them, without too
-  // much memory load and with better cache efficiency.
+  // much memory load and with better cache efficiency. Of course
+  // this depends on the coorperation of the I/O process: if that
+  // buffers the data in memory, we can't help it. If direct writing
+  // of the tiles to individual tile files is wanted, use a
+  // basic_tile_store_t object for storing data instead.
 
   zimt::process < 2 > ( { w , h } , tl , rotate_rgb_t() , tp , bill ) ;
+
+  std::cout << "load count: " << load_count << std::endl ;
+  std::cout << "store count: " << store_count << std::endl ;
+
+  inp->close() ;
+  std::cout << "inp->close() returned" << std::endl ;
+
+  out->close() ;
+  std::cout << "out->close() returned" << std::endl ;
 }
