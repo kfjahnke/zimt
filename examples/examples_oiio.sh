@@ -1,0 +1,39 @@
+#! /bin/bash
+
+# compile examples using OpenImageIO - they ned extra arguments to
+# link to the OIIO libraries
+
+for f in $@
+do
+  body=$(basename $f .cc)
+
+  for compiler in clang++ g++
+  do
+
+    common_flags="-O3 -std=c++17 -march=native -Wno-deprecated-declarations"
+
+    # compile without explicit SIMD code
+
+    echo $compiler $common_flags -ovs_${body}_$compiler $f -lOpenImageIO -lOpenImageIO_Util
+    $compiler $common_flags -ovs_${body}_$compiler $f -lOpenImageIO -lOpenImageIO_Util
+
+    # compile with Vc
+
+    echo $compiler -DUSE_VC $common_flags -ovc_${body}_$compiler $f -lVc -lOpenImageIO -lOpenImageIO_Util
+    $compiler -DUSE_VC $common_flags -ovc_${body}_$compiler $f -lVc -lOpenImageIO -lOpenImageIO_Util
+
+    # compile with highway
+
+    echo $compiler -DUSE_HWY $common_flags -ohwy_${body}_$compiler $f -lOpenImageIO -lOpenImageIO_Util
+    $compiler -DUSE_HWY $common_flags -ohwy_${body}_$compiler $f -lOpenImageIO -lOpenImageIO_Util
+
+    # compile with std::simd (needs std:simd implementation)
+
+    common_flags="-O3 -std=c++17 -march=native"
+
+    echo $compiler -DUSE_STDSIMD $common_flags -ostds_${body}_$compiler $f -lOpenImageIO -lOpenImageIO_Util
+    $compiler -DUSE_STDSIMD $common_flags -ostds_${body}_$compiler $f -lOpenImageIO -lOpenImageIO_Util
+
+  done
+
+done
