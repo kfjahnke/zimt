@@ -36,37 +36,77 @@
 /*                                                                      */
 /************************************************************************/
 
-// adapt a vspline::unary_functor which uses vigra::TinyVectors rather
-// than xel_t. vspline::unary_functor and zimt::unary_functor are
-// just about the same thing, but vspline uses vigra::TinyVector where
-// zimt uses zimt::xel_t. Both are - internally - nothing but a C vector
-// of a few T, so they are binary-compatible and we can adapt the vspline
-// version to the zimt version by reinterpret-casting the arguments to
-// eval. There is a handy factory function named zimt::uf_adapt (it's
-// in unary_functor.h) just for the purpose.
+/*! \file zimt_vigraimpex.cc
 
+    \brief feeding vigra data to zimt::transform
+
+    this example program demonstrates how we can employ vigraimpex
+    to load image files into zimt arrays and to store zimt arrays to
+    image files using vigraimpex.
+
+*/
+
+#include <zimt/zimt_vigra.h>
 #include <zimt/zimt.h>
-#include <vspline/vspline.h>
+#include <vigra/imageinfo.hxx>
+#include <vigra/impex.hxx>
 
-typedef vigra::TinyVector < float , 3 > vigra_pixel_t ;
-typedef zimt::xel_t < float , 3 > pixel_t ;
+// tag this file no-stdsimd: we're using aggregates of unsigned char,
+// which std::simd can't handle
+
+// no-std-simd
+
+// type for colour pixels: xel_t of three unsigned char
+
+typedef zimt::xel_t < unsigned char , 3 > px_t ;
+
+// simple zimt pixel functor, rotating the colour channels
+
+struct rotate_rgb_t
+: public zimt::unary_functor < px_t >
+{
+  template < typename I , typename O >
+  void eval ( const I & in , O & out ) const
+  {
+    out [ 0 ] = in [ 1 ] ;
+    out [ 1 ] = in [ 2 ] ;
+    out [ 2 ] = in [ 0 ] ;
+  }
+} ;
 
 int main ( int argc , char * argv[] )
 {
-  typedef vspline::amplify_type < vigra_pixel_t > wrappee_t ;
-  auto wrapped = zimt::uf_adapt ( wrappee_t ( 2.0 ) ) ;
+  if ( argc < 2 )
+  {
+    std::cerr << "pass a coulour image on the command line"
+              << std::endl ;
+    exit ( 1 ) ;
+  }
 
-  pixel_t in { 1.0f , 2.0f , 3.0f } ;
-  pixel_t out ;
+  // find the image's shape with an imageInfo
 
-  wrapped.eval ( in , out ) ;
-  std::cout << in << " -> " << out << std::endl ;
+  vigra::ImageImportInfo imageInfo ( argv[1] ) ;
 
-  typedef decltype(wrapped)::out_v pixel_v ;
+  // set up a zimt::array_t with this shape
 
-  pixel_v in_v = in ;
-  pixel_v out_v ;
+  zimt::array_t < 2 , px_t >
+    a ( zimt::to_zimt ( imageInfo.shape() ) ) ;
 
-  wrapped.eval ( in_v , out_v ) ;
-  std::cout << in_v << " -> " << out_v << std::endl ;
+  // import the image
+
+  vigra::importImage ( imageInfo , zimt::to_vigra ( a ) ) ;
+
+  // run the channel rotating functor over the array
+
+  zimt::apply ( rotate_rgb_t() , a ) ;
+
+  // create an exportInfo
+
+  vigra::ImageExportInfo eximageInfo ( "rotated.jpg" ) ;
+
+  // and export the array
+
+  vigra::exportImage ( zimt::to_vigra ( a ) , eximageInfo ) ;
+
+  std::cout << "result was stored to 'rotated.jpg'" << std::endl ;
 }

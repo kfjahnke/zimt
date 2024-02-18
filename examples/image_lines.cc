@@ -119,13 +119,17 @@ struct st_line_store_t
 // we can use unsigned char and UINT8 here for all SIMD backends except
 // std::simd, which does not support SIMD types based on ele_type.
 
+#ifdef USE_STDSIMD
+
 typedef unsigned short ele_type ;
 auto typedesc = TypeDesc::UINT16 ;
 
-// to use floats internally, use this spec:
+#else
 
-// typedef float ele_type ;
-// auto typedesc = TypeDesc::FLOAT ;
+typedef unsigned char ele_type ;
+auto typedesc = TypeDesc::UINT8 ;
+
+#endif
 
 // further down, we'll construct two st_line_store_t objects.
 // st_line_store_t's c'tor expects a tile loading and a tile

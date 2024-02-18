@@ -54,20 +54,20 @@
 #include <zimt/zimt.h>
 #include <zimt/scanlines.h>
 
-bool fake_load ( unsigned char * p_trg ,
-                 std::size_t nbytes ,
+bool fake_load ( float * p_trg ,
+                 std::size_t nvalues ,
                  std::size_t line )
 {
-  std::cout << "fake load of " << nbytes << " to " << (void*)p_trg
+  std::cout << "fake load of " << nvalues << " to " << (void*)p_trg
             << " line " << line << std::endl ;
   return true ;
 }
 
-bool fake_store ( const unsigned char * p_trg ,
-                  std::size_t nbytes ,
+bool fake_store ( const float * p_trg ,
+                  std::size_t nvalues ,
                   std::size_t line )
 {
-  std::cout << "fake store of " << nbytes << " from " << (const void*)p_trg
+  std::cout << "fake store of " << nvalues << " from " << (const void*)p_trg
             << " line " << line << std::endl ;
   return true ;
 }
@@ -87,15 +87,18 @@ int main ( int argc , char * argv[] )
   // complex scenarios, but it will faithfully do the job we
   // expect, namely load and store individual scanlines.
 
-  zimt::line_store_t < float , 3 , 2 >
-    line_source ( shape , { 2048 , 1 } , fake_load , fake_store ) ;
+  zimt::line_store_t < float , 3 >
+    line_source ( 2048 , 16 , fake_load , fake_store ) ;
 
-  zimt::line_store_t < float , 3 , 2 >
-    line_drain ( shape , { 2048 , 1 } , fake_load , fake_store ) ;
+  zimt::line_store_t < float , 3 >
+    line_drain ( 2048 , 16 , fake_load , fake_store ) ;
 
   // we set up a common 'bill'
 
   zimt::bill_t bill ;
+
+  // and prescribe one thread only so the echos don't collide
+
   bill.njobs = 1 ;
 
   // now we set up get_t, act and put_t for zimt::process. This is
