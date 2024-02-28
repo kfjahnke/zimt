@@ -331,17 +331,19 @@ int main ( int argc , char * argv[] )
 
   bill.njobs = 1 ;
   
-  if ( random_access )
-  {
-    // more to show that we can than for any other reason - accessing
-    // the data with aggregation along axis 1 is less efficient, but
-    // needed for some purposes.
+  // currently, this does not work:
 
-    std::cout << "target supports random access, will go columns-first"
-              << std::endl ;
-
-    bill.axis = 1 ;
-  }
+  // if ( random_access )
+  // {
+  //   // more to show that we can than for any other reason - accessing
+  //   // the data with aggregation along axis 1 is less efficient, but
+  //   // needed for some purposes.
+  // 
+  //   std::cout << "target supports random access, will go columns-first"
+  //             << std::endl ;
+  // 
+  //   bill.axis = 1 ;
+  // }
 
   // now we set up get_t and put_t for zimt::process. This is
   // just the same for tile_loader and tile_storer as it is for any
