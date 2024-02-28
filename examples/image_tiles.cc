@@ -70,68 +70,6 @@
 
 using namespace OIIO;
 
-namespace zimt
-{
-
-// if the input does not contain tiles, we use this class from the
-// example 'image_lines.cc' to provide input.
-
-template < typename T , std::size_t N >
-struct st_line_store_t
-: public line_store_t < T , N >
-{
-  typedef line_store_t < T , N > base_t ;
-  using typename base_t::tile_type ;
-  using typename base_t::value_t ;
-  using typename base_t::shape_type ;
-  using typename base_t::index_type ;
-  using typename base_t::line_f ;
-  using typename base_t::line_cf ;
-  using base_t::base_t ;
-  using base_t::tile_shape ;
-
-  // we'll run this example with single-threaded code only, and there
-  // will only be one single scan line being processed. So we needn't
-  // allocate or deallocate the 'tile' - instead, we use the same one
-  // all over again:
-
-  tile_type single_line ;
-
-  // this single tile needs to be initialized, so we have to code
-  // a c'tor for this class which passes on the arguments to the base
-  // class and does the single-tile initialization:
-
-  st_line_store_t ( std::size_t width ,
-                    std::size_t height ,
-                    line_f _load_line ,
-                    line_cf _store_line )
-  : base_t ( width , height , _load_line , _store_line ) ,
-    single_line ( { width , 1UL } )
-  {
-    single_line.p_data = new typename tile_type::storage_t ( tile_shape ) ;
-  }
-
-  // good style: we allocate memory, so we also delete it.
-
-  ~st_line_store_t()
-  {
-    delete single_line.p_data ;
-  }
-
-  // instead of actually allocating memory, we use the same memory
-  // all over. This is to demonstrate overriding the tile de/allocation.
-
-  virtual tile_type * allocate_tile()
-  {
-    return & single_line ;
-  }
-
-  virtual void deallocate_tile ( tile_type * p_tile )
-  { }
-} ;
-
-} ;
-
 // type used for internal storage of data and corresponding OIIO typedesc
 // we can use unsigned char and UINT8 here for all SIMD backends except
 // std::simd, which does not support SIMD types based on unsigned char.
@@ -148,8 +86,8 @@ auto typedesc = TypeDesc::UINT8 ;
 
 #endif
 
-// further down, we'll construct an st_line_store_t object.
-// st_line_store_t's c'tor expects a tile loading and a tile
+// further down, we'll construct a line_store_t object.
+// line_store_t's c'tor expects a tile loading and a tile
 // storing function, but since we're only loading with one and
 // storing with the other, we have to pass something for the
 // other function: this one, pass. It does nothing.
@@ -309,8 +247,15 @@ int main ( int argc , char * argv[] )
   // logic takes care of extracting and inserting small-ish chunks
   // of data from/to the respective stores, which are completely
   // decoupled otherwise.
+  // Note that if we 'go columns-first' (see further down) for
+  // targets which support random access, and if the input is
+  // scanline-based, this will result in all scanlines being held
+  // in memory, because they can only be released after all
+  // columns of tiles have been processed. This isn't code for
+  // efficiency, but to check that the tile-processing code does
+  // indeed work.
 
-  zimt::st_line_store_t < ele_type , 3 >
+  zimt::line_store_t < ele_type , 3 >
     line_source ( w , h , load_line , pass_line ) ;
 
   zimt::square_store_t < ele_type , 3 >
@@ -331,19 +276,17 @@ int main ( int argc , char * argv[] )
 
   bill.njobs = 1 ;
   
-  // currently, this does not work:
-
-  // if ( random_access )
-  // {
-  //   // more to show that we can than for any other reason - accessing
-  //   // the data with aggregation along axis 1 is less efficient, but
-  //   // needed for some purposes.
-  // 
-  //   std::cout << "target supports random access, will go columns-first"
-  //             << std::endl ;
-  // 
-  //   bill.axis = 1 ;
-  // }
+  if ( random_access )
+  {
+    // more to show that we can than for any other reason - accessing
+    // the data with aggregation along axis 1 is less efficient, but
+    // needed for some purposes.
+  
+    std::cout << "target supports random access, will go columns-first"
+              << std::endl ;
+  
+    bill.axis = 1 ;
+  }
 
   // now we set up get_t and put_t for zimt::process. This is
   // just the same for tile_loader and tile_storer as it is for any
