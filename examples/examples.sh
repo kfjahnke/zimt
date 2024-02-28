@@ -28,9 +28,7 @@ do
 
   if [[ $(grep "vigra.impex" $f) != "" ]]
   then
-     link_libs="-lvigraimpex"
-  else
-     link_libs=""
+     link_libs="$link_libs -lvigraimpex"
   fi
 
   if [[ $(grep 'no-std-simd' $f) == "" ]]

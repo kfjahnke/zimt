@@ -583,7 +583,7 @@ struct HWY_ALIGN simd_t ;
 // a bunch of conversions which highway can do (as documented in the
 // quick reference) but the set is not complete. So we have to code
 // so that the available ones will be used and the other ones are
-// relized by 'goading' - going over the backing arrays with a loop.
+// realized by 'goading' - going over the backing arrays with a loop.
 // To avoid repetition, we use macros for three cases: conversion with
 // ConvertTo, DemoteTo and PromoteTo. All conversions which are not
 // explicitly coded will fall back to goading.
@@ -865,15 +865,18 @@ struct HWY_ALIGN simd_t
 
   // derive types used for masks and index vectors.
 
-  typedef hn::Vec < hn::RebindToSigned < D > > hw_index_type ;
-  typedef hn::DFromV < hw_index_type > DI ;
-  typedef hn::TFromD < DI > TI ;
-  typedef simd_t < TI , vsize > index_type ;
+  // Since there is no gather/scatter for bytes and shorts,
+  // we code index_type as a vector of int - or long for
+  // 8-byte types. Further down, where index_type is used,
+  // the gather/scatter code specializes to fall back to
+  // goading for small fundamentals, hoping that the
+  // compiler will step in and autovectorize the loop.
 
-  static_assert ( std::is_same < hw_index_type ,
-                                 typename index_type::vec_t
-                               > :: value ,
-                  "index type mismatch" ) ;
+  typedef typename std::conditional < ( sizeof(T) > 4 ) ,
+                                      long ,
+                                      int > :: type index_ele_type ;
+
+  typedef simd_t < index_ele_type , vsize > index_type ;
 
   // definition of the type for masks. Since simd_t holds the
   // equivalent of potentially several vectors, the mask type has
@@ -1224,17 +1227,13 @@ public:
   }
 
   // mimick Vc's IndexesFromZero. This function produces an index
-  // vector filled with indexes starting with zero. Because hwy
-  // uses as many bits for the index as value_type has, we make
-  // sure the indexes can fit.
+  // vector filled with indexes starting with zero. Because we use
+  // at least int and possibly long for indexes, we needn't check
+  // whether the indexes can fit. User code might as well call
+  // iota directly - this is for legacy code.
 
   static const index_type IndexesFromZero()
   {
-    typedef typename index_type::value_type IT ;
-    static const IT ceiling = std::numeric_limits < IT > :: max() ;
-    static_assert ( ( vsize - 1 ) <= std::size_t ( ceiling ) ,
-                    "value_type too small" ) ;
-
     return index_type::iota() ;
   }
 
@@ -1245,16 +1244,20 @@ public:
   // and add an assertion to make sure the indexes we expect will
   // fit the range.
 
-  static const index_type IndexesFrom ( const std::size_t & start ,
-                                        const std::size_t & step = 1 )
+  static const index_type IndexesFrom ( const long & start ,
+                                        const long & step = 1 )
   {
-    typedef typename index_type::value_type IT ;
-    static const IT ceiling = std::numeric_limits < IT > :: max() ;
+    static const auto ceiling
+      = std::numeric_limits < index_ele_type > :: max() ;
 
-    assert (    start + ( vsize - 1 ) * step
-             <= std::size_t ( ceiling ) ) ;
+    assert ( start + ( vsize - 1 ) * step <= ceiling ) ;
 
-    return ( index_type::iota() * IT(step) ) + IT(start) ;
+    static const auto floor
+      = std::numeric_limits < index_ele_type > :: min() ;
+
+    assert ( start + ( vsize - 1 ) * step >= floor ) ;
+
+    return ( index_type::iota() * step + start ) ;
   }
 
   // functions Zero and One produce simd_t objects filled with
@@ -1328,10 +1331,12 @@ public:
       hn::Store ( yield ( i ) , D() , p_trg + i * Lanes ( D() ) ) ;
   }
 
-// there are no gather/scatter operations for short or byte values,
-// so I use goading to implement them.
+  // there are no gather/scatter operations for short or byte values,
+  // so I use goading to implement them.
 
-  // to gather larger-than-short data, use hwy g/s
+  // to gather larger-than-short data, use hwy g/s - index_type
+  // is made up from ints or longs, with the same number of bits
+  // as value_type.
 
   void _gather ( const value_type * const & p_src ,
                  const index_type & indexes ,
@@ -1393,7 +1398,8 @@ public:
   // if the indexes aren't precisely index_type, but some other entity
   // providing operator[]. The loop construct may well be autovectorized,
   // but this can't be guaranteed. It's recommended to use the proper
-  // index_type wherever possible.
+  // index_type wherever possible - for small value_type, though, this
+  // is a vector of int and will be routed to goading code.
 
   template < typename index_t >
   void gather ( const value_type * const & p_src ,
@@ -1429,7 +1435,7 @@ public:
   // family of functions.
 
   void rgather ( const value_type * const & p_src ,
-                 const std::size_t & step )
+                 const long & step )
   {
     if ( step == 1 )
     {
@@ -1443,7 +1449,7 @@ public:
   }
 
   void rscatter ( value_type * const & p_trg ,
-                  const std::size_t & step ) const
+                  const long & step ) const
   {
     if ( step == 1 )
     {
@@ -1456,16 +1462,16 @@ public:
     }
   }
 
-//   // use 'indexes' to perform a gather from the data held in 'inner'
-//   // and return the result of the gather operation.
-// 
-//   template < typename index_type >
-//   simd_t shuffle ( index_type indexes )
-//   {
-//     simd_t result ;
-//     result.rgather ( inner , indexes ) ;
-//     return result ;
-//   }
+  // use 'indexes' to perform a gather from the data held in 'inner'
+  // and return the result of the gather operation.
+
+  template < typename index_type >
+  simd_t reshuffle ( index_type indexes )
+  {
+    simd_t result ;
+    result.gather ( inner , indexes ) ;
+    return result ;
+  }
 
   // apply functions from namespace hn to each vector in the simd_t
   // or to each corresponding set of vectors going up to three for fma.

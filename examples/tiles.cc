@@ -51,24 +51,26 @@ int main ( int argc , char * argv[] )
   // we set up two tile stores: one as data source, and one as
   // data drain.
 
-  zimt::basic_tile_store_t < float , 3 , 2 >
-    tile_source ( shape , { 256 , 256 } , "tile_source" ) ;
+  zimt::basic_tile_store_t < int , 2 , 2 >
+    tile_source ( shape , { 256 , 256 } , "tile_drain" ) ;
 
-  zimt::basic_tile_store_t < float , 3 , 2 >
-    tile_drain ( shape , { 256 , 256 } , "tile_drain" ) ;
+  zimt::basic_tile_store_t < int , 2 , 2 >
+    tile_drain ( shape , { 256 , 256 } , "tile_drain2" ) ;
 
   // we set up a common 'bill'
 
   zimt::bill_t bill ;
+  bill.axis = 1 ;
 
   // now we set up get_t, act and put_t for zimt::process. This is
   // just the same for tile_loader and tile_storer as it is for any
   // of the other get_t/put_t objects, making the tiled storage
   // a 'zimt standard' source/sink.
 
-  zimt::tile_loader < float , 3 , 2 > tl ( tile_source , bill ) ;
-  zimt::pass_through < float , 3 > act ;
-  zimt::tile_storer < float , 3 , 2 > tp ( tile_drain , bill ) ;
+  zimt::tile_loader < int , 2 , 2 > tl ( tile_source , bill ) ;
+  // zimt::get_crd < int , 2 , 2 > tl ( bill ) ;
+  zimt::pass_through < int , 2 > act ;
+  zimt::tile_storer < int , 2 , 2 > tp ( tile_drain , bill ) ;
 
   // showtime!
 

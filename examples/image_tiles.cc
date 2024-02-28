@@ -194,6 +194,22 @@ struct rotate_rgb_t
   }
 } ;
 
+void dump_tile ( std::string base_name , long x , long y ,
+                 const unsigned char *pixels )
+{
+  base_name += std::to_string ( x ) + "_" + std::to_string ( y ) + ".jpg" ;
+  const char* filename = base_name.c_str() ;
+  const int xres = 256, yres = 256, channels = 3;
+
+  std::unique_ptr<ImageOutput> out = ImageOutput::create(filename);
+  if (!out)
+      return;  // error
+  ImageSpec spec(xres, yres, channels, TypeDesc::UINT8);
+  out->open(filename, spec);
+  out->write_image(TypeDesc::UINT8, pixels);
+  out->close();
+}
+
 // main takes two arguments: input and output filename.
 
 int main ( int argc , char * argv[] )
@@ -220,6 +236,8 @@ int main ( int argc , char * argv[] )
   auto out = ImageOutput::create ( argv[2] );
   assert ( out != nullptr ) ;
   assert ( out->supports ("tiles") ) ;
+  bool random_access = out->supports ("random_access") ;
+
   // note how the Typedesc::UINT8 here prescribes the data type used
   // in the output file, whereas 'typedesc' defined further up refers
   // to the type used for internal data storage. OIIO translates the
@@ -258,7 +276,13 @@ int main ( int argc , char * argv[] )
                          std::size_t column ,
                          std::size_t line ) -> bool
   {
-    return inp->read_tile ( column , line , 0 , typedesc , p_trg ) ;
+    std::cout << "read_tile: x " << column << " y " << line << std::endl ;
+    auto success = inp->read_tile ( column , line , 0 , typedesc , p_trg ) ;
+    if ( ! success )
+      std::cout << "read_tile: x " << column
+                << " y " << line << " failed" << std::endl ;
+    // dump_tile ( "input" , column , line , p_trg ) ;
+    return success ;
   } ;
 
   // and this one for write access:
@@ -268,7 +292,13 @@ int main ( int argc , char * argv[] )
                           std::size_t column ,
                           std::size_t line ) -> bool
   {
-    return out->write_tile ( column , line , 0 , typedesc , p_src ) ;
+    std::cout << "write_tile: x " << column << " y " << line << std::endl ;
+    bool success = out->write_tile ( column , line , 0 , typedesc , p_src ) ;
+    if ( ! success )
+      std::cout << "write_tile: x " << column << " y "
+                << line << " failed" << std::endl ;
+    // dump_tile ( "output" , column , line , p_src ) ;
+    return success ;
   } ;
 
   // we set up three tile stores: two as data sources, and one as
@@ -294,12 +324,24 @@ int main ( int argc , char * argv[] )
 
   zimt::bill_t bill ;
 
-  // I tried with JPEGs, and OIIO can't handle a multithreaded access
-  // without strictly sequential scanline access. Hence, for this example,
-  // we also limit the number of threads to one - disk IO will be the
-  // limiting factor anyway, so this isn't a problem.
+  // So far I've not had any luck with multithreaded access. Hence,
+  // for this example, we also limit the number of threads to one
+  // - disk IO will be the limiting factor anyway, so this isn't
+  // a problem.
 
   bill.njobs = 1 ;
+  
+  if ( random_access )
+  {
+    // more to show that we can than for any other reason - accessing
+    // the data with aggregation along axis 1 is less efficient, but
+    // needed for some purposes.
+
+    std::cout << "target supports random access, will go columns-first"
+              << std::endl ;
+
+    bill.axis = 1 ;
+  }
 
   // now we set up get_t and put_t for zimt::process. This is
   // just the same for tile_loader and tile_storer as it is for any
