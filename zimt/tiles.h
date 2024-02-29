@@ -375,12 +375,25 @@ struct tile_store_t
   // creating and destroying the in-memory representation of tiles
   // is done with virtual functions, so that derived classes can
   // override the de/allocation process, e.g. to use a tile pool.
+  // Initially I coded these as pure virtual member functions, but
+  // I see no harm in having them here in the base class, because
+  // they are very simple and general and will be adequate for
+  // most purposes.
 
 protected:
 
-  virtual tile_type * allocate_tile() = 0 ;
+  virtual tile_type * allocate_tile()
+  {
+    auto p_tile = new tile_type ( tile_shape ) ;
+    p_tile->p_data = new typename tile_type::storage_t ( tile_shape ) ;
+    return p_tile ;
+  }
 
-  virtual void deallocate_tile ( tile_type * p_tile ) = 0 ;
+  virtual void deallocate_tile ( tile_type * p_tile )
+  {
+    delete p_tile->p_data ;
+    delete p_tile ;
+  }
 
 private:
 
@@ -736,12 +749,8 @@ public:
 } ;
 
 /// reference implementation of a simple tile store. A tile store
-/// implementation must override four pure virtual functions in the
-/// base class:
-/// - allocate_tile
-/// - deallocate_tile
-/// - load_tile
-/// - store_tile
+/// implementation must override two pure virtual functions in the
+/// base class, namely load_tile and store_tile.
 
 template < typename T , std::size_t N , std::size_t D >
 struct basic_tile_store_t
@@ -764,19 +773,6 @@ protected:
   // reference. The member functions in this base class are
   // simple but usable, what's missing is error handling.
   // If something is amiss, they will rather terminate.
-
-  virtual tile_type * allocate_tile()
-  {
-    auto p_tile = new tile_type ( tile_shape ) ;
-    p_tile->p_data = new typename tile_type::storage_t ( tile_shape ) ;
-    return p_tile ;
-  }
-
-  virtual void deallocate_tile ( tile_type * p_tile )
-  {
-    delete p_tile->p_data ;
-    delete p_tile ;
-  }
 
   // helper function to construct a filename for a file associated
   // with a specific tile index. For now, this function attaches

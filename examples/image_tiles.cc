@@ -150,6 +150,8 @@ void dump_tile ( std::string base_name , long x , long y ,
 
 // main takes two arguments: input and output filename.
 
+std::mutex cout_mutex ;
+
 int main ( int argc , char * argv[] )
 {
   assert ( argc == 3 ) ;
@@ -167,19 +169,31 @@ int main ( int argc , char * argv[] )
   std::size_t tile_width = spec.tile_width ;
   std::size_t tile_height = spec.tile_height ;
   assert ( tile_width == tile_height ) ;
+
   std::cout << "input spec's tile_width: " << tile_width << std::endl ;
 
-  // Next we open the output with matching parameters
+  // Next we open the output with matching parameters. We assert that
+  // the output format can accept tiles.
 
   auto out = ImageOutput::create ( argv[2] );
   assert ( out != nullptr ) ;
   assert ( out->supports ("tiles") ) ;
+
+  // The output may accept tiles in random order, which we'll exploit
+  // by using multithreaded code and traversing the tiles column-first.
+  // Note, though, that as of this writing, this only worked for webp
+  // output, and after the zimt::process was done, the program took a
+  // good while to terminate after the call to close the target was
+  // issued, likely doing all the compression and writing to disk
+  // then and not during the zimt_process run.
+
   bool random_access = out->supports ("random_access") ;
 
   // note how the Typedesc::UINT8 here prescribes the data type used
   // in the output file, whereas 'typedesc' defined further up refers
   // to the type used for internal data storage. OIIO translates the
   // data automatically.
+
   ImageSpec ospec ( w , h , c , TypeDesc::UINT8 ) ;
 
   // we want maximum speed here, so no compression. This will only affect
@@ -187,9 +201,11 @@ int main ( int argc , char * argv[] )
   // slow - you'll see that the input was closed, but it may take a while
   // until the output also closes and the program terminates. This time
   // is taken to encode the data to the target format - I think they are
-  // held in 'raw' form until then. AFAICR, working with uncompressed
+  // held in 'raw' form until then. AFAICT, working with uncompressed
   // TIFF tiles, the data are written 'straight through' and even large
-  // datasets are processed quickly (provided disk I/O is fast).
+  // datasets are processed quickly (provided disk I/O is fast). But
+  // it can't multithread, because it doesn't support random access,
+  // so the tiles have to be written in sequence.
 
   ospec [ "compression" ] = "none" ;
   ospec.tile_width = 256 ;
@@ -198,7 +214,9 @@ int main ( int argc , char * argv[] )
 
   // for the scanline-based read access, we use the same function that
   // we use in image_lines.cc. It will be used if the input does not
-  // contain tiles.
+  // contain tiles. We refrain from echoing the line numbers to avoid
+  // too much clutter, if you want to see them, follow the pattern
+  // used in the tile-accessing functions below.
 
   auto load_line = [&] ( ele_type * p_trg ,
                          std::size_t nbytes ,
@@ -207,35 +225,40 @@ int main ( int argc , char * argv[] )
     return inp->read_scanline ( line , 0 , typedesc , p_trg ) ;
   } ;
 
-  // if the input contains tiles, we use this function for read access:
+  // if the input contains tiles, we use this function for read access.
+  // note that the process may multithread, so we have to lock_guard
+  // the echo to avoid garbled output. To save the individual tiles
+  // to image files for inspection, uncomment the line with dump_tile.
 
   auto load_tile = [&] ( ele_type * p_trg ,
                          std::size_t nbytes ,
                          std::size_t column ,
                          std::size_t line ) -> bool
   {
-    std::cout << "read_tile: x " << column << " y " << line << std::endl ;
     auto success = inp->read_tile ( column , line , 0 , typedesc , p_trg ) ;
-    if ( ! success )
-      std::cout << "read_tile: x " << column
-                << " y " << line << " failed" << std::endl ;
     // dump_tile ( "input" , column , line , p_trg ) ;
+    std::lock_guard < std::mutex > lk ( cout_mutex ) ;
+    std::cout << "read_tile: x " << column << " y " << line ;
+    if ( ! success )
+      std::cout << " failed" ;
+    std::cout << std::endl ;
     return success ;
   } ;
 
-  // and this one for write access:
+  // the same for write access:
 
   auto store_tile = [&] ( const ele_type * p_src ,
                           std::size_t nbytes ,
                           std::size_t column ,
                           std::size_t line ) -> bool
   {
-    std::cout << "write_tile: x " << column << " y " << line << std::endl ;
     bool success = out->write_tile ( column , line , 0 , typedesc , p_src ) ;
-    if ( ! success )
-      std::cout << "write_tile: x " << column << " y "
-                << line << " failed" << std::endl ;
     // dump_tile ( "output" , column , line , p_src ) ;
+    std::lock_guard < std::mutex > lk ( cout_mutex ) ;
+    std::cout << "write_tile: x " << column << " y " << line ;
+    if ( ! success )
+      std::cout << " failed" ;
+    std::cout << std::endl ;
     return success ;
   } ;
 
@@ -269,13 +292,6 @@ int main ( int argc , char * argv[] )
 
   zimt::bill_t bill ;
 
-  // So far I've not had any luck with multithreaded access. Hence,
-  // for this example, we also limit the number of threads to one
-  // - disk IO will be the limiting factor anyway, so this isn't
-  // a problem.
-
-  bill.njobs = 1 ;
-  
   if ( random_access )
   {
     // more to show that we can than for any other reason - accessing
@@ -287,14 +303,26 @@ int main ( int argc , char * argv[] )
   
     bill.axis = 1 ;
   }
+  else
+  {
+    // multithreaded access is only safe if the target can accept
+    // tiles in random order. So if it can't, we limit the process
+    // to a single thread.
+
+    std::cout << "target doesn't supports random access, will single-thread"
+              << std::endl ;
+  
+    bill.njobs = 1 ;
+  }
 
   // now we set up get_t and put_t for zimt::process. This is
   // just the same for tile_loader and tile_storer as it is for any
   // of the other get_t/put_t objects, making the tiled storage
   // a 'zimt standard' source/sink. Note how we pass in line_source
-  // and tile_source as references to tile_store_t - their base class.
+  // or tile_source as references to tile_store_t - their base class.
+  // This works, since the functions which differ are all virtual.
 
-  zimt::basic_tile_store_t < ele_type , 3 , 2 > * p_source ;
+  zimt::tile_store_t < ele_type , 3 , 2 > * p_source ;
   if ( tile_width == 0 )
     p_source = & line_source ;
   else
