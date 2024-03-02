@@ -342,16 +342,17 @@ struct unstrided_loader
 // by zimt::process: the discrete coordinate taken by 'init' refers
 // to 'where the datum would be in an array of value_t'. The array
 // of T which the data are stored to has to be suitably sized;
-// this is best dne with the factory function zimt::get_vector_buffer.
-// The array produces with this factory function has an added dimension
+// this is best done with the factory function zimt::get_vector_buffer.
+// The array produced with this factory function has an added dimension
 // zero of extent N*L, precisely of the length needed to store one
-// simdized datum (of type 'value_v')
-// along the 'hot' axis, the size should be so that, multiplied with
-// the lane count, it will be greater or equal the 'notional' size
-// of the unvectorized array - for efficiency reasons, class vstorer
-// will only load 'full' simdized values from the array of simdized
-// data. Along the other axes, the size must be the same as the
-// 'notional' size of the equivalent unvectorized array.
+// simdized datum (of type 'value_v') along the 'hot' axis, the size
+// should be so that, multiplied with the lane count, it will be
+// greater or equal the 'notional' size of the unvectorized array
+// - for efficiency reasons, class vstorer will only load 'full'
+// simdized values from the array of simdized data. Along the other
+// axes, the size must be the same as the 'notional' size of the
+// equivalent unvectorized array.
+// TODO: can this be 'bent' to serve as storage for tiles?
 
 template < typename T ,
            std::size_t N ,
@@ -389,10 +390,9 @@ struct vloader
   // 'hot' axis. It extracts the strides from the source view.
 
   // vloader's c'tor receives the source array and the processing
-  // axis. Here, the sourcearray is an array of T with an added
+  // axis. Here, the source array is an array of T with an added
   // dimension zero with extent N * L. The template argument 'D'
-  // is the dimensionality of the 'notional' array. The argument _d
-  // refers to the 'hot' axis of the 'notional' array
+  // is the dimensionality of the 'notional' array.
 
   vloader ( zimt::view_t < D + 1 , T > & _src ,
             const bill_t & bill )
@@ -714,7 +714,7 @@ struct linspace_t
 
   linspace_t ( const value_t & _start ,
                const value_t & _step ,
-               const bill_t & bill )
+               const bill_t & bill = zimt::bill_t() )
   : start ( _start ) ,
     step ( _step ) ,
     d ( bill.axis )

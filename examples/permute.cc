@@ -71,7 +71,7 @@ void test ( std::size_t a ,
 
   typedef zimt::array_t < 1 , int > axis_t ;
 
-  // and the permute object needs thre of them in a std::array
+  // the permute object needs views to three of them in a std::array
 
   typedef std::array < zimt::view_t < 1 , int > , 3 > grid_t ;
 

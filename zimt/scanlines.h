@@ -53,9 +53,9 @@ namespace zimt
 
 template < typename T , std::size_t N >
 struct line_store_t
-: public basic_tile_store_t < T , N , 2 >
+: public tile_store_t < T , N , 2 >
 {
-  typedef basic_tile_store_t < T , N , 2 > base_t ;
+  typedef tile_store_t < T , N , 2 > base_t ;
   using typename base_t::tile_type ;
   using typename base_t::value_t ;
   using typename base_t::shape_type ;
@@ -133,9 +133,9 @@ struct line_store_t
 
 template < typename T , std::size_t N >
 struct square_store_t
-: public basic_tile_store_t < T , N , 2 >
+: public tile_store_t < T , N , 2 >
 {
-  typedef basic_tile_store_t < T , N , 2 > base_t ;
+  typedef tile_store_t < T , N , 2 > base_t ;
   using typename base_t::tile_type ;
   using typename base_t::value_t ;
   using typename base_t::shape_type ;
