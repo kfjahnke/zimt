@@ -43,12 +43,10 @@
 // The directional vector is used to do an 'environment lookup' from
 // an environment map.
 // This is a rough-and-ready first draft and the environment call goes
-// via the filename, which is less efficient. Also, because the code
-// directly writes scanlines to the output, it is single-threaded,
-// slowing it down even more. But it works. Pass a 2:1 environment
+// via the filename, which is less efficient. Pass a 2:1 environment
 // map (a 'full spherical', 360 degree panorama), decide on the size
 // of the output and the output's field of view, and the program will
-// produce a rectilinear view and write it toa.tif.
+// produce a rectilinear view and write it to 'a.tif'.
 
 #include <iomanip>
 #include <array>
@@ -73,59 +71,58 @@ struct echo
   }
 } ;
 
+// at the heart of the program is the 'act' functor. This one
+// receives vectorized 2D grid coordinates. It adds the z component
+// to make up a 3D directional vector - here a constant value of
+// 1.0, since we're rendering to an upright view perpendicular to
+// the viewing axis. We use constant values for the derivatives
+// throughout, using the step width in x and y direction in the
+// image's center and zero for the derivative of the z component,
+// which is true in nominal values but not in normalized ones.
+// With the parameter set set uo, we call into OIIO, receiving
+// the batch of pixels corresponding to the batch of coordinates.
+// the pixels are the act functor's output.
+
 struct lookup_t
 : public zimt::unary_functor < v2_t , v3_t , 16 >
 {
   TextureSystem * ts ;
   TextureOptBatch & batch_options ;
-  ustring ufilename ;
-  v2_t step ;
+  TextureSystem::TextureHandle * th ;
+  float d ;
 
   lookup_t ( TextureSystem * _ts ,
              TextureOptBatch & _batch_options ,
-             ustring _ufilename ,
-             v2_t _step )
+             TextureSystem::TextureHandle * _th ,
+             float _d )
   : ts ( _ts ) ,
     batch_options ( _batch_options ) ,
-    ufilename ( _ufilename ) ,
-    step ( _step )
-  { }
+    th ( _th ) ,
+    d ( _d )
+   { }
 
   template < typename I , typename O >
   void eval ( const I & _crd , O & px ) const
   {
     out_v crd , delta ;
+
     crd[0] = _crd[0] ;
     crd[1] = _crd[1] ;
     crd[2] = 1.0f ;
-    // auto norm = crd[0] * crd[0] + crd[1] * crd[1] + 1.0f ;
-    // crd /= norm ;
-    const float * R = (const float*) crd.data() ;
-    delta[0] = step[0] ;
-    delta[1] = step[0] ;
+
+    delta[0] = d ;
+    delta[1] = d ;
     delta[2] = 0 ;
+
+    const float * R = (const float*) crd.data() ;
     const float * pd = (const float*) delta.data() ;
     float * res = (float*) px.data() ;
-    bool success = ts->environment ( ufilename , batch_options ,
-                                     Tex::RunMaskOn ,
-                                      R , pd , pd , 3 , res ) ;
+
+    ts->environment ( th , nullptr, batch_options ,
+                      Tex::RunMaskOn ,
+                      R , pd , pd , 3 , res ) ;
   }
 } ;
-
-// further down, we'll construct two st_line_store_t objects.
-// st_line_store_t's c'tor expects a tile loading and a tile
-// storing function, but since we're only loading with one and
-// storing with the other, we have to pass something for the
-// other function: this one, pass. It does nothing.
-
-bool pass ( const float * p_trg ,
-            std::size_t nbytes ,
-            std::size_t line )
-{
-  return true ;
-}
-
-auto typedesc = TypeDesc::FLOAT ;
 
 int main ( int argc , char * argv[] )
 {
@@ -140,36 +137,74 @@ int main ( int argc , char * argv[] )
 
   float d = 2.0 * tan ( v / 2.0 ) / w ;
 
+  // common to the entire program: the 'loading bill'
+
   zimt::bill_t bill ;
-  bill.njobs = 1 ;
   
+  // for input, we set up a 'linspace' - a regular grid of 2D
+  // coordinates
+
   typedef zimt::xel_t < float , 2 > delta_t ;
   delta_t start { ( w - 1 ) / 2.0 , ( h - 1 ) / 2.0  } ;
   start *= d ;
   delta_t step { -d , -d } ;
   zimt::linspace_t < float , 2 , 2 , 16 > ls ( start , step ) ;
 
+  // to set up the 'act' functor, we need the OIIO texture system
+  // and a few parameters
+
   auto * ts = TextureSystem::create() ; 
+  TextureOptBatch batch_options ;
+
+  // The options for the lookup determine the quality of the output
+  // and the time it takes to compute it. Switching MipMapping off
+  // for example reduces processing time greatly, and the other
+  // commented-out settings also reduce processing time, sacrificing
+  // quality for speed. My conclusion is that zimt and OIIO play
+  // well together, but I suspect that allowing invariants for
+  // options which can be tuned on a per-lane basis might reduce
+  // processing load with little loss of quality. If the MIP
+  // level could be fixed for the entire run (like when it's switched
+  // off altogether) rather than looking at the derivatives, I think
+  // processing would speed up nicely. Just guessing, though - I
+  // haven't looked at the code.
+
+  // for ( int i = 0 ; i < 16 ; i++ )
+  //   batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
+
+  // This is a bit awkward - the batch_options don't accept plain
+  // TextureOpt enums (there's a type error) - but that is maybe due to
+  // the rather old OIIO I take from debian's packet menegement.
+
+  // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
+  // batch_options.interpmode
+  //   = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
+
+  // batch_options.conservative_filter = false ;
+
+  ustring ufilename ( filename ) ;
+  auto th = ts->get_texture_handle ( ufilename ) ;
+  lookup_t lookup ( ts , batch_options , th , d ) ;
+
+  // finally the data sink - we store to an array, which makes it
+  // possible to multithread the code.
+
+  zimt::array_t < 2 , v3_t > trg  ( { w , h } ) ;
+  zimt::storer < float , 3 , 2 , 16 > st ( trg , bill ) ;
+
+  // showtime! zimt::process fills the target array with data
+
+  zimt::process < 2 > ( { w , h } , ls , lookup , st , bill ) ;
+
+  // finally we store the data to an image file - note how we have
+  // float data in 'trg', and OIIO will convert these on-the-fly to
+  // UINT8, as specified in the write_image invocation.
 
   auto out = ImageOutput::create ( "a.tif" );
   assert ( out != nullptr ) ;
-  ImageSpec ospec ( w , h , 3 , TypeDesc::UINT8 ) ;
+  ImageSpec ospec ( w , h , 3 , TypeDesc::UINT16 ) ;
   out->open ( "a.tif" , ospec ) ;
 
-  auto store_line = [&] ( const float * p_src ,
-                          std::size_t nbytes ,
-                          std::size_t line ) -> bool
-  {
-    // std::cout << "store " << line << " values" << std::endl ;
-    return out->write_scanline ( line , 0 , typedesc , p_src );
-  } ;
-
-  zimt::line_store_t < float , 3 >
-    line_drain ( w , h , pass , store_line ) ;
-
-  TextureOptBatch batch_options ;
-  ustring ufilename ( filename ) ;
-  lookup_t lookup ( ts , batch_options , ufilename , step ) ;
-  zimt::tile_storer < float , 3 , 2 , 16 > tp ( line_drain , bill ) ;
-  zimt::process < 2 > ( { w , h } , ls , lookup , tp , bill ) ;
+  out->write_image ( TypeDesc::FLOAT , trg.data() ) ;
+  out->close();
 }
