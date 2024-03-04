@@ -104,23 +104,50 @@ struct lookup_t
   template < typename I , typename O >
   void eval ( const I & _crd , O & px ) const
   {
-    out_v crd , delta ;
+    // Incoming, we have a 2D coordinates pertaining to the image plane
+    // which is regularly sampled at O + d * x + d * y. We 'drape' the
+    // image plane at untit distance, the coordinates are scaled to work
+    // at this distance.
+
+    // we normalize the coordinate
+
+    out_v crd ;
 
     crd[0] = _crd[0] ;
     crd[1] = _crd[1] ;
     crd[2] = 1.0f ;
 
-    delta[0] = d ;
-    delta[1] = d ;
-    delta[2] = 0 ;
+    crd /= sqrt ( _crd[0] * _crd[0] + _crd[1] * _crd[1] + 1.0f ) ;
+    
+    // Reasonable approximation of the derivatives: We calculate the
+    // Difference from a set of coordinates one step away, both in
+    // canonical x and canonical y - after normalization.
 
-    const float * R = (const float*) crd.data() ;
-    const float * pd = (const float*) delta.data() ;
-    float * res = (float*) px.data() ;
+    out_v ds ;
+
+    ds[0] = _crd[0] + d ;
+    ds[1] = _crd[1] ;
+    ds[2] = 1.0f ;
+
+    ds = ds / sqrt ( ds[0] * ds[0] + ds[1] * ds[1] + 1.0f ) - crd ;
+    
+    out_v dt ;
+
+    dt[0] = _crd[0] ;
+    dt[1] = _crd[1] + d ;
+    dt[2] = 1.0f ;
+
+    dt = dt / sqrt ( dt[0] * dt[0] + dt[1] * dt[1] + 1.0f ) - crd ;
+    
+    // const float * pcrd = (const float*) crd.data() ;
+    // const float * pds = (const float*) ds.data() ;
+    // const float * pdt = (const float*) dt.data() ;
+    // float * res = (float*) px.data() ;
 
     ts->environment ( th , nullptr, batch_options ,
                       Tex::RunMaskOn ,
-                      R , pd , pd , 3 , res ) ;
+                      crd[0].data() , ds[0].data() , dt[0].data() ,
+                      3 , px[0].data() ) ;
   }
 } ;
 
