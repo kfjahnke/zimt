@@ -139,11 +139,9 @@ struct lookup_t
 
     dt = dt / sqrt ( dt[0] * dt[0] + dt[1] * dt[1] + 1.0f ) - crd ;
     
-    // const float * pcrd = (const float*) crd.data() ;
-    // const float * pds = (const float*) ds.data() ;
-    // const float * pdt = (const float*) dt.data() ;
-    // float * res = (float*) px.data() ;
-
+    // crd[0] yields vector of float, whose .data() yields float*.
+    // crd[1], crd[2] follow directly after. ditto for ds, dt.
+  
     ts->environment ( th , nullptr, batch_options ,
                       Tex::RunMaskOn ,
                       crd[0].data() , ds[0].data() , dt[0].data() ,
