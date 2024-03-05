@@ -52,6 +52,9 @@
 #include <array>
 #include <zimt/zimt.h>
 #include <zimt/scanlines.h>
+#include <Imath/ImathVec.h>
+#include <Imath/ImathEuler.h>
+#include <Imath/ImathQuat.h>
 #include <OpenImageIO/imageio.h>
 #include <OpenImageIO/typedesc.h>
 #include <OpenImageIO/texture.h>
@@ -72,72 +75,61 @@ struct echo
 } ;
 
 // at the heart of the program is the 'act' functor. This one
-// receives vectorized 2D grid coordinates. It adds the z component
-// to make up a 3D directional vector - here a constant value of
-// 1.0, since we're rendering to an upright view perpendicular to
-// the viewing axis. We use constant values for the derivatives
-// throughout, using the step width in x and y direction in the
-// image's center and zero for the derivative of the z component,
-// which is true in nominal values but not in normalized ones.
-// With the parameter set set uo, we call into OIIO, receiving
-// the batch of pixels corresponding to the batch of coordinates.
-// the pixels are the act functor's output.
+// receives vectorized 3D grid coordinates. It calculates the
+// normalized coordinates and it's derivatives, then uses these
+// values to obtain pixels with oiio's 'environment' function.
 
 struct lookup_t
-: public zimt::unary_functor < v2_t , v3_t , 16 >
+: public zimt::unary_functor < v3_t , v3_t , 16 >
 {
   TextureSystem * ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
-  float d ;
+  const std::array < v3_t , 2 > step ;
 
   lookup_t ( TextureSystem * _ts ,
              TextureOptBatch & _batch_options ,
              TextureSystem::TextureHandle * _th ,
-             float _d )
+             const std::array < v3_t , 2 > & _step )
   : ts ( _ts ) ,
     batch_options ( _batch_options ) ,
     th ( _th ) ,
-    d ( _d )
+    step ( _step )
    { }
 
   template < typename I , typename O >
   void eval ( const I & _crd , O & px ) const
   {
-    // Incoming, we have a 2D coordinates pertaining to the image plane
-    // which is regularly sampled at O + d * x + d * y. We 'drape' the
-    // image plane at untit distance, the coordinates are scaled to work
+    // Incoming, we have a 3D coordinates pertaining to the image plane
+    // which is regularly sampled at O + ds * x + dt * y. We 'drape' the
+    // image plane at unit distance, the coordinates are scaled to work
     // at this distance.
 
     // we normalize the coordinate
 
-    out_v crd ;
-
-    crd[0] = _crd[0] ;
-    crd[1] = _crd[1] ;
-    crd[2] = 1.0f ;
-
-    crd /= sqrt ( _crd[0] * _crd[0] + _crd[1] * _crd[1] + 1.0f ) ;
+    out_v crd = _crd / sqrt (   _crd[0] * _crd[0]
+                              + _crd[1] * _crd[1]
+                              + _crd[2] * _crd[2] ) ;
     
     // Reasonable approximation of the derivatives: We calculate the
     // Difference from a set of coordinates one step away, both in
     // canonical x and canonical y - after normalization.
 
-    out_v ds ;
+    out_v ds = _crd + step[0] ;
 
-    ds[0] = _crd[0] + d ;
-    ds[1] = _crd[1] ;
-    ds[2] = 1.0f ;
+    ds /= sqrt (   ds[0] * ds[0]
+                 + ds[1] * ds[1]
+                 + ds[2] * ds[2] ) ;
 
-    ds = ds / sqrt ( ds[0] * ds[0] + ds[1] * ds[1] + 1.0f ) - crd ;
+    ds -= crd ;
     
-    out_v dt ;
+    out_v dt = _crd + step[1] ;
 
-    dt[0] = _crd[0] ;
-    dt[1] = _crd[1] + d ;
-    dt[2] = 1.0f ;
+    dt /= sqrt (   dt[0] * dt[0]
+                 + dt[1] * dt[1]
+                 + dt[2] * dt[2] ) ;
 
-    dt = dt / sqrt ( dt[0] * dt[0] + dt[1] * dt[1] + 1.0f ) - crd ;
+    dt -= crd ;
     
     // crd[0] yields vector of float, whose .data() yields float*.
     // crd[1], crd[2] follow directly after. ditto for ds, dt.
@@ -151,11 +143,14 @@ struct lookup_t
 
 int main ( int argc , char * argv[] )
 {
-  assert ( argc > 4 ) ;
+  assert ( argc > 7 ) ;
   std::string filename ( argv[1] ) ;
   int w = std::stoi ( argv[2] ) ;
   int h = std::stoi ( argv[3] ) ;
   float v = std::stod ( argv[4] ) * M_PI / 180.0 ;
+  float yaw = std::stod ( argv[5] ) * M_PI / 180.0 ;
+  float pitch = std::stod ( argv[6] ) * M_PI / 180.0 ;
+  float roll = std::stod ( argv[7] ) * M_PI / 180.0 ;
 
   std::cout << "filename: " << filename << " w: " << w
             << " h: " << h << " v: " << v << std::endl ;
@@ -170,11 +165,39 @@ int main ( int argc , char * argv[] )
   // coordinates
 
   typedef zimt::xel_t < float , 2 > delta_t ;
-  delta_t start { ( w - 1 ) / 2.0 , ( h - 1 ) / 2.0  } ;
-  start *= d ;
-  delta_t step { -d , -d } ;
-  zimt::linspace_t < float , 2 , 2 , 16 > ls ( start , step ) ;
+  v3_t start { d * ( w - 1 ) / 2.0f , d * ( h - 1 ) / 2.0f  , 1.0f } ;
+  std::array < v3_t , 2 > step { 0.0f } ;
+  step[0][0] = step[1][1] = -d ;
 
+  Imath::Eulerf angles ( roll , pitch , yaw , Imath::Eulerf::YXZ ) ;
+
+  Imath::Quat q = angles.toQuat() ;
+  {
+    Imath::V3f _start ( start[0] , start[2] , start[1] ) ;
+    _start = _start * q ;
+    start[0] = _start[0] ;
+    start[2] = _start[1] ;
+    start[1] = _start[2] ;
+  }
+  {
+    Imath::V3f _step ( step[0][0] , step[0][2] , step[0][1] ) ;
+    _step = _step * q ;
+    step[0][0] = _step[0] ;
+    step[0][2] = _step[1] ;
+    step[0][1] = _step[2] ;
+  }
+  {
+    Imath::V3f _step ( step[1][0] , step[1][2] , step[1][1] ) ;
+    _step = _step * q ;
+    step[1][0] = _step[0] ;
+    step[1][2] = _step[1] ;
+    step[1][1] = _step[2] ;
+  }
+
+  zimt::gridspace_t < float , 3 , 2 , 16 > ls ( start , step ) ;
+
+  // step[0] *= q ;
+  // step[1] *= q ;
   // to set up the 'act' functor, we need the OIIO texture system
   // and a few parameters
 
@@ -209,7 +232,7 @@ int main ( int argc , char * argv[] )
 
   ustring ufilename ( filename ) ;
   auto th = ts->get_texture_handle ( ufilename ) ;
-  lookup_t lookup ( ts , batch_options , th , d ) ;
+  lookup_t lookup ( ts , batch_options , th , step ) ;
 
   // finally the data sink - we store to an array, which makes it
   // possible to multithread the code.
