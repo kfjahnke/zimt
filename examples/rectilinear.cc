@@ -36,17 +36,16 @@
 /*                                                                      */
 /************************************************************************/
 
-// This example uses a 'linspace_t' get_t to provide 2D coordinates of 
-// the sample points of a rectilinear image. The act functor is set up
-// to add a third constant coordinate (the distance to the origin),
-// yielding a 3D coordinate representing a directional vector in space.
-// The directional vector is used to do an 'environment lookup' from
-// an environment map.
-// This is a rough-and-ready first draft and the environment call goes
-// via the filename, which is less efficient. Pass a 2:1 environment
-// map (a 'full spherical', 360 degree panorama), decide on the size
-// of the output and the output's field of view, and the program will
-// produce a rectilinear view and write it to 'a.tif'.
+// This example uses a 'gridspace_t' get_t to provide 3D coordinates of 
+// the sample points of a rectilinear image 'draped' in space so that
+// it represents the target image after application of a set of three
+// Euler angles (ywa, pich, roll).
+// Pass a 2:1 environment map (a 'full spherical', 360 degree panorama),
+// decide on the size of the output and the output's field of view, also
+// pass yaw, picth and roll and the program will produce a rectilinear
+// view and write it to 'a.tif'. If you don't touch parameterization,
+// this will do a high-quality rendition, with proper antialiasing.
+// The program isn't blazingly fast, but it does a good job.
 
 #include <iomanip>
 #include <array>
@@ -64,20 +63,32 @@ using namespace OIIO ;
 typedef zimt::xel_t < float , 2 > v2_t ;
 typedef zimt::xel_t < float , 3 > v3_t ;
 
-struct echo
-: public zimt::unary_functor < v2_t , v2_t , 16 >
+// helper function to form the norm of a uniform aggregate. note how
+// T can be a SIMDized type - the arithmetic can be formulated so that
+// it's good for scalars and SIMDized data. TODO: library code?
+
+template < template < typename , std::size_t > class C ,
+           typename T , std::size_t N >
+T norm ( const C < T , N > & x )
 {
-  template < typename I , typename O >
-  void eval ( const I & i , O & o ) const
-  {
-    std::cout << i << std::endl ;
-  }
-} ;
+  T sqn = x[0] * x[0] ;
+  for ( std::size_t i = 1 ; i < N ; i++ )
+    sqn += x[i] * x[i] ;
+  return sqrt ( sqn ) ;
+}
 
 // at the heart of the program is the 'act' functor. This one
 // receives vectorized 3D grid coordinates. It calculates the
-// normalized coordinates and it's derivatives, then uses these
+// normalized coordinate and it's derivatives, then uses these
 // values to obtain pixels with oiio's 'environment' function.
+// The incoming 3D grid coordinates are spaced uniformly in a
+// plane representing the target image after application of
+// the given Euler angles. Because they are equidistant with
+// the constant offsets given in 'step', it's easy to move from
+// one such coordinate to it's two neighbours in canonical image
+// coordinates. But the derivatives have to refer to the surface
+// of the unit sphere bounding the directional vectors and are
+// therefore caclulated after normalization.
 
 struct lookup_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
@@ -97,42 +108,37 @@ struct lookup_t
     step ( _step )
    { }
 
+  // the act functor will - used by zimt::process - only ever process
+  // vectorized data, but since this is 'pure' stencil code without
+  // conditionals/masks, it would also work for single coordinate-to
+  // -pixel calculations.
+
   template < typename I , typename O >
   void eval ( const I & _crd , O & px ) const
   {
     // Incoming, we have a 3D coordinates pertaining to the image plane
     // which is regularly sampled at O + ds * x + dt * y. We 'drape' the
     // image plane at unit distance, the coordinates are scaled to work
-    // at this distance.
+    // at this distance. we normalize the coordinate:
 
-    // we normalize the coordinate
-
-    out_v crd = _crd / sqrt (   _crd[0] * _crd[0]
-                              + _crd[1] * _crd[1]
-                              + _crd[2] * _crd[2] ) ;
+    out_v crd = _crd / norm ( _crd ) ;
     
     // Reasonable approximation of the derivatives: We calculate the
     // Difference from a set of coordinates one step away, both in
     // canonical x and canonical y - after normalization.
 
     out_v ds = _crd + step[0] ;
-
-    ds /= sqrt (   ds[0] * ds[0]
-                 + ds[1] * ds[1]
-                 + ds[2] * ds[2] ) ;
-
+    ds /= norm ( ds ) ;
     ds -= crd ;
     
     out_v dt = _crd + step[1] ;
-
-    dt /= sqrt (   dt[0] * dt[0]
-                 + dt[1] * dt[1]
-                 + dt[2] * dt[2] ) ;
-
+    dt /= norm ( dt ) ;
     dt -= crd ;
     
     // crd[0] yields vector of float, whose .data() yields float*.
     // crd[1], crd[2] follow directly after. ditto for ds, dt.
+    // ts->environment writes the result directly into px, so we're
+    // done once this call returns.
   
     ts->environment ( th , nullptr, batch_options ,
                       Tex::RunMaskOn ,
@@ -141,68 +147,95 @@ struct lookup_t
   }
 } ;
 
+// we'll use some Imath code, so we need to be able to move from
+// zimt's xel to Imath's Vec.
+
+Imath::V3f & toImath ( v3_t & v )
+{
+  return * ( (Imath::V3f*) (&v) ) ;
+}
+
+v3_t & to_zimt ( Imath::V3f & v )
+{
+  return * ( (v3_t *) (&v) ) ;
+}
+
+v3_t to_zimt ( const Imath::V3f & v )
+{
+  return * ( (v3_t *) (&v) ) ;
+}
+
+// apply an Imath rotationl quaternion to a v3_t
+
+void rotate ( v3_t & v , const Imath::Quatf & q )
+{
+  v = to_zimt ( toImath ( v ) * q ) ;
+}
+
 int main ( int argc , char * argv[] )
 {
+  // collect arguments
+
   assert ( argc > 7 ) ;
   std::string filename ( argv[1] ) ;
   int w = std::stoi ( argv[2] ) ;
   int h = std::stoi ( argv[3] ) ;
-  float v = std::stod ( argv[4] ) * M_PI / 180.0 ;
-  float yaw = std::stod ( argv[5] ) * M_PI / 180.0 ;
-  float pitch = std::stod ( argv[6] ) * M_PI / 180.0 ;
-  float roll = std::stod ( argv[7] ) * M_PI / 180.0 ;
+  float v = std::stod ( argv[4] ) ;
+  float yaw = std::stod ( argv[5] ) ;
+  float pitch = std::stod ( argv[6] ) ;
+  float roll = std::stod ( argv[7] ) ;
 
-  std::cout << "filename: " << filename << " w: " << w
-            << " h: " << h << " v: " << v << std::endl ;
+  std::cout << "filename: " << filename << " width: " << w
+            << " height: " << h << " vfov: " << v << std::endl ;
+  std::cout << "yaw: " << yaw << " pitch: " << pitch
+            << " roll: " << roll << std::endl ;
 
+  // move to radians, reverse yaw and pitch
+
+  v *= M_PI / 180.0 ;
+  yaw *= - M_PI / 180.0 ;
+  pitch *= - M_PI / 180.0 ;
+  roll *= M_PI / 180.0 ;
+
+  // step width in the unrotated image plane
+            
   float d = 2.0 * tan ( v / 2.0 ) / w ;
 
   // common to the entire program: the 'loading bill'
 
   zimt::bill_t bill ;
-  
-  // for input, we set up a 'linspace' - a regular grid of 2D
-  // coordinates
+
+  // figure out the corner point to start out from, and initialize
+  // the step vectors
 
   typedef zimt::xel_t < float , 2 > delta_t ;
   v3_t start { d * ( w - 1 ) / 2.0f , d * ( h - 1 ) / 2.0f  , 1.0f } ;
   std::array < v3_t , 2 > step { 0.0f } ;
   step[0][0] = step[1][1] = -d ;
 
-  Imath::Eulerf angles ( roll , pitch , yaw , Imath::Eulerf::YXZ ) ;
+  // set up the rotational quaternion
 
+  Imath::Eulerf angles ( roll , pitch , yaw , Imath::Eulerf::ZXY ) ;
   Imath::Quat q = angles.toQuat() ;
-  {
-    Imath::V3f _start ( start[0] , start[2] , start[1] ) ;
-    _start = _start * q ;
-    start[0] = _start[0] ;
-    start[2] = _start[1] ;
-    start[1] = _start[2] ;
-  }
-  {
-    Imath::V3f _step ( step[0][0] , step[0][2] , step[0][1] ) ;
-    _step = _step * q ;
-    step[0][0] = _step[0] ;
-    step[0][2] = _step[1] ;
-    step[0][1] = _step[2] ;
-  }
-  {
-    Imath::V3f _step ( step[1][0] , step[1][2] , step[1][1] ) ;
-    _step = _step * q ;
-    step[1][0] = _step[0] ;
-    step[1][2] = _step[1] ;
-    step[1][1] = _step[2] ;
-  }
+
+  // and apply it to start and the step vectors
+
+  rotate ( start , q ) ;
+  rotate ( step[0] , q ) ;
+  rotate ( step[1] , q ) ;
+
+  // for input to zimt::process, we set up a 'gridspace' - a regular grid
+  // of 3D coordinates. The 'upper left' corner is at 'start', each step
+  // along axis 0 adds step[0] to the coordinate, and each step along
+  // axis 1 adds step[1] to the coordinate. The resulting 3D coordinates
+  // are used by the 'act' functor (after normalization) to sample the
+  // environment texture.
 
   zimt::gridspace_t < float , 3 , 2 , 16 > ls ( start , step ) ;
 
-  // step[0] *= q ;
-  // step[1] *= q ;
-  // to set up the 'act' functor, we need the OIIO texture system
-  // and a few parameters
+  // now we set up the TextureSystem, which is really simple.
 
   auto * ts = TextureSystem::create() ; 
-  TextureOptBatch batch_options ;
 
   // The options for the lookup determine the quality of the output
   // and the time it takes to compute it. Switching MipMapping off
@@ -217,6 +250,8 @@ int main ( int argc , char * argv[] )
   // processing would speed up nicely. Just guessing, though - I
   // haven't looked at the code.
 
+  TextureOptBatch batch_options ;
+
   // for ( int i = 0 ; i < 16 ; i++ )
   //   batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
 
@@ -229,6 +264,9 @@ int main ( int argc , char * argv[] )
   //   = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
 
   // batch_options.conservative_filter = false ;
+
+  // we obtain the texture handle for most efficient processing of the
+  // environment lookup, and codify the act functor as a lookup_t
 
   ustring ufilename ( filename ) ;
   auto th = ts->get_texture_handle ( ufilename ) ;

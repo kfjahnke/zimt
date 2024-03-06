@@ -47,9 +47,10 @@
 /// simd_type. The inner workings of the generated types are the
 /// same, but they are used in different semantic slots: class xel_t
 /// is used as a container to hold 'xel' data and their SIMDized
-/// equivalents - data which have several channels - like rhe
-/// R, G, and B channels of an RGB pixel.
-/// So this header has the code which bot classes share. Here, we
+/// equivalents - data which have several channels - like the
+/// R, G, and B channels of an RGB pixel. class simd_type is used
+/// to hold a set of lanes representing a SIMDized datum.
+/// So this header has the code which both classes share. Here, we
 /// use the 'neutral' symbol N for the number of contained elements,
 /// whereas in xel.h and simd_type.h we use nch (number of channels),
 /// and vsize (number of lanes), respectively.
