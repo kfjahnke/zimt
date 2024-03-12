@@ -318,12 +318,19 @@ int main ( int argc , char * argv[] )
   zimt::bill_t bill ;
 
   // figure out the corner point to start out from, and initialize
-  // the step vectors
+  // the step vectors. x and y start out positive and decrease,
+  // and z is at positive untit distance.
 
   typedef zimt::xel_t < float , 2 > delta_t ;
-  v3_t start { d * ( w - 1 ) / 2.0f , d * ( h - 1 ) / 2.0f  , 1.0f } ;
+
+  v3_t start { d * ( w - 1 ) / 2.0f ,
+               d * ( h - 1 ) / 2.0f  ,
+               1.0f } ;
+
   std::array < v3_t , 2 > step { 0.0f } ;
-  step[0][0] = step[1][1] = -d ;
+
+  step[0][0] = - d ;
+  step[1][1] = - d ;
 
   // set up the rotational quaternion
 
@@ -409,12 +416,11 @@ int main ( int argc , char * argv[] )
   // finally we store the data to an image file - note how we have
   // float data in 'trg', and OIIO will convert these on-the-fly to
   // UINT16, as specified in the write_image invocation.
-  // TODO: option to select the data type. When asking for openEXR
-  // output, OIIO does the 'next-best thing' and stores HALF, but
-  // there's an issue if the input yields sRGB - there is, as of
-  // yet, no colour space handling in this program. So to receive
-  // linear RGB output, feed linear RGB input, and to receive sRGB,
-  // feed sRGB. TODO: add colour space handling?
+  // TODO: option to select the data type.
+  // Note that the target will receive image data in the same colour
+  // space as the input. If you feed, e.g. openEXR, and store to JPEG,
+  // the image will look too dark, because the linear RGB data are
+  // stored as if they were sRGB.
 
   auto out = ImageOutput::create ( output );
   assert ( out != nullptr ) ;
