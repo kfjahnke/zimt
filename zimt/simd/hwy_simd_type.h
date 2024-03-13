@@ -2063,4 +2063,13 @@ namespace std
 
 #endif
 
+// export the free mask reduction functions into the zimt namespace
+
+namespace zimt
+{
+  using HWY_NAMESPACE::all_of ;
+  using HWY_NAMESPACE::any_of ;
+  using HWY_NAMESPACE::none_of ;
+} ;
+
 #endif // #define HWY_SIMD_TYPE_H

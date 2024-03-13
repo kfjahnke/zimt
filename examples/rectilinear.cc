@@ -343,12 +343,17 @@ int main ( int argc , char * argv[] )
   rotate ( step[0] , q ) ;
   rotate ( step[1] , q ) ;
 
-  // for input to zimt::process, we set up a 'gridspace' - a regular grid
-  // of 3D coordinates. The 'upper left' corner is at 'start', each step
-  // along axis 0 adds step[0] to the coordinate, and each step along
+  // for input to zimt::process, we set up a 'gridspace' providing evenly
+  // spaced 3D coordinates. The 'upper left' corner is at 'start', each
+  // step along axis 0 adds step[0] to the coordinate, and each step along
   // axis 1 adds step[1] to the coordinate. The resulting 3D coordinates
   // are used by the 'act' functor (after normalization) to sample the
-  // environment texture.
+  // environment texture. Note that the gridspace_t object does not
+  // actually contain any coordinates - like an array would - but that
+  // it is instead a construct yielding values as needed: it's a
+  // generator. This is much more efficient than having an array
+  // of coordinates at the source - in a way it's like pulling the
+  // input 'out of thin air'.
 
   zimt::gridspace_t < float , 3 , 2 , 16 > ls ( start , step ) ;
 
@@ -376,7 +381,7 @@ int main ( int argc , char * argv[] )
 
   // This is a bit awkward - the batch_options don't accept plain
   // TextureOpt enums (there's a type error) - but that is maybe due to
-  // the rather old OIIO I take from debian's packet menegement.
+  // the rather old OIIO I take from debian's packet management.
 
   // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
   // batch_options.interpmode
