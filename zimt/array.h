@@ -216,6 +216,7 @@ struct view_t
 
   // convert an index to an offset from origin.
 
+  template < typename index_type >
   long offset ( const index_type & crd ) const
   {
     return ( crd * strides ) . sum() ;
@@ -223,11 +224,13 @@ struct view_t
 
   // non-const and const versions of operator[].
 
+  template < typename index_type >
   T & operator[] ( const index_type & crd )
   {
     return origin [ offset ( crd ) ] ;
   }
 
+  template < typename index_type >
   const T & operator[] ( const index_type & crd ) const
   {
     return origin [ offset ( crd ) ] ;
@@ -439,6 +442,15 @@ public:
     _set_data ( rhs , std::integral_constant < bool , is_1d >() ) ;
   }
 
+  void shallow_copy ( const view_t & rhs )
+  {
+    T * trg = (T*) origin ;
+    trg = rhs.origin ;
+    auto & s = (index_type&) strides ;
+    s = rhs.strides ;
+    auto & sh = (shape_type&) shape ;
+    sh = rhs.shape ;
+  }
 } ;
 
 // array_t 'holds' memory holding the array's data. This done via a

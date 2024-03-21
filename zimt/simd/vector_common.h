@@ -157,6 +157,13 @@ static const XEL One()
   return XEL ( value_type ( 1 ) ) ;
 }
 
+friend XEL sign ( XEL x )
+{
+  auto result = One() ;
+  result ( x < 0 ) *= -1 ;
+  return result ;
+}
+
 // echo the vector to a std::ostream, read it from an istream
 
 friend std::ostream & operator<< ( std::ostream & osr ,
@@ -190,7 +197,7 @@ friend std::istream & operator>> ( std::istream & isr ,
   { \
     XEL result ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
-      result [ i ] = FUNC ( arg [ i ] ) ; \
+      result [ i ] = std::FUNC ( arg [ i ] ) ; \
     return result ; \
   }
 
@@ -224,6 +231,10 @@ BROADCAST_STD_FUNC(atan)
 
 // a short note on atan2: Vc provides a hand-written vectorized version
 // of atan2 which is especially fast and superior to autovectorized code.
+// highway also added one, which is also good. AFAIK, the version in
+// std::simd is only using a loop over the lanes, and it's as slow as
+// this broadcast, because due to the conditionals in atan2, the
+// code does not autovectorize well.
 
 BROADCAST_STD_FUNC2(atan2)
 BROADCAST_STD_FUNC2(pow)

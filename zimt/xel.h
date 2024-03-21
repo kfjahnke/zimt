@@ -513,6 +513,33 @@ void store ( ET < value_type > * trg ) const
   }
 }
 
+// gather and scatter of simdized xel from/to memory
+
+template < typename index_type ,
+           typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void gather ( const ET < value_type > * p_src ,
+              const index_type & indexes )
+{
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ , p_src++ )
+  {
+    (*this)[ch].gather ( p_src , indexes ) ;
+  }
+}
+
+template < typename index_type ,
+           typename = std::enable_if
+  < std::is_base_of < simd_flag , value_type > :: value > >
+void scatter ( ET < value_type > * p_trg ,
+               const index_type & indexes )
+{
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ , p_trg++ )
+  {
+    (*this)[ch].scatter ( p_trg , indexes ) ;
+  }
+}
+
+
 } ; // end of struct xel_t
 
 } ; // end of namespace zimt
