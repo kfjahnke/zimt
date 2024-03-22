@@ -216,7 +216,6 @@ struct view_t
 
   // convert an index to an offset from origin.
 
-  template < typename index_type >
   long offset ( const index_type & crd ) const
   {
     return ( crd * strides ) . sum() ;
@@ -224,7 +223,11 @@ struct view_t
 
   // non-const and const versions of operator[].
 
-  template < typename index_type >
+  const T & operator[] ( const index_type & crd ) const
+  {
+    return origin [ offset ( crd ) ] ;
+  }
+
   T & operator[] ( const index_type & crd )
   {
     return origin [ offset ( crd ) ] ;
@@ -232,6 +235,12 @@ struct view_t
 
   template < typename index_type >
   const T & operator[] ( const index_type & crd ) const
+  {
+    return origin [ offset ( crd ) ] ;
+  }
+
+  template < typename index_type >
+  T & operator[] ( const index_type & crd )
   {
     return origin [ offset ( crd ) ] ;
   }

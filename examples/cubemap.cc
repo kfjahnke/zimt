@@ -267,7 +267,8 @@ void rotate ( v3_t & v , const Imath::Quatf & q )
   v = to_zimt ( toImath ( v ) * q ) ;
 }
 
-void extract ( const std::string & environment ,
+void extract ( TextureSystem * ts ,
+               TextureSystem::TextureHandle * th ,
                int w , int h ,
                float v , float yaw , float pitch , float roll ,
                zimt::view_t < 2 , v3_t > trg )
@@ -322,7 +323,7 @@ void extract ( const std::string & environment ,
 
   // now we set up the TextureSystem, which is really simple.
 
-  auto * ts = TextureSystem::create() ; 
+  // auto * ts = TextureSystem::create() ; 
 
   // The options for the lookup determine the quality of the output
   // and the time it takes to compute it. Switching MipMapping off
@@ -356,8 +357,8 @@ void extract ( const std::string & environment ,
   // environment lookup, and set up the lookup_t object to serve as the
   // 'act' functor in the zimt::process invocation.
 
-  ustring uenvironment ( environment ) ;
-  auto th = ts->get_texture_handle ( uenvironment ) ;
+  // ustring uenvironment ( environment ) ;
+  // auto th = ts->get_texture_handle ( uenvironment ) ;
   lookup_t lookup ( ts , batch_options , th , step ) ;
 
   // finally the data sink - we store to a zimt array, which makes it
@@ -407,6 +408,48 @@ int main ( int argc , char * argv[] )
             << " cubeface width: " << w
             << " output: " << output << std::endl ;
 
+  // now we set up the TextureSystem, which is really simple.
+
+  TextureSystem * ts = TextureSystem::create() ; 
+
+  // we're only dealing with one environment here, let's get
+  // it's handle to speed up access further down the line
+
+  ustring uenvironment ( environment ) ;
+  auto th = ts->get_texture_handle ( uenvironment ) ;
+
+  // let's see if we can glean information about this environment
+  // using this TextureSystem function:
+  
+  // virtual bool get_texture_info(ustring filename, int subimage,
+  //          ustring dataname, TypeDesc datatype, void *data)
+
+  char * p_texturetype ;
+  bool success = ts->get_texture_info
+    ( uenvironment , 0 , ustring("texturetype") ,
+      TypeDesc::STRING , &p_texturetype ) ;
+
+  if ( success )
+    std::cout << "gleaned texture type '" << p_texturetype
+              << "'" << std::endl ;
+
+  int resolution[2] ;
+  success = ts->get_texture_info
+    ( uenvironment , 0 , ustring("resolution") ,
+      TypeDesc(TypeDesc::INT,2) , resolution ) ;  
+
+  assert ( success ) ;
+  int width = resolution[0] ;
+  int height = resolution[1] ;
+  if ( width != height * 2 )
+  {
+    std::cerr << "expecting a lat/lon environment in 2:1 aspect ratio"
+              << std::endl ;
+    std::cerr << "input has extent " << width << " X " << height
+              << std::endl ;
+    exit ( -1 ) ;
+  }
+
   float v = M_PI_2 ;
 
   zimt::xel_t < std::size_t , 2 > shape { w , w } ;
@@ -422,32 +465,32 @@ int main ( int argc , char * argv[] )
   {
     zimt::view_t < 2 , v3_t > trg ( stripe.data() + 0 * ( w * w ) ,
                                     strides , shape ) ;
-    extract ( environment , w , w , v , M_PI_2 , 0 , 0 , trg ) ;
+    extract ( ts , th , w , w , v , M_PI_2 , 0 , 0 , trg ) ;
   }
   {
     zimt::view_t < 2 , v3_t > trg ( stripe.data() + 1 * ( w * w ) ,
                                     strides , shape ) ;
-    extract ( environment , w , w , v , - M_PI_2 , 0 , 0 , trg ) ;
+    extract ( ts , th , w , w , v , - M_PI_2 , 0 , 0 , trg ) ;
   }
   {
     zimt::view_t < 2 , v3_t > trg ( stripe.data() + 2 * ( w * w ) ,
                                     strides , shape ) ;
-    extract ( environment , w , w , v , 0 , - M_PI_2 , - M_PI , trg ) ;
+    extract ( ts , th , w , w , v , 0 , - M_PI_2 , - M_PI , trg ) ;
   }
   {
     zimt::view_t < 2 , v3_t > trg ( stripe.data() + 3 * ( w * w ) ,
                                     strides , shape ) ;
-    extract ( environment , w , w , v , 0 , M_PI_2 , 0- M_PI , trg ) ;
+    extract ( ts , th , w , w , v , 0 , M_PI_2 , 0- M_PI , trg ) ;
   }
   {
     zimt::view_t < 2 , v3_t > trg ( stripe.data() + 4 * ( w * w ) ,
                                     strides , shape ) ;
-    extract ( environment , w , w , v , 0 , 0 , 0 , trg ) ;
+    extract ( ts , th , w , w , v , 0 , 0 , 0 , trg ) ;
   }
   {
     zimt::view_t < 2 , v3_t > trg ( stripe.data() + 5 * ( w * w ) ,
                                     strides , shape ) ;
-    extract ( environment , w , w , v , M_PI , 0 , 0 , trg ) ;
+    extract ( ts , th , w , w , v , M_PI , 0 , 0 , trg ) ;
   }
 
   // finally we store the data to an image file - note how we have

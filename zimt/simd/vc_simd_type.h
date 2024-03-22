@@ -536,6 +536,13 @@ struct vc_simd_type
     return result ;
   }
 
+  friend void sincos ( const vc_simd_type & x ,
+                       vc_simd_type & s ,
+                       vc_simd_type & c )
+  {
+    Vc::sincos ( x.to_base() , &(s.to_base()) , &(c.to_base()) ) ;
+  }
+
   #define BROADCAST_STD_FUNC2(FUNC) \
     friend vc_simd_type FUNC ( const vc_simd_type & arg1 , \
                                const vc_simd_type & arg2 ) \

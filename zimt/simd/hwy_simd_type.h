@@ -1576,6 +1576,18 @@ public:
 
 #undef BROADCAST_HWY_FUNC2
 
+  friend void sincos ( const simd_t & x , simd_t & s , simd_t & c )
+  {
+    for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += x.L() )
+    {
+      vec_t xx = x.yield ( i ) ;
+      vec_t ss , cc ;
+      hn::SinCos ( D() , xx , ss , cc ) ;
+      s.take ( i , ss ) ;
+      c.take ( i , cc ) ;
+    }
+  }
+
   // three-argument-functions are not currently used.
 
   // macro used for the parameter 'CONSTRAINT' in the definitions
