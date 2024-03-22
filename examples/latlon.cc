@@ -869,10 +869,10 @@ int main ( int argc , char * argv[] )
   //   auto sfi = ImageOutput::create ( "internal.exr" );
   //   assert ( sfi != nullptr ) ;
   //   ImageSpec ospec ( sf.store.shape[0] , sf.store.shape[1] ,
-  //                     3 , TypeDesc::FLOAT ) ;
+  //                     3 , TypeDesc::HALF ) ;
   //   sfi->open ( "internal.exr" , ospec ) ;
   // 
-  //   sfi->write_image ( TypeDesc::HALF, sf.store.data() ) ;
+  //   sfi->write_image ( TypeDesc::FLOAT, sf.store.data() ) ;
   //   sfi->close();
   // }
 
@@ -942,9 +942,9 @@ int main ( int argc , char * argv[] )
 
   auto out = ImageOutput::create ( latlon );
   assert ( out != nullptr ) ;
-  ImageSpec ospec ( trg.shape[0] , trg.shape[1] , 3 , TypeDesc::FLOAT ) ;
+  ImageSpec ospec ( trg.shape[0] , trg.shape[1] , 3 , TypeDesc::HALF ) ;
   out->open ( latlon , ospec ) ;
 
-  out->write_image ( TypeDesc::HALF , trg.data() ) ;
+  out->write_image ( TypeDesc::FLOAT , trg.data() ) ;
   out->close();
 }
