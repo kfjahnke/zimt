@@ -83,7 +83,7 @@ struct storer
   // get_t holds no variable state apart from p_trg.
 
   storer ( zimt::view_t < D , value_t > & _trg ,
-           const bill_t & bill )
+           const bill_t & bill = zimt::bill_t() )
   : trg ( _trg ) ,
     d ( bill.axis ) ,
     stride ( _trg.strides [ bill.axis ] )
@@ -95,7 +95,7 @@ struct storer
 
   template < typename = std::enable_if < N == 1 > >
   storer ( zimt::view_t < D , T > & _trg ,
-           const bill_t & bill )
+           const bill_t & bill = zimt::bill_t() )
   : trg ( reinterpret_cast
            < zimt::view_t < D , value_t > & > ( _trg ) ) ,
     d ( bill.axis ) ,
@@ -152,7 +152,7 @@ struct split_t
   // the c'tor receives the set of target arrays and the 'hot' axis
 
   split_t ( trg_t & _trg ,
-            const bill_t & bill )
+            const bill_t & bill = zimt::bill_t() )
   : trg ( _trg ) ,
     d ( bill.axis )
   {
@@ -246,7 +246,7 @@ struct vstorer
   // refers to the 'hot' axis of the 'notional' array
 
   vstorer ( zimt::view_t < D + 1 , T > & _trg ,
-            const bill_t & bill )
+            const bill_t & bill = zimt::bill_t() )
   : trg ( _trg ) ,
     d ( bill.axis + 1 ) ,
     stride ( _trg.strides [ bill.axis + 1 ] )

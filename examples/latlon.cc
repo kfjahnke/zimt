@@ -37,7 +37,7 @@
 /************************************************************************/
 
 // Simple utility program producing a lat/lon 'environment map' from
-// a cubemap. TODO work in progress
+// a cubemap.
 // The program is evolving from a simple 'proof-of-geometry' to a state
 // which is already quite sophisticated: An internal representation
 // holding the cube face data, plus 'support' area generated from the
@@ -51,13 +51,7 @@
 // bilinear interpolation only.
 
 #include <array>
-
 #include <zimt/zimt.h>
-
-#include <Imath/ImathVec.h>
-#include <Imath/ImathEuler.h>
-#include <Imath/ImathQuat.h>
-
 #include <OpenImageIO/texture.h>
 
 using namespace OIIO ;
@@ -95,14 +89,15 @@ enum
 // sixfold_t contains data for a six-square sky box with support
 // around the cube faces to allow for proper filtering and
 // interpolation. The content is set up following conventions
-// of openEXR environment maps. cubemaps on openEXR conatin six
+// of openEXR environment maps. cubemaps on openEXR contain six
 // square images concatenated vertically. The sequence of the
 // images, from top to bottom, is: left, right, top, bottom,
-// front, back. The top and bottom image are oriented so that
-// they align vertically with the 'back' image.
+// front, back. The top and bottom images are oriented so that
+// they align vertically with the 'back' image (lux aligns with
+// the front image).
 // The sixfold_t object also combines the six images in one
 // array, but it adds a frame of additional 'support' pixels
-// around the square images to allow for interpolation with
+// around each square image to allow for interpolation with
 // interpolators needing support around the interpolation locus.
 // The supporting frame around each square image is chosen to
 // yield a total per-cube-face size which is a multiple of the
@@ -115,9 +110,7 @@ enum
 // mip-mapping and correct anti-aliasing, using OIIO's planar
 // texture lookup. This latter part is not yet implemented, for
 // now I aim at getting the geometry and logic right and use a
-// simple nearest-neighbour lookup to get pixel values. Another
-// issue to be implemented is population of the frame with suitable
-// pixel data.
+// simple bilinear interpolation to get pixel values.
 
 struct sixfold_t
 {
@@ -162,9 +155,6 @@ struct sixfold_t
     // in the 'store' array
 
     v3_t * p = store.data() ;
-    std::ptrdiff_t offset = outer_width * outer_width ;
-    std::cout << "offset: " << offset << std::endl ;
-
     p += frame * store.strides[0] ;
     p += frame * store.strides[1] ;
 
@@ -180,6 +170,8 @@ struct sixfold_t
     // individually, if we need to do so. This feature is not
     // currently used in this program - here we use the pointers
     // in p_face_v.
+
+    std::ptrdiff_t offset = outer_width * outer_width ;
 
     left.shallow_copy ( { p , store.strides , face_shape } ) ;
 
@@ -223,7 +215,7 @@ struct sixfold_t
     assert ( yres == 6 * face_width ) ;
 
     // for now, we only process three channels, even if the input
-    // conatins more.
+    // contains more.
 
     int nchannels = spec.nchannels ;
 
@@ -259,7 +251,7 @@ struct sixfold_t
     }
   }
 
-  // will use the next class, implementation below
+  // these two will use the next class, implementation below
 
   void mirror_around() ;
   void fill_support ( int degree ) ;
@@ -362,8 +354,8 @@ struct convert_t
     forward = coslon * coslat ;
 
     // The y component, pointing down, is zero for the view straight
-    // ahead and increases both with increasing latitude. For latitudes
-    // above the equator, we'll see negative values, and positive values
+    // ahead and increases with the latitude. For latitudes above
+    // the equator, we'll see negative values, and positive values
     // for views into the 'southern hemisphere'. This component is not
     // affected by the longitude.
 
@@ -380,12 +372,12 @@ struct convert_t
   {
     // form three masks with relations of the numerical values of
     // the 'ray' coordinate. These are sufficient to find out which
-    // component has the largest absolut value (the 'dominant' one,
-    // along the 'dominant' axis
+    // component has the largest absolute value (the 'dominant' one,
+    // along the 'dominant' axis)
 
     auto m1 = ( abs ( c[RIGHT] ) >= abs ( c[DOWN] ) ) ;
     auto m2 = ( abs ( c[RIGHT] ) >= abs ( c[FORWARD] ) ) ;
-    auto m3 = ( abs ( c[DOWN] ) >= abs ( c[FORWARD] ) ) ;
+    auto m3 = ( abs ( c[DOWN] )  >= abs ( c[FORWARD] ) ) ;
 
     // instead of the code lower down, an alternative strategy to
     // figure out the cube face would be to first test whether
@@ -401,28 +393,16 @@ struct convert_t
     // axis 0 etc.
 
     // where the numerical value along the x axis (pointing right)
-    // is larger than the other two, dom0 will be true.
+    // is larger than the other two, 'dom' will be true.
 
-    auto dom0 = m1 & m2 ;
-
-    // dom1 is true where the y axis (pointing down) has the largest
-    // numerical value, and dom2 pertains to the za axis (forward)
-
-    auto dom1 = ( ! m1 ) & m3 ; 
-    auto dom2 = ( ! m2 ) & ( ! m3 ) ;
+    auto dom = m1 & m2 ;
 
     // Now we can assign face indexes, stored in f. If the coordinate
     // value is negative along the dominant axis, we're looking at
-    // the face opposite and assign a face value one higher.
-
-    face = CM_RIGHT ;
-    face ( dom0 & ( c[RIGHT] < 0 ) ) = CM_LEFT ;
-    face ( dom1 ) = CM_BOTTOM ;
-    face ( dom1 & ( c[DOWN] < 0 ) ) = CM_TOP ;
-    face ( dom2 ) = CM_FRONT ;
-    face ( dom2 & ( c[FORWARD] < 0 ) ) = CM_BACK ;
-
-    // find the in-face coordinates, start for dom0 (x axis)
+    // the face opposite and assign a face value one higher. Note
+    // how this SIMD code does the job for 16 coordinates in
+    // parallel, avoiding conditionals and using masking instead.
+    // we also find in-face coordinates:
     // we divide the two non-dominant coordinate values by the
     // dominant one. One of the axes comes out just right when
     // dividing by the absolute value - e.g. the vertical axis
@@ -435,42 +415,63 @@ struct convert_t
     // compiler will recognize the common subexpressions and
     // do it for us.
 
-    // since we have - expensive - divisions here, we might
-    // first test whether the dom mask is populated at all.
-    // an alternative to the division is to use a multiplication
-    // with the reciprocal value of the absolute value followed
-    // by a multiplication with the sign of c[i] for those ops
-    // which don't use the absolute values. This may be faster,
-    // saving three divisions, but the code is clearer like this.
+    if ( any_of ( dom ) )
+    {
+      // extract in-face coordinates for the right and left cube
+      // face. the derivation of the x coordinate uses opposites for
+      // the two faces, the direction of the y coordinate is equal
 
-    // extract in-face coordinates for the right and left cube
-    // face. the derivation of the x coordinate uses opposites for
-    // the two faces, the direction of the y coordinate is equal
+      face = CM_RIGHT ;
+      face ( dom & ( c[RIGHT] < 0 ) ) = CM_LEFT ;
 
-    in_face[0] ( dom0 ) = - c[FORWARD] / c[RIGHT] ;
-    in_face[1] ( dom0 ) = c[DOWN] / abs ( c[RIGHT] ) ;
+      in_face[0] ( dom ) = - c[FORWARD] / c[RIGHT] ;
+      in_face[1] ( dom ) = c[DOWN] / abs ( c[RIGHT] ) ;
+    }
 
-    // same for the top and bottom cube faces - here the x coordinate
-    // corresponds to the right 3D axis, the y coordinate depends on
-    // which of the faces we're looking at (hence no abs)
-    // the top and bottom images could each be oriented in four
-    // different ways. The orientation I expect in this program
-    // is openEXR's cubemap format, where the top and bottom
-    // image align with the 'back' image (the last one down).
-    // For lux conventions (the top and bottom image aligning
-    // with the front cube face) swap the signs in both expressions.
+    // now set dom true where the y axis (pointing down) has the
+    // largest numerical value
 
-    // lux convention:
-    // in_face[0] ( dom1 ) =   c[RIGHT] / abs ( c[DOWN] ) ;
-    // in_face[1] ( dom1 ) = - c[FORWARD] / c[DOWN] ;
+    dom = ( ! m1 ) & m3 ; 
 
-    in_face[0] ( dom1 ) = - c[RIGHT] / abs ( c[DOWN] ) ;
-    in_face[1] ( dom1 ) =   c[FORWARD] / c[DOWN] ;
+    if ( any_of ( dom ) )
+    {
+      // same for the top and bottom cube faces - here the x coordinate
+      // corresponds to the right 3D axis, the y coordinate depends on
+      // which of the faces we're looking at (hence no abs)
+      // the top and bottom images could each be oriented in four
+      // different ways. The orientation I expect in this program
+      // is openEXR's cubemap format, where the top and bottom
+      // image align with the 'back' image (the last one down).
+      // For lux conventions (the top and bottom image aligning
+      // with the front cube face) swap the signs in both expressions.
 
-    // finally the front and back faces
+      face ( dom ) = CM_BOTTOM ;
+      face ( dom & ( c[DOWN] < 0 ) ) = CM_TOP ;
 
-    in_face[0] ( dom2 ) = c[RIGHT] / c[FORWARD] ;
-    in_face[1] ( dom2 ) = c[DOWN] / abs ( c[FORWARD] ) ;
+      // lux convention:
+      // in_face[0] ( dom ) =   c[RIGHT] / abs ( c[DOWN] ) ;
+      // in_face[1] ( dom ) = - c[FORWARD] / c[DOWN] ;
+
+      in_face[0] ( dom ) = - c[RIGHT] / abs ( c[DOWN] ) ;
+      in_face[1] ( dom ) =   c[FORWARD] / c[DOWN] ;
+
+    }
+
+    // set dom true where the z axis (pointing forward) has the
+    // largest numerical value
+    
+    dom = ( ! m2 ) & ( ! m3 ) ;
+
+    if ( any_of ( dom ) )
+    {
+      // finally the front and back faces
+
+      face ( dom ) = CM_FRONT ;
+      face ( dom & ( c[FORWARD] < 0 ) ) = CM_BACK ;
+
+      in_face[0] ( dom ) = c[RIGHT] / c[FORWARD] ;
+      in_face[1] ( dom ) = c[DOWN] / abs ( c[FORWARD] ) ;
+    }
   }
 
   // given the cube face and the in-face coordinate, extract the
@@ -579,10 +580,10 @@ struct convert_t
   // immediate aim to code the cubemap-to-lat/lon conversion
 
   // incoming: 2D coordinate as lat/lon in radians. Internally, we
-  // first calculate 3D directional vector, then the index of the
+  // first calculate a 3D directional vector, then the index of the
   // cube face and then the 2D in-face coordinate, where we pick up
   // the pixel value from the cube face image. We form 2D pick-up
-  // coordinates into the array held i the sixfold_t object, which
+  // coordinates into the array held in the sixfold_t object, which
   // contains the images 'embedded' in additional support space,
   // which offers 'headroom' for interpolators which need support
   // and also provides each cube face image with just so much frame
@@ -592,7 +593,7 @@ struct convert_t
 
   void eval ( const crd2_v & lat_lon , px_v & px )
   {
-    // convert 2D spherical coordinate to 3D 'c'
+    // convert 2D spherical coordinate to 3D ray coordinate 'crd3'
   
     crd3_v crd3 ;
     ll_to_ray ( lat_lon , crd3 ) ;
@@ -609,6 +610,13 @@ struct convert_t
   }
 
 } ;
+
+// this functor is used to fill the frame of support pixels in the
+// array in the sixfold_t object. incoming, we have 2D image coordinates,
+// which, for the purpose at hand, will lie outside the cube face.
+// But we can still convert these image coordinates to planar
+// coordinates in 'model space' and then further to 'pickup'
+// coordinates into the array in the sixfold_t object.
 
 struct fill_frame_t
 : public zimt::unary_functor < v2i_t , v3_t , 16 >
@@ -643,6 +651,8 @@ struct fill_frame_t
     auto scale = 1.0f / float ( sf.face_width / 2.0f ) ;
 
     // since 'face' is const, this case switch should be optimized away.
+    // here, we move from discrete image coordinates to 3D coordinates
+    // scaled to 'model space', on a plane one unit from the origin.
 
     switch ( face )
     {
@@ -680,30 +690,84 @@ struct fill_frame_t
         break ;
      } ;
 
-    // move from image coordinates to ray coordinates. Note how we
-    // have incoming coordinates from outside the cube face proper,
-    // pertaining to the 'store' array.
-    // add the component for the third axis
-
-
-    // std::cout << "crd2 " << crd2 << std::endl ;
-    // std::cout << "sf.frame " << sf.frame << std::endl ;
-    // std::cout << "sf.face_width " << sf.face_width << std::endl ;
-    // std::cout << "crd3 " << crd3 << std::endl ;
-    // find the cube face and in-face coordinate for 'c'
+    // next we use the 3D coordinates we have just obtained to
+    // find a cube face and in-face coordinates - this will
+    // be a different cube face to 'face', and it will be one
+    // which actually can provide data for location we're filling
+    // in. So we re-project the content from adjoining cube faces
+    // into the support area around the cube face we're currently
+    // surrounding with a support frame.
 
     f_v fv ;
     crd2_v in_face ;
     convert.ray_to_cubeface ( crd3 , fv , in_face ) ;
 
-    // std::cout << "face " << face << std::endl ;
-    // std::cout << "in_face " << in_face << std::endl ;
-    // use this information to obtain pixel values
+    // finally we use this information to obtain pixel values,
+    // which are written to the target location.
 
     convert.cubemap_to_pixel ( fv , in_face , px , degree ) ;
-    // std::cout << "px " << px << std::endl ;
   }
 } ;
+
+// After the cube faces have been read from disk, they are surrounded
+// by black (or even undefined) pixels. We want to provide minimal
+// support, the support's quality is not crucial, but it should not
+// be black, but rather like mirroring on the edge, which this function
+// does - it produces a one-pixel-wide frame with mirrored pixels
+// aound each of the cube faces.
+
+void sixfold_t::mirror_around()
+{
+  auto * p_base = store.data() ;
+
+  for ( int face = 0 ; face < 6 ; face++ )
+  {
+    // get a pointer to the upper left of the cube face 'proper'
+
+    auto * p_frame = p_base + face * outer_width * store.strides[1]
+                            + frame * store.strides[1]
+                            + frame ;
+
+    // get a zimt view to the current cube face
+
+    zimt::view_t < 2 , v3_t > cubeface
+      ( p_frame , store.strides , { face_width , face_width } ) ;
+
+    // we use 2D discrete coordinates
+
+    typedef zimt::xel_t < long , 2 > ix_t ;
+
+    // mirror the horizontal edge
+
+    for ( long x = -1L ; x <= long ( face_width ) ; x++ )
+    {
+      ix_t src { x ,  0L } ;
+      ix_t trg { x , -1L } ;
+      cubeface [ trg ] = cubeface [ src ] ;
+      src [ 1 ] = face_width - 1L ;
+      trg [ 1 ] = face_width ;
+      cubeface [ trg ] = cubeface [ src ] ;
+    }
+
+    // and the vertical edge
+
+    for ( long y = -1L ; y <= long ( face_width ) ; y++ )
+    {
+      ix_t src {  0L , y } ;
+      ix_t trg { -1L , y } ;
+      cubeface [ trg ] = cubeface [ src ] ;
+      src [ 0 ] = face_width - 1L ;
+      trg [ 0 ] = face_width ;
+      cubeface [ trg ] = cubeface [ src ] ;
+    }
+  }
+}
+
+// fill_support uses the fill_frame_t functor to populate the
+// frame of support. The structure of the code is similar to the
+// previous function, iterating over the six sections of the
+// array and manipulating each in turn. But here we fill in
+// the entire surrounding frame, not just a pixel-wide line.
 
 void sixfold_t::fill_support ( int degree )
 {
@@ -718,73 +782,51 @@ void sixfold_t::fill_support ( int degree )
     // surrounding frame
 
     auto * p_frame = p_base + face * outer_width * store.strides[1] ;
-    // auto to_lower = ( frame + face_width ) * store.strides[1] ;
-    // auto to_right = ( frame + face_width ) * store.strides[0] ;
     
-    zimt::bill_t bill ;
-    
+    // we form a view to the current section of the array in the
+    // sixfold_t object
+
     zimt::view_t < 2 , v3_t >
       framed ( p_frame , store.strides ,
                { outer_width , outer_width } ) ;
+
+    // we'll use a 'loading bill' to narrow the filling-in down
+    // to the areas which are outside the cube face.
+
+    zimt::bill_t bill ;
+    
+    // now we fill in the lower an upper limits. This is a good
+    // demonstration of how these parameters can be put to use.
+    // We use a 'notional' shape which encompasses the entire
+    // section, but the iteration will only visit those coordinates
+    // which are in the range given by the limits. Note how we
+    // use zimt::transform without a 'source' argument: this idiom
+    // uses a 'get_crd' object to generate input, namely the
+    // discrete coordinates which we iterate over.
+
+    // fill in the stripe above the cube face
 
     bill.lower_limit = { 0 ,           0 } ;
     bill.upper_limit = { long(outer_width) , long(frame) } ;
     zimt::transform ( fill_frame , framed , bill  ) ;
 
+    // fill in the stripe below the cube face
+
     bill.lower_limit = { 0 ,           long(frame + face_width) } ;
     bill.upper_limit = { long(outer_width) , long(outer_width) } ;
     zimt::transform ( fill_frame , framed , bill  ) ;
+
+    // fill in the stripe to the left of the cube face
 
     bill.lower_limit = { 0 ,     0 } ;
     bill.upper_limit = { long(frame) , long(outer_width) } ;
     zimt::transform ( fill_frame , framed , bill  ) ;
 
+    // fill in the stripe to the right of the cube face
+
     bill.lower_limit = { long(frame + face_width) , 0 } ;
     bill.upper_limit = { long(outer_width) , long(outer_width) } ;
     zimt::transform ( fill_frame , framed , bill  ) ;
-  }
-}
-
-void sixfold_t::mirror_around()
-{
-  auto * p_base = store.data() ;
-
-  for ( int face = 0 ; face < 6 ; face++ )
-  {
-    // get a pointer to the upper left of the cube face 'proper'
-
-    auto * p_frame = p_base + face * outer_width * store.strides[1]
-                            + frame * store.strides[1] + frame ;
-    zimt::view_t < 2 , v3_t > cubeface
-      ( p_frame , store.strides , { face_width , face_width } ) ;
-
-    typedef zimt::xel_t < long , 2 > ix_t ;
-    // v3_t red { 255.0f , 0.0f , 0.0f } ;
-    // v3_t green { 0.0f , 255.0f , 0.0f } ;
-
-    for ( long x = -1L ; x <= long ( face_width ) ; x++ )
-    {
-      ix_t src { x ,  0L } ;
-      ix_t trg { x , -1L } ;
-      cubeface [ trg ] = cubeface [ src ] ;
-      // std::cout << src << " -> " << trg << std::endl ;
-      src [ 1 ] = face_width - 1L ;
-      trg [ 1 ] = face_width ;
-      cubeface [ trg ] = cubeface [ src ] ;
-      // std::cout << src << " -> " << trg << std::endl ;
-    }
-
-    for ( long y = -1L ; y <= long ( face_width ) ; y++ )
-    {
-      ix_t src {  0L , y } ;
-      ix_t trg { -1L , y } ;
-      cubeface [ trg ] = cubeface [ src ] ;
-      // std::cout << src << " -> " << trg << std::endl ;
-      src [ 0 ] = face_width - 1L ;
-      trg [ 0 ] = face_width ;
-      cubeface [ trg ] = cubeface [ src ] ;
-      // std::cout << src << " -> " << trg << std::endl ;
-    }
   }
 }
 
@@ -814,19 +856,29 @@ int main ( int argc , char * argv[] )
   auto inp = ImageInput::open ( skybox ) ;
   assert ( inp != nullptr ) ;
 
+  // we expect an image with 1:6 aspect ratio. We don't check
+  // for metadata specific to environments - it can be anything,
+  // but the aspect ratio must be correct.
+
   const ImageSpec &spec = inp->spec() ;
   int xres = spec.width ;
   int yres = spec.height ;
 
   std::cout << "spec.width: " << spec.width << std::endl ;
   assert ( spec.width * 6 == spec.height ) ;
-  
+
+  // for now, we process three channels only, even if the input
+  // has more
+
   int nchannels = spec.nchannels ;
-  // assert ( nchannels == 3 ) ;
+
+  // we set up the sixfold_t object, 'preparing the ground'
+  // to pull in the image data
 
   sixfold_t sf ( spec.width ) ;
 
-  // load the cube faces into slots in the shared array
+  // load the cube faces into slots in the array in the
+  // sixfold_t object
 
   sf.load ( inp ) ;
 
@@ -834,47 +886,43 @@ int main ( int argc , char * argv[] )
   // cube faces are cut off at the ninety-degree point, and to
   // interpolate in the vicinity of the cube faces' margin, we
   // need some support in good quality. Further out from the
-  // margins, the quality of the support dta isn't so critical -
+  // margins, the quality of the support data isn't so critical -
   // these pixels only come to play when the cube face is
   // mip-mapped. But going over these pixels again and filling
   // them in with values from bilinear interpolation over the
   // data in the neighbouring cube faces does no harm - we might
   // reduce the target area to some thinner stripe near the
   // edge, but since this is only working over a small-ish part
-  // of the data, for now, we'll just redo the lot.
+  // of the data, for now, we'll just redo the lot a few times.
 
   // we start out mirroring out the square's 1-pixel edge
 
   sf.mirror_around() ;
 
-  // now we do a nerarest-neighbour pickup into the square,
-  // fetching data from neighbouring squares
-
-  sf.fill_support ( 0 ) ;
-
-  // to refine the result, we repeat te process several times
+  // to refine the result, we generate support twice
   // with bilinear interpolation. This might be done in a
   // thinner frame around the cube face proper, since the
   // data further out are good enough for their purpose
-  // (namely, mip-mapping)
+  // (namely, mip-mapping). Doing it twice may even be
+  // overkill - I can't see much of a difference between
+  // using one and two runs.
 
-  sf.fill_support ( 1 ) ;
   sf.fill_support ( 1 ) ;
   sf.fill_support ( 1 ) ;
 
   // to have a look at the internal representation with properly
   // set up support area, uncomment this bit:
 
-  // {
-  //   auto sfi = ImageOutput::create ( "internal.exr" );
-  //   assert ( sfi != nullptr ) ;
-  //   ImageSpec ospec ( sf.store.shape[0] , sf.store.shape[1] ,
-  //                     3 , TypeDesc::HALF ) ;
-  //   sfi->open ( "internal.exr" , ospec ) ;
-  // 
-  //   sfi->write_image ( TypeDesc::FLOAT, sf.store.data() ) ;
-  //   sfi->close();
-  // }
+//   {
+//     auto sfi = ImageOutput::create ( "internal3.exr" );
+//     assert ( sfi != nullptr ) ;
+//     ImageSpec ospec ( sf.store.shape[0] , sf.store.shape[1] ,
+//                       3 , TypeDesc::HALF ) ;
+//     sfi->open ( "internal3.exr" , ospec ) ;
+//   
+//     sfi->write_image ( TypeDesc::FLOAT, sf.store.data() ) ;
+//     sfi->close();
+//   }
 
   // with proper support near the edges, we can now run the
   // actual payload code - the conversion to lon/lat - with
@@ -902,35 +950,44 @@ int main ( int argc , char * argv[] )
   // It may be a good idea to store the entire internal
   // representation - cubefaces plus support - to an image file
   // for faster access, avoiding the production of the support
-  // area from outher cube faces.
+  // area from outher cube faces, at the cost of saving a few
+  // extra pixels. The process as it stands now seems to produce
+  // support which is just as good as support which is created
+  // by rendering cube face images with slightly more than ninety
+  // degrees (as it can be done in lux), so we can process the
+  // 'orthodox' format and yet avoid it's shortcomings.
 
+  // time to do the remaining work.
 
-  convert_t act ( sf , 1 ) ; // convert using bilinear interpolation
+  // set up convert_t using bilinear interpolation (argument 1).
+  // This is the functor which takes lon/lat coordinates and
+  // produces pixel data from the internal representation of the
+  // cubemap held in the sixfold_t object
+
+  convert_t act ( sf , 1 ) ;
+
+  // The target array will receive the output pixel data
 
   zimt::array_t < 2, v3_t > trg ( { 2 * height , height } ) ;
 
-  // set up a linspace_t over the theta/phi sample points as get_t
-
-  typedef zimt::xel_t < float , 2 > delta_t ;
+  // set up a linspace_t over the lon/lat sample points as get_t
+  // (a.k.a input generator). d is the step width from one sample
+  // to the next:
 
   double d = 2.0 * M_PI / trg.shape[0] ;
 
-  delta_t start { - M_PI + d / 2.0 , - M_PI_2 + d / 2.0 } ;
-  delta_t step { d , d } ;
+  v2_t start { - M_PI + d / 2.0 , - M_PI_2 + d / 2.0 } ;
+  v2_t step { d , d } ;
 
-  zimt::bill_t bill ;
-  bill.njobs = 1 ;
+  zimt::linspace_t < float , 2 , 2 , 16 > linspace ( start , step ) ;
+
+  // set up a zimt::storer writing to to the target array
+
+  zimt::storer < float , 3 , 2 , 16 > st ( trg ) ;
+
+  // showtime! call zimt::process.
   
-  zimt::linspace_t < float , 2 , 2 , 16 > linspace
-    ( start , step , bill ) ;
-
-  // set up a zimt::storer to trg
-
-  zimt::storer < float , 3 , 2 , 16 > st ( trg , bill ) ;
-
-  // call zimt::process
-  
-  zimt::process ( trg.shape , linspace , act , st , bill ) ;
+  zimt::process ( trg.shape , linspace , act , st ) ;
 
   // finally we store the data to an image file - note how we have
   // float data in 'trg', and OIIO will convert these on-the-fly to

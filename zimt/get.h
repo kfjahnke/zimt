@@ -289,7 +289,7 @@ struct unstrided_loader
   using base_t::p_src ;
 
   unstrided_loader ( const zimt::view_t < D , value_t > & src ,
-                     const bill_t & bill )
+                     const bill_t & bill = zimt::bill_t() )
   : base_t ( src , bill )
   {
     assert ( src.strides [ bill.axis ] == 1 ) ;
@@ -395,7 +395,7 @@ struct vloader
   // is the dimensionality of the 'notional' array.
 
   vloader ( zimt::view_t < D + 1 , T > & _src ,
-            const bill_t & bill )
+            const bill_t & bill = zimt::bill_t() )
   : src ( _src ) ,
     d ( bill.axis + 1 ) ,
     stride ( _src.strides [ bill.axis + 1 ] )
@@ -482,7 +482,7 @@ struct permute
   // per-component data and the 'hot' axis.
 
   permute ( const std::array < zimt::view_t < 1 , T > , N > & _src ,
-            const bill_t & bill )
+            const bill_t & bill = zimt::bill_t() )
   : src ( _src ) ,
     d ( bill.axis ) ,
     stride ( _src [ bill.axis ] . strides [ 0 ] )
@@ -598,7 +598,7 @@ struct join_t
   const std::size_t d ;
 
   join_t ( const src_t & _src ,
-           const bill_t & bill )
+           const bill_t & bill = zimt::bill_t() )
   : src ( _src ) ,
     d ( bill.axis )
   {
