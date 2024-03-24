@@ -36,19 +36,105 @@
 /*                                                                      */
 /************************************************************************/
 
-// Simple utility program producing a lat/lon 'environment map' from
-// a cubemap.
-// The program is evolving from a simple 'proof-of-geometry' to a state
-// which is already quite sophisticated: An internal representation
-// holding the cube face data, plus 'support' area generated from the
-// cube faces and surrounding them in the internal representation, is
-// set up. It can do the 'pick-up' for arbitrary lat/lon or 3D 'ray'
-// coordinates from a single image (rather than six discrete images
-// of which the correct one has to be chosen for each pick-up).
-// The last thing which I haven't done yet is to use OIIO's texture
-// lookup on the internal representation, which is now feasible because
-// the IR's geometry supports mip-mapping - for now the process uses
-// bilinear interpolation only.
+// utility program producing a lat/lon 'environment map' from a cubemap.
+
+// As an example program for zimt, this program is maybe too complex
+// and not entirely on the topic, but it does demonstrate the use
+// of a good range of zimt features in a 'real' program.
+// AFAICT there are two formats used to represent a complete 360X180
+// degree environment. The more common one is a lat/lon environment,
+// which captures the environment in a single image in spherical
+// projection. Using this format is quite straightforward, but it
+// requires using transcendental functions to move between the
+// lat/lon spherical coordinates and 3D 'ray' geometry. The second
+// format, which - I have been told - is less common, is the
+// 'cubemap' or 'skybox' format. It captures the environment in
+// six square images representing the faces of a virtual cube
+// surrounding the origin. For viewing purposes, this format has
+// some advantages and some disadvantages. On the plus side is the
+// fact that, since the cube faces are stored in rectilinear projection,
+// reprojection to a rectilinear view can be done without transcendental
+// functions. On the negative side, handling the six discrete images,
+// which requires picking the right one to pick up image information
+// to go to a specific target location in the output, requires a fair
+// amount of logic, and the sequence and (for the top and bottom square)
+// orientation of the cube faces isn't obvious and leaves room for error.
+// There are standards, though - openEXR defines a cubemap format with
+// specific sequence and orientations, and this is the format I use
+// in this program. openEXR offers a tool to convert between the two
+// types of environment, but I found that it doesn't seem to work
+// correctly - see this issue:
+// https://github.com/AcademySoftwareFoundation/openexr/issues/1675
+// Since I am processing both types of environment representation in
+// lux, I have a special interest in them and writing some image
+// processing code in zimt+OpenImageIO offers a good opportunity to
+// deepen my understanding and come up with efficient ways of dealing
+// with both formats. I started out with 'cubemap.cc', which converts
+// lat/lon format to openEXR-compatible cubemap format. To pick up
+// data from a lat/lon environment map, there is ready-made code in
+// OpenImageIO. I use this code to good effect, producing output
+// with a very 'proper' anisotropic anti-aliasing filter. The
+// reverse transformation - from a cubemap to lat/lon format - is
+// what I'm coding in this program. Here, employing OpenImageIO for
+// the task of picking up data from the environment is not available
+// out-of-the-box - OpenImageIO does not support this format. This
+// may well be because it is less used and harder to handle. In my
+// opinion, the greatest problem with this format is the fact that the
+// six cube face images each cover precisely ninety degrees. This is
+// sufficient to regenerate the environment, but it's awkward, due
+// to the fact that near the edges there is not enough correct
+// support in the individual images to use good interpolators.
+// Instead, to use such interpolators, this support has to be
+// gleaned from adjoining cube faces, with proper reprojection.
+// The second stumbling stone - when trying to use such cubemaps
+// with OpenImageIO - is the fact that to use mip-mapping on them
+// needs even larger support around the cube faces (unless they happen
+// to have a size which is a multiple of the tile size) so as to
+// avoid mixing data from cube faces which are located next to each
+// other in the 1:6 stripe but have no other relation - there is
+// a hard discontiuity from one image's bottom to the next image's
+// top. The third stumbling stone is the fact that OpenImageIO's
+// texture system code is file-based, and the data I produce from
+// the 'raw' cubemap input to deal with the first two issues can't
+// simply be fed back to OIIO's texture system, because they are
+// in memory, whereas the texture system wants them on disk. I'd
+// like to find a way to feed them directly, but for now I think
+// I may use an intermediate image on disk for the task. As it
+// stands, this program doesn't yet use OIIO's texture system but
+// relies on bilinear interpolation, which is adequate for the
+// format conversion as long as the resolution of input and output
+// are roughly the same. So there is some work waiting to be done.
+//
+// I have mentioned that I have dealt with the two first issues,
+// so I'll give a quick outline here - the code is amply commented
+// to explain the details. I start out by setting up a single array
+// of pixel data which has enough 'headroom' to accomodate the cube
+// faces plus a surrounding frame of support pixels which is large
+// enough to allow for good interpolators and mip-mapping, so each
+// cube face is embedded in a square section of the array which has
+// a multiple of the tile size as it's extent. I proceed to import
+// the cube face data, which I surround initially with a single-pixel
+// frame of mirrored data to give enough support for bilinear
+// interpolation even near the edges. Then I fill in the support frames
+// using bilinear interpolation. The array is now filled with six square
+// images which have more than ninety degrees field of view - the part
+// beyond ninety degrees generated from adjoining cube faces. This is
+// the texture from which I pick output data. Due to the ample support,
+// it could be subjected to filters with large-ish support, and the
+// array of six 'widened' cube faces might even stand as a useful
+// format by itself, which would be quite easy to describe formally
+// because it's a derivative of the openEXR cubemap format.
+// I mentioned above that I haven't found a way to directly use
+// OpenImageIO's texture system code on the data in RAM, so for the
+// time being, I pick output data with bilinear interpolation to
+// populate the target image in lat/lon format. Having coded the
+// process to this point gives me a 'decent' quality and I can now
+// ascertain that my code is geometrically correct, and I can also
+// test how much image degradation I get with repeated conversions
+// from one environment format to the other, using 'cubemap.cc'
+// for the reverse process.
+//
+// There's an issue: currently some of the compilations with g++ fail.
 
 #include <array>
 #include <zimt/zimt.h>
@@ -56,23 +142,24 @@
 
 using namespace OIIO ;
 
-typedef zimt::xel_t < float , 2 > v2_t ;
+// zimt types for 2D and 3D coordinates and pixels
+
 typedef zimt::xel_t < int , 2 > v2i_t ;
+typedef zimt::xel_t < long , 2 > index_type ;
+
+typedef zimt::xel_t < float , 2 > v2_t ;
 typedef zimt::xel_t < float , 3 > v3_t ;
 
-// helper function to form the norm of a uniform aggregate. note how
-// T can be a SIMDized type - the arithmetic can be formulated so that
-// it's good for scalars and SIMDized data. TODO: library code?
+// some SIMDized types we'll use. I use 16 SIMD lanes for now.
 
-template < template < typename , std::size_t > class C ,
-           typename T , std::size_t N >
-T norm ( const C < T , N > & x )
-{
-  T sqn = x[0] * x[0] ;
-  for ( std::size_t i = 1 ; i < N ; i++ )
-    sqn += x[i] * x[i] ;
-  return sqrt ( sqn ) ;
-}
+#define LANES 16
+
+typedef zimt::simdized_type < float , LANES > f_v ;
+typedef zimt::simdized_type < v2_t ,  LANES > crd2_v ;
+typedef zimt::simdized_type < v2i_t , LANES > v2i_v ;
+typedef zimt::simdized_type < v3_t ,  LANES > crd3_v ;
+typedef zimt::simdized_type < v3_t ,  LANES > px_v ;
+typedef zimt::simdized_type < index_type , LANES > index_v ;
 
 // enum encoding the sequence of cube face images in the cubemap
 
@@ -272,19 +359,12 @@ struct sixfold_t
 enum { RIGHT , DOWN , FORWARD } ;
 
 struct convert_t
-: public zimt::unary_functor < v2_t , v3_t , 16 >
+: public zimt::unary_functor < v2_t , v3_t , LANES >
 {
   // source of pixel data
 
   const sixfold_t & cubemap ;
   const int degree ;
-
-  // some SIMDized types we'll use
-
-  typedef typename zimt::simdized_type < float , 16 > f_v ;
-  typedef typename zimt::simdized_type < v2_t , 16 > crd2_v ;
-  typedef typename zimt::simdized_type < v3_t , 16 > crd3_v ;
-  typedef typename zimt::simdized_type < v3_t , 16 > px_v ;
 
   // convert_t's c'tor obtains a const reference to the sixfold_t
   // object holding pixel data
@@ -322,8 +402,6 @@ struct convert_t
     // latitude increases into positive values when the view moves
     // downwards from the view straight ahead.
     // The code benefits from using sincos, where available.
-
-    typedef typename zimt::simdized_type < float , 16 > f_v ;
 
 #if defined USE_HWY or defined USE_VC
 
@@ -400,7 +478,7 @@ struct convert_t
     // Now we can assign face indexes, stored in f. If the coordinate
     // value is negative along the dominant axis, we're looking at
     // the face opposite and assign a face value one higher. Note
-    // how this SIMD code does the job for 16 coordinates in
+    // how this SIMD code does the job for LANES coordinates in
     // parallel, avoiding conditionals and using masking instead.
     // we also find in-face coordinates:
     // we divide the two non-dominant coordinate values by the
@@ -483,11 +561,6 @@ struct convert_t
                           px_v & px ,
                           const int & degree ) const
   {
-    // for now, we'll simply do a nearest-neighbour lookup.
-
-    typedef zimt::xel_t < long , 2 > index_type ;
-    typedef zimt::simdized_type < index_type , 16 > index_v ;
-
     // each cube face spans a coordinate range of (-1,1), dy
     // is the distance in in-square units to go to the same
     // location in the next square down. This trick allows us
@@ -511,15 +584,16 @@ struct convert_t
 
     in_face *= ( cubemap.face_width / 2.0 ) ;
 
-    // now do the texture lookup
+    // now do the texture lookup. an incoming angle of precisely
+    // zero degrees must map to -0.5, the left edge of the leftmost
+    // pixel, hence:
 
-    // for the time being, we do a straight NN pick-up. This way
-    // , we establish that the geometry works out as expected, and
-    // we can add the proper texture lookup later on as a refinement,
-    // so given an evaluator ev (TODO) we derive the pixel value.
+    in_face -= .5f ;
 
     if ( degree == 0 )
     {
+      // simple nearest-neighbour lookup. This is not currently used.
+
       // convert the in-face coordinates to integer - using simple
       // truncation for now.
 
@@ -537,9 +611,6 @@ struct convert_t
     }
     else if ( degree == 1 )
     {
-      typedef typename zimt::simdized_type < v2_t , 16 > crd2_v ;
-      typedef typename zimt::simdized_type < v3_t , 16 > px_v ;
-
       const auto * p = (float*) ( cubemap.store.data() ) ;
       px_v px2 ,help ;
 
@@ -619,20 +690,12 @@ struct convert_t
 // coordinates into the array in the sixfold_t object.
 
 struct fill_frame_t
-: public zimt::unary_functor < v2i_t , v3_t , 16 >
+: public zimt::unary_functor < v2i_t , v3_t , LANES >
 {
   const convert_t & convert ;
   const sixfold_t & sf ;
   const int face ;
   const int degree ;
-
-  // some SIMDized types we'll use
-
-  typedef typename zimt::simdized_type < float , 16 > f_v ;
-  typedef typename zimt::simdized_type < v2_t , 16 > crd2_v ;
-  typedef typename zimt::simdized_type < v2i_t , 16 > v2i_v ;
-  typedef typename zimt::simdized_type < v3_t , 16 > crd3_v ;
-  typedef typename zimt::simdized_type < v3_t , 16 > px_v ;
 
   fill_frame_t ( const convert_t & _convert ,
                  const int & _face ,
@@ -979,11 +1042,11 @@ int main ( int argc , char * argv[] )
   v2_t start { - M_PI + d / 2.0 , - M_PI_2 + d / 2.0 } ;
   v2_t step { d , d } ;
 
-  zimt::linspace_t < float , 2 , 2 , 16 > linspace ( start , step ) ;
+  zimt::linspace_t < float , 2 , 2 , LANES > linspace ( start , step ) ;
 
   // set up a zimt::storer writing to to the target array
 
-  zimt::storer < float , 3 , 2 , 16 > st ( trg ) ;
+  zimt::storer < float , 3 , 2 , LANES > st ( trg ) ;
 
   // showtime! call zimt::process.
   

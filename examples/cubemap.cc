@@ -338,20 +338,23 @@ void extract ( TextureSystem * ts ,
   // processing would speed up nicely. Just guessing, though - I
   // haven't looked at the code.
 
+  // for now, I'm using bilinear interpolation, no mip-mapping, and
+  // no 'conservative' filtering.
+
   TextureOptBatch batch_options ;
 
-  // for ( int i = 0 ; i < 16 ; i++ )
-  //   batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
 
   // This is a bit awkward - the batch_options don't accept plain
   // TextureOpt enums (there's a type error) - but that is maybe due to
   // the rather old OIIO I take from debian's packet management.
 
-  // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
-  // batch_options.interpmode
-  //   = Tex::InterpMode ( TextureOpt::InterpClosest ) ;
-  // 
-  // batch_options.conservative_filter = false ;
+  batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
+  batch_options.interpmode
+    = Tex::InterpMode ( TextureOpt::InterpClosest ) ;
+  
+  batch_options.conservative_filter = false ;
 
   // we obtain the texture handle for most efficient processing of the
   // environment lookup, and set up the lookup_t object to serve as the
