@@ -290,17 +290,31 @@ struct vc_simd_type
     return result ;
   }
 
-  // use Vc's IndexesFromZero, Zero and One.
+  // use Vc's IndexesFromZero, Zero and One - but convert the result
+  // to the corresponding zimt type (g++ is picky about that)
 
-  using base_t::IndexesFromZero ;
-  using base_t::Zero ;
-  using base_t::One ;
+  static const index_type IndexesFromZero()
+  {
+    return index_type ( base_t::IndexesFromZero() ) ;
+  }
   
-  // iota() is a synonym for IndexesFromZero
+  // ditto for Zero and One
+
+  static const vc_simd_type Zero()
+  {
+    return base_t::Zero() ;
+  }
+  
+  static const vc_simd_type One()
+  {
+    return base_t::One() ;
+  }
+  
+  // iota() produces values rising from zero
 
   static const vc_simd_type iota()
   {
-    return IndexesFromZero() ;
+    return base_t::IndexesFromZero() ;
   }
 
   // variant which starts from a different starting point and optionally

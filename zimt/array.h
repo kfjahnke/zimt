@@ -451,15 +451,6 @@ public:
     _set_data ( rhs , std::integral_constant < bool , is_1d >() ) ;
   }
 
-  void shallow_copy ( const view_t & rhs )
-  {
-    T * trg = (T*) origin ;
-    trg = rhs.origin ;
-    auto & s = (index_type&) strides ;
-    s = rhs.strides ;
-    auto & sh = (shape_type&) shape ;
-    sh = rhs.shape ;
-  }
 } ;
 
 // array_t 'holds' memory holding the array's data. This done via a
