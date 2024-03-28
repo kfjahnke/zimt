@@ -331,6 +331,84 @@ xel_t < value_type , nch + 1 > widen ( const value_type & by ,
   return result ;
 }
 
+// to use the idiom A(M) = B for simple xel_t, we have to repeat
+// the code we use for vectorized types using bool instead of
+// a mask. With this bit of syntactic sugar, we can use more
+// vector code for scalar values as well.
+
+#define INTEGRAL_ONLY \
+  static_assert ( std::is_integral < value_type > :: value , \
+                  "this operation is only allowed for integral types" ) ;
+
+#define BOOL_ONLY \
+  static_assert ( std::is_same < value_type , bool > :: value , \
+                  "this operation is only allowed for booleans" ) ;
+
+struct masked_xel_t
+{
+  bool whether ; // if the 'mask' is true
+  xel_t & whither ;   // whither will be assigned to
+
+  masked_xel_t ( bool _whether ,
+                 xel_t & _whither )
+  : whether ( _whether ) ,
+    whither ( _whither )
+    { }
+
+  #define OPEQ_FUNC(OPFUNC,OPEQ,CONSTRAINT) \
+    xel_t & OPFUNC ( value_type rhs ) \
+    { \
+      CONSTRAINT \
+      if ( whether ) \
+           whither OPEQ rhs ; \
+      return whither ; \
+    } \
+    xel_t & OPFUNC ( xel_t rhs ) \
+    { \
+      CONSTRAINT \
+        if ( whether ) \
+             whither OPEQ rhs ; \
+      return whither ; \
+    }
+
+  OPEQ_FUNC(operator=,=,)
+  OPEQ_FUNC(operator+=,+=,)
+  OPEQ_FUNC(operator-=,-=,)
+  OPEQ_FUNC(operator*=,*=,)
+  OPEQ_FUNC(operator/=,/=,)
+  OPEQ_FUNC(operator%=,%=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator&=,&=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator|=,|=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator^=,^=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator<<=,<<=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
+
+#undef OPEQ_FUNC
+
+#undef INTEGRAL_ONLY
+#undef BOOL_ONLY
+} ;
+
+masked_xel_t & operator() ( const bool & condition )
+{
+  return masked_xel_t ( condition , *this ) ;
+}
+
+bool any_of ( bool condition )
+{
+  return condition ;
+}
+
+bool all_of ( bool condition )
+{
+  return condition ;
+}
+
+bool none_of ( bool condition )
+{
+  return ! condition ;
+}
+
 // next we have code which will only be present for xel_t of some
 // SIMD data type, like zimt::simd_type or zimt::vc_simd_type.
 // For such types, value_type will inherit from simd_flag, so we
