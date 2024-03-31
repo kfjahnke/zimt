@@ -412,7 +412,7 @@ void process ( const zimt::xel_t < std::size_t , D > & shape ,
         }
 
         // if there are any scalar values left over, we use a 'capped'
-        // operations to process them, 'leftover' serving as cap value.
+        // operation to process them, 'leftover' serving as cap value.
         // This operation only affects part of the vectorized data.
         // If there are no full vectors at all (see further up), the
         // lanes from the cap are padded with the last value before

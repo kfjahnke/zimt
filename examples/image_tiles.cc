@@ -68,8 +68,6 @@
 #include <OpenImageIO/imageio.h>
 #include <OpenImageIO/typedesc.h>
 
-#include <OpenImageIO/texture.h>
-
 using namespace OIIO;
 
 // type used for internal storage of data and corresponding OIIO typedesc

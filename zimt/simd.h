@@ -251,5 +251,7 @@ HWY_SIMD(unsigned char)
 
 #endif
 
+} ; // namespace zimt
+
 #define ZIMT_SIMD_H
 #endif

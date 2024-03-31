@@ -46,6 +46,8 @@
 
 #include "simd.h"
 
+namespace zimt
+{
 /// with the definition of 'simd_traits', we can proceed to implement
 /// 'vector_traits':
 /// struct vector_traits is a traits class fixing the types used for

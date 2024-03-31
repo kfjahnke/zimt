@@ -2082,6 +2082,12 @@ namespace zimt
   using HWY_NAMESPACE::all_of ;
   using HWY_NAMESPACE::any_of ;
   using HWY_NAMESPACE::none_of ;
+
+  template < typename T , size_t N >
+  struct is_integral < simd::hwy_simd_type < T , N > >
+  : public std::is_integral < T >
+  { } ;
+
 } ;
 
 #endif // #define HWY_SIMD_TYPE_H

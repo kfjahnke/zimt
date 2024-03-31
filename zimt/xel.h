@@ -60,6 +60,13 @@
 
 namespace zimt
 {
+// all xel data are deemed integral if their value_type is.
+  
+template < typename T , size_t N >
+struct is_integral < xel_t < T , N > >
+: public is_integral < T >
+{ } ;
+
 template < typename T , std::size_t N >
 struct xel_t ;
 
@@ -171,7 +178,7 @@ struct xel_t
 // values, both with 'C semantics' type promotion.
 
 #define INTEGRAL_ONLY \
-  static_assert ( std::is_integral < value_type > :: value , \
+  static_assert ( zimt::is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \

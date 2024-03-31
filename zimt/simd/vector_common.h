@@ -266,8 +266,11 @@ BROADCAST_STD_FUNC3(fma)
 // but this might be relaxed, casting the data to some unsigned
 // integral format of equal size.
 
+// TODO: is_integral does not yield true for SIMDized types,
+// need to elaborate
+
 #define INTEGRAL_ONLY \
-  static_assert ( std::is_integral < value_type > :: value , \
+  static_assert ( zimt::is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \

@@ -148,6 +148,10 @@ struct lookup_t
     // distance. we normalize the coordinate to move to points on the
     // unit sphere - equivalent to the directional vectors we want to
     // feed to the environment lookup.
+    // TODO: since we normalize anyway, moving from image coordinates
+    // to model space coordinates is futile. We can sample the image
+    // e.g. at unit steps and at a corresponding distance. Any scale
+    // will do - also twice unit steps, as I use them now in latlon.cc
 
     in_v crd = _crd / norm ( _crd ) ;
     

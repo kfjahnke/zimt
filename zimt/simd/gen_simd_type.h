@@ -497,4 +497,14 @@ bool none_of ( gen_simd_type < P , vsize > arg )
 
 #undef XEL
 
+namespace zimt
+{
+
+  template < typename T , size_t N >
+  struct is_integral < simd::gen_simd_type < T , N > >
+  : public std::is_integral < T >
+  { } ;
+
+} ;
+
 #endif // #define GEN_SIMD_TYPE_H

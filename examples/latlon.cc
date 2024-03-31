@@ -124,6 +124,8 @@
 // array of six 'widened' cube faces might even stand as a useful
 // format by itself, which would be quite easy to describe formally
 // because it's a derivative of the openEXR cubemap format.
+// You can store this intermediate in a file called internal.exr
+// by setting the global save_ir to true.
 // I mentioned above that I haven't found a way to directly use
 // OpenImageIO's texture system code on the data in RAM, so for the
 // time being, I pick output data with bilinear interpolation to
@@ -134,7 +136,7 @@
 // from one environment format to the other, using 'cubemap.cc'
 // for the reverse process. The forward-backward conversion is
 // 'quite hard on the data' - looking at the re-generated lat/lon
-// image made compared to the original lat/lon image, both artifacts
+// image compared to the original lat/lon image, both artifacts
 // due to filtering and due to interpolation are apparent. One way
 // to improve the fidelity greatly is by rendering to a cubemap
 // with twice the size as intermediate. Processing speed of this
@@ -159,8 +161,6 @@ typedef zimt::xel_t < std::size_t , 2 > shape_type ;
 
 typedef zimt::xel_t < float , 2 > v2_t ;
 typedef zimt::xel_t < float , 3 > v3_t ;
-// typedef zimt::xel_t < float , 3 > px_t ;
-// typedef zimt::xel_t < float , 4 > px4_t ;
 
 // some SIMDized types we'll use. I use 16 SIMD lanes for now.
 
@@ -171,8 +171,6 @@ typedef zimt::simdized_type < int , LANES > i_v ;
 typedef zimt::simdized_type < v2_t ,  LANES > crd2_v ;
 typedef zimt::simdized_type < v2i_t , LANES > v2i_v ;
 typedef zimt::simdized_type < v3_t ,  LANES > crd3_v ;
-// typedef zimt::simdized_type < px_t ,  LANES > px_v ;
-// typedef zimt::simdized_type < px4_t ,  LANES > px4_v ;
 typedef zimt::simdized_type < index_type , LANES > index_v ;
 
 // enum encoding the sequence of cube face images in the cubemap
@@ -191,10 +189,14 @@ typedef enum
 
 enum { RIGHT , DOWN , FORWARD } ;
 
+// some globals
+
+bool save_ir = false ;
+
 // helper function to save a zimt array to an image file (I am
 // working with openEXR images hare, hence the HALF data type)
 
-template < int nchannels >
+template < std::size_t nchannels >
 void save_array ( const std::string & filename ,
                   const zimt::view_t
                     < 2 ,
@@ -212,6 +214,102 @@ void save_array ( const std::string & filename ,
   auto success = out->write_image ( TypeDesc::FLOAT , pixels.data() ) ;
   assert ( success ) ;
   out->close();
+}
+
+// coordinate transformations, coded as templates in zimt 'act'
+// functor style, returning the result via a reference argument
+
+// code to convert lat/lon to 3D ray. Note that I am using lux
+// coordinate convention ('book order': x is right, y down and
+// z forward). I use a template here, the code is good for scalar
+// values and SIMD data alike. The lat/lon values coming in are
+// angles in radians, and the resulting 'ray' coordinates are
+// in model space units. We're using an implicit radius of 1.0
+// for the conversion from spherical to cartesian coordinates,
+// so the output has unit length.
+
+template < typename in_type , typename out_type >
+void ll_to_ray ( const in_type & in ,
+                 out_type & out )
+{
+  // incoming, we have lon/lat coordinates.
+
+  auto const & lon ( in[0] ) ;
+  auto const & lat ( in[1] ) ;
+
+  // outgoing, we have a directional vector.
+
+  auto & right   ( out [ RIGHT   ] ) ;
+  auto & down    ( out [ DOWN    ] ) ;
+  auto & forward ( out [ FORWARD ] ) ;
+
+  // we measure angles so that a view to directly ahead (0,0,1)
+  // corresponds to latitude and longitude zero. longitude increases
+  // into positive values when the view moves toward the right and
+  // latitude increases into positive values when the view moves
+  // downwards from the view straight ahead.
+  // The code benefits from using sincos, where available.
+
+#if defined USE_HWY or defined USE_VC
+
+  f_v sinlat , coslat , sinlon , coslon ;
+  sincos ( lat , sinlat , coslat ) ;
+  sincos ( lon , sinlon , coslon ) ;
+
+#else
+
+    f_v sinlat = sin ( lat ) ;
+    f_v coslat = cos ( lat ) ;
+    f_v sinlon = sin ( lon ) ;
+    f_v coslon = cos ( lon ) ;
+
+#endif
+
+  // the x component, pointing to the right in lux, is zero at
+  // longitude zero, which is affected by the sine term. The
+  // cosine term affects a scaling of this 'raw' value which
+  // is one for latitude zero and decreases both ways.
+
+  right = sinlon * coslat ;
+
+  // The z component, pointing forward, is one at longitude and
+  // latitude zero, and decreases with both increasing and decreasing
+  // longitude and latitude.
+
+  forward = coslon * coslat ;
+
+  // The y component, pointing down, is zero for the view straight
+  // ahead and increases with the latitude. For latitudes above
+  // the equator, we'll see negative values, and positive values
+  // for views into the 'southern hemisphere'. This component is not
+  // affected by the longitude.
+
+  down = sinlat ;
+}
+
+// code to move from 3D ray coordinates to lat/lon. This is the
+// reverse operation to ll_to_ray above and follows the same
+// conventions. Incoming, we have 3D ray coordinates, and
+// outgoing, 2D lon/lat coordinates.
+
+template < typename in_type , typename out_type >
+void ray_to_ll ( const in_type & in ,
+                 out_type & out )
+{
+  // incoming, we have a 3D directional vector
+  
+  auto const & right ( in[RIGHT] ) ;
+  auto const & down ( in[DOWN] ) ;
+  auto const & forward ( in[FORWARD] ) ;
+
+  // outgoing, we have a 2D lat/lon coordinate.
+
+  auto & lon ( out[0] ) ;
+  auto & lat ( out[1] ) ;
+
+  auto s = sqrt ( right * right + forward * forward ) ;
+  lat = atan2 ( down , s ) ;
+  lon = atan2 ( right , forward ) ;
 }
 
 // this structure is used to calculate the metrics of a sixfold_t.
@@ -588,81 +686,10 @@ struct sixfold_t
     }
   }
 
-  // code from lux to convert lat/lon to 3D ray. Note that I am using
-  // lux coordinate convention (book order: x is right, y down and
-  // z forward). I use a template here, the code is good for scalar
-  // values and SIMD data alike. The lat/lon values coming in are
-  // angles in radians, and the resulting 'ray' coordinates are
-  // in model space units. We're using an implicit radius of 1.0
-  // for the conversion from spherical to cartesian coordinates,
-  // so the output has unit length.
-
-  template < typename in_type , typename out_type >
-  void ll_to_ray ( const in_type & in ,
-                   out_type & out ) const
-  {
-    // incoming, we have lon/lat coordinates - we use the convention
-    // of axis order x - y - z, hence
-
-    auto const & lon ( in[0] ) ;
-    auto const & lat ( in[1] ) ;
-
-    // outgoing, we have a directional vector.
-
-    auto & right ( out[RIGHT] ) ;
-    auto & down ( out[DOWN] ) ;
-    auto & forward ( out[FORWARD] ) ;
-
-    // we measure angles so that a view to directly ahead (0,0,1)
-    // corresponds to latitude and longitude zero. longitude increases
-    // into positive values when the view moves toward the right and
-    // latitude increases into positive values when the view moves
-    // downwards from the view straight ahead.
-    // The code benefits from using sincos, where available.
-
-#if defined USE_HWY or defined USE_VC
-
-    f_v sinlat , coslat , sinlon , coslon ;
-    sincos ( lat , sinlat , coslat ) ;
-    sincos ( lon , sinlon , coslon ) ;
-
-#else
-
-     f_v sinlat = sin ( lat ) ;
-     f_v coslat = cos ( lat ) ;
-     f_v sinlon = sin ( lon ) ;
-     f_v coslon = cos ( lon ) ;
-
-#endif
-
-    // the x component, pointing to the right in lux, is zero at
-    // longitude zero, which is affected by the sine term. The
-    // cosine term affects a scaling of this 'raw' value which
-    // is one for latitude zero and decreases both ways.
-
-    right = sinlon * coslat ;
-
-    // The z component, pointing forward, is one at longitude and
-    // latitude zero, and decreases with both increasing and decreasing
-    // longitude and latitude.
-
-    forward = coslon * coslat ;
-
-    // The y component, pointing down, is zero for the view straight
-    // ahead and increases with the latitude. For latitudes above
-    // the equator, we'll see negative values, and positive values
-    // for views into the 'southern hemisphere'. This component is not
-    // affected by the longitude.
-
-    down = sinlat ;
-  }
-
   // given a 3D 'ray' coordinate, find the corresponding cube face
   // and the in-face coordinate - note the two references which take
-  // the result values. Note how we are 'coming from' a target cube
-  // face's 'frame' which we intend to fill with data, whereas the
-  // cube face we glean here is the source cube face from which we
-  // pick up pixel data. 
+  // the result values. The incoming 'ray' coordinate does not have
+  // to be normalized.
 
   void ray_to_cubeface ( const crd3_v & c ,
                          i_v & face ,
@@ -677,21 +704,10 @@ struct sixfold_t
     auto m2 = ( abs ( c[RIGHT] ) >= abs ( c[FORWARD] ) ) ;
     auto m3 = ( abs ( c[DOWN] )  >= abs ( c[FORWARD] ) ) ;
 
-    // instead of the code lower down, an alternative strategy to
-    // figure out the cube face would be to first test whether
-    // the z axis is dominant, and if not, derive the cube face
-    // directly from the longitude with a modulo operation. But
-    // this depends on actually having lat/lon coordinates. We do
-    // have them here, but I prefer to code not just for this
-    // situation but to have a general way of working from 3D
-    // coordinates to face index plus in-face coordinates.
-
-    // masks which are true where a specific axis is 'dominant'.
-    // the three 'dom' masks are mutually exclusive. dom0 is for
-    // axis 0 etc.
-
-    // where the numerical value along the x axis (pointing right)
-    // is larger than the other two, 'dom' will be true.
+    // form a mask which is true where a specific axis is 'dominant'.
+    // We start out looking at the x axis: where the numerical value
+    // along the x axis (pointing right) is larger than the other two,
+    // 'dom' will be true.
 
     auto dom = m1 & m2 ;
 
@@ -716,7 +732,7 @@ struct sixfold_t
     // because most of the time all coordinates will 'land' in
     // the same cube face, so for two cases, the rather expensive
     // code to calculate the face index and in-face coordinate
-    // can be omitted. One might test whether omitting the
+    // can be omitted. TODO: One might test whether omitting the
     // conditionals is actually slower.
 
     if ( any_of ( dom ) )
@@ -826,7 +842,7 @@ struct sixfold_t
     {
       // bilinear interpolation. Since we have incoming coordinates
       // in the range of (-0.5, width-0,5) relative to the 'ninety
-      // degrees poper',this interpolator may 'look at' pixels
+      // degrees proper', this interpolator may 'look at' pixels
       // outside the 'ninety degrees proper'. So we need sufficient
       // support here: pickup coordinates with negative values will,
       // for example, look at pixels just outside the 'ninety degree
@@ -961,6 +977,11 @@ struct sixfold_t
 // the face index remains the same, so the functor can be
 // specialized and saves some processing time because it's
 // 'focused' better.
+// the 'shift' value, which is subtracted from the incoming
+// coordinate, produces the in-face coordinate, which has to
+// be scaled to model space to land in the (-1,1) range which
+// we combine with a third coordinate value of unit length to
+// obtain the 3D 'ray' coordinate.
 
 template < face_index_t F >
 struct ir_to_ray
@@ -1111,12 +1132,9 @@ struct ir_to_ray_gen
 // 'look at' the regenerated data: they only serve as support for
 // filtering and mip-mapping, and for that purpose, they are certainly
 // 'good enough'.
-// At the same time, the eval functor can produce pixel values for
-// 2D coordinates inside the cube face image, so we can run a zimt
-// process over the six sections in turn, and it will fill in the
-// six sections. Here we produce data from the sixfold itself, but
-// any other data source yielding pixel values for 3D ray coordinates
-// would be usable as well.
+// At the same time, the eval functor could produce pixel values for
+// 2D coordinates inside the cube face image, but in this program,
+// we already have these data.
 
 template < int nchannels >
 struct fill_frame_t
@@ -1126,8 +1144,7 @@ struct fill_frame_t
   const sixfold_t < nchannels > & sf ;
   const int face ;
   const int degree ;
-  const float shift ;
-  const float scale ;
+  const int ithird ;
 
   typedef zimt::xel_t < float , nchannels > px_t ;
   typedef zimt::simdized_type < px_t , LANES > px_v ;
@@ -1138,53 +1155,56 @@ struct fill_frame_t
   : sf ( _cubemap ) ,
     face ( _face ) ,
     degree ( _degree ) ,
-    shift (     _cubemap.frame_width
-            + ( _cubemap.face_width - 1.0f ) / 2.0f ) ,
-    scale ( 1.0f / float ( _cubemap.face_width / 2.0f ) )
+    ithird ( _cubemap.metrics.model_to_px * 2 )
   { }
 
-  void eval ( const v2i_v & crd2 , px_v & px )
+  void eval ( const v2i_v & crd2 , px_v & px ) const
   {
     crd3_v crd3 ;
 
     // since 'face' is const, this case switch should be optimized away.
-    // here, we move from discrete image coordinates to 3D coordinates
-    // scaled to 'model space', on a plane one unit from the origin.
-    // The incoming coordinates are relative to the section.
+    // here, we move from discrete image coordinates to float 3D
+    // coordinates, but we don't scale to model coordinates and do the
+    // arithmetic in integer until the final conversion to float:
+    // the scale does not matter, because the next processing step
+    // is insensitive to scale.
+    // Note that we're obtaining crd2 values from a linspace_t which
+    // provides readily shifted and doubled coordinates, hence the
+    // factor of two in the initialization of ithird.
 
     switch ( face )
     {
       case CM_FRONT :
-        crd3[RIGHT]   =   ( crd2[RIGHT] - shift ) * scale ;
-        crd3[DOWN]    =   ( crd2[DOWN]  - shift ) * scale ;
-        crd3[FORWARD] =   1.0f ;
+        crd3[RIGHT]   =   crd2[RIGHT] ;
+        crd3[DOWN]    =   crd2[DOWN] ;
+        crd3[FORWARD] =   ithird ;
         break ;
       case CM_BACK :
-        crd3[RIGHT]   = - ( crd2[RIGHT] - shift ) * scale ;
-        crd3[DOWN]    =   ( crd2[DOWN]  - shift ) * scale ;
-        crd3[FORWARD] = - 1.0f ;
+        crd3[RIGHT]   = - crd2[RIGHT] ;
+        crd3[DOWN]    =   crd2[DOWN] ;
+        crd3[FORWARD] = - ithird ;
         break ;
       case CM_RIGHT :
-        crd3[RIGHT] =     1.0f ;
-        crd3[DOWN] =      ( crd2[DOWN]  - shift ) * scale ;
-        crd3[FORWARD] = - ( crd2[RIGHT] - shift ) * scale ;
+        crd3[RIGHT] =     ithird ;
+        crd3[DOWN] =      crd2[DOWN] ;
+        crd3[FORWARD] = - crd2[RIGHT] ;
         break ;
       case CM_LEFT :
-        crd3[RIGHT] =   - 1.0f ;
-        crd3[DOWN] =      ( crd2[DOWN]  - shift ) * scale ;
-        crd3[FORWARD] =   ( crd2[RIGHT] - shift ) * scale ;
+        crd3[RIGHT] =   - ithird ;
+        crd3[DOWN] =      crd2[DOWN] ;
+        crd3[FORWARD] =   crd2[RIGHT] ;
         break ;
       // for bottom and top, note that we're using openEXR convention.
       // to use lux convention, invert the signs.
       case CM_BOTTOM :
-        crd3[RIGHT] =   - ( crd2[RIGHT] - shift ) * scale ;
-        crd3[DOWN] =      1.0f ;
-        crd3[FORWARD] =   ( crd2[DOWN]  - shift ) * scale ;
+        crd3[RIGHT] =   - crd2[RIGHT] ;
+        crd3[DOWN] =      ithird ;
+        crd3[FORWARD] =   crd2[DOWN] ;
         break ;
       case CM_TOP :
-        crd3[RIGHT] =   - ( crd2[RIGHT] - shift ) * scale ;
-        crd3[DOWN] =    - 1.0f ;
-        crd3[FORWARD] = - ( crd2[DOWN]  - shift ) * scale ;
+        crd3[RIGHT] =   - crd2[RIGHT] ;
+        crd3[DOWN] =    - ithird ;
+        crd3[FORWARD] = - crd2[DOWN] ;
         break ;
      } ;
 
@@ -1252,34 +1272,44 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
     // demonstration of how these parameters can be put to use.
     // We use a 'notional' shape which encompasses the entire
     // section, but the iteration will only visit those coordinates
-    // which are in the range given by the limits. Note how we
-    // use zimt::transform without a 'source' argument: this idiom
-    // uses a 'get_crd' object to generate input, namely the
-    // discrete coordinates which we iterate over.
+    // which are in the range given by the limits.
+    // our linspace_t will generate doubled coordinates -
+    // scaling up by a factor of two is irrelevant for the next
+    // stage of the processing, and it allows us to code the
+    // sampling mathematics entirely in int until the stage
+    // where we do the unavoidable division to project the
+    // ray onto a plane. Without the doubling, we'd have to
+    // start out at ( outer_width -1 ) / 2, which can't be
+    // expressed precisely in int.
 
+    auto ishift = outer_width - 1 ;
+    zimt::linspace_t < int , 2 , 2 , LANES > ls ( -ishift , 2 ) ;
+    zimt::storer < float , nchannels , 2 , LANES > st ( framed ) ;
+    auto & shp = framed.shape ;
+    
     // fill in the stripe above the cube face
 
     bill.lower_limit = { 0 , 0 } ;
     bill.upper_limit = { long(outer_width) , long(frame_width) } ;
-    zimt::transform ( fill_frame , framed , bill  ) ;
+    zimt::process ( shp , ls , fill_frame , st , bill ) ;
 
     // fill in the stripe below the cube face
 
     bill.lower_limit = { 0 , long(frame_width + face_width) } ;
     bill.upper_limit = { long(outer_width) , long(outer_width) } ;
-    zimt::transform ( fill_frame , framed , bill  ) ;
+    zimt::process ( shp , ls , fill_frame , st , bill ) ;
 
     // fill in the stripe to the left of the cube face
 
     bill.lower_limit = { 0 , 0 } ;
     bill.upper_limit = { long(frame_width) , long(outer_width) } ;
-    zimt::transform ( fill_frame , framed , bill  ) ;
+    zimt::process ( shp , ls , fill_frame , st , bill ) ;
 
     // fill in the stripe to the right of the cube face
 
     bill.lower_limit = { long(frame_width + face_width) , 0 } ;
     bill.upper_limit = { long(outer_width) , long(outer_width) } ;
-    zimt::transform ( fill_frame , framed , bill  ) ;
+    zimt::process ( shp , ls , fill_frame , st , bill ) ;
   }
 }
 
@@ -1339,7 +1369,7 @@ struct convert_t
     // convert 2D spherical coordinate to 3D ray coordinate 'crd3'
   
     crd3_v crd3 ;
-    cubemap.ll_to_ray ( lat_lon , crd3 ) ;
+    ll_to_ray ( lat_lon , crd3 ) ;
 
     // find the cube face and in-face coordinate for 'c'
 
@@ -1353,6 +1383,13 @@ struct convert_t
   }
 
 } ;
+
+// the 'worker' function does all the work. I had the code im main,
+// but now I've added support for images with up to four channels,
+// in order to support RGBA and monochrome images as well, and I
+// need to have the number of channels as a template argument to
+// 'trickle down' to code manipulating pixel data, hence the
+// factoring-out of the worker code to this function template.
 
 template < int nchannels >
 void worker ( std::unique_ptr < ImageInput > & inp ,
@@ -1382,7 +1419,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
   // now we build up the 'support'. The square images for the
   // cube faces are cut off at the ninety-degree point, and to
-  // interpolate in the vicinity of the cube faces' margin, we
+  // interpolate in the vicinity of a cube face's margin, we
   // need some support in good quality. Further out from the
   // margins, the quality of the support data isn't so critical -
   // these pixels only come to play when the cube face is
@@ -1410,6 +1447,9 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
   sf.fill_support ( 1 ) ;
   sf.fill_support ( 1 ) ;
+
+  if ( save_ir )
+    save_array ( "internal.exr" , sf.store ) ;
 
   // with proper support near the edges, we can now run the
   // actual payload code - the conversion to lon/lat - with
@@ -1465,6 +1505,12 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
   double d = 2.0 * M_PI / trg.shape[0] ;
 
+  // note that the first sample point is not at -pi, -pi/2 but
+  // half a sample step in the horizonal and vertical toward the
+  // center. This way, the sample points are distributed evenly
+  // around the image center - the last sample point will be
+  // at pi-d/2, pi/2-d/2.
+  
   v2_t start { - M_PI + d / 2.0 , - M_PI_2 + d / 2.0 } ;
   v2_t step { d , d } ;
 
@@ -1475,7 +1521,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   zimt::storer < float , nchannels , 2 , LANES > st ( trg ) ;
 
   // showtime! call zimt::process.
-  
+
   zimt::process ( trg.shape , linspace , act , st ) ;
 
   // finally we store the data to an image file - note how we have

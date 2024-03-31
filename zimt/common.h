@@ -65,6 +65,17 @@
 
 namespace zimt
 {
+  // we set up a traits class which we'll use to codify that SIMDized
+  // types and xel types are integral if their members are. This is
+  // used to implement the INTEGRAL_ONLY type constraint in operator
+  // functions working on zimt data. If T is not a zimt data type, we
+  // inherit from std::is_integral:
+
+  template < typename T >
+  struct is_integral
+  : public std::is_integral < T >
+  { } ;
+
   // forward declaration of xel_t
 
   template < typename T , std::size_t > struct xel_t ;
