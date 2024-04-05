@@ -264,8 +264,8 @@ struct unary_functor
 /// code will pass input to this eval member function which is
 /// appropriately padded, so the invocation of the vectorized eval
 /// is safe, but the cap value will indicate how many of the vector's
-/// lanes hold 'genuine' data - the rest are padding, repeating the
-/// last 'genuine' value. The padding is applied so that functors
+/// lanes hold 'genuine' data - the rest are padding, repeating other
+/// 'genuine' values. The padding is applied so that functors
 /// which ignore 'cap' (this should be the majority) can do so without
 /// causing exceptions due to unsuitable input, provided that the
 /// 'genuine' lanes don't cause such exceptions.
@@ -456,7 +456,7 @@ struct chain_type
   typedef typename vs_adapter<T1>::out_v intermediate_v ;
   typedef typename vs_adapter<T2>::out_v rhs_v ;
 
- static_assert ( std::is_same
+  static_assert ( std::is_same
                    < typename vs_adapter<T1>::out_v ,
                      typename vs_adapter<T2>::in_v
                    > :: value ,
