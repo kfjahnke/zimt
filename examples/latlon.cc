@@ -148,6 +148,7 @@
 // compilers I test regularly.
 
 #include <array>
+#include <filesystem>
 #include <zimt/zimt.h>
 #include <OpenImageIO/texture.h>
 
@@ -608,8 +609,8 @@ struct metrics_t
 
     // move to texture coordinates in [0,1]
 
-    target[0] /= outer_width ;
-    target[1] /= 6 * outer_width ;
+    target[0] /= float ( outer_width ) ;
+    target[1] /= float ( 6 * outer_width ) ;
   }
 } ;
 
@@ -1109,17 +1110,60 @@ struct sixfold_t
                          const f_v & dyv ,
                          TextureOptBatch & batch_options ) const
   {
-     // virtual bool texture (    TextureHandle *texture_handle,
-                               // Perthread *thread_info,
-                               // TextureOptBatch &options,
-                               // Tex::RunMask mask,
-                               // const float *s, const float *t,
-                               // const float *dsdx, const float *dtdx,
-                               // const float *dsdy, const float *dtdy,
-                               // int nchannels,
-                               // float *result,
-                               // float *dresultds = nullptr,
-                               // float *dresultdt = nullptr)
+    // code to truncate the pickup coordinate to int and gather,
+    // after restoring the pickup to pixel units
+
+    // pickup[0] *= float ( store.shape[0] ) ;
+    // pickup[1] *= float ( store.shape[1] ) ;
+    // index_v idx { pickup[0] , pickup[1] } ;
+    // const auto ofs = ( idx * store.strides ) . sum() * nchannels ;
+    // const auto * p = (float*) ( store.data() ) ;
+    // 
+    // px.gather ( p , ofs ) ;
+    // return ;
+
+    // OIIO's 'texture' signature is quite a mouthful:
+
+    // virtual bool texture (    TextureHandle *texture_handle,
+                              // Perthread *thread_info,
+                              // TextureOptBatch &options,
+                              // Tex::RunMask mask,
+                              // const float *s, const float *t,
+                              // const float *dsdx, const float *dtdx,
+                              // const float *dsdy, const float *dtdy,
+                              // int nchannels,
+                              // float *result,
+                              // float *dresultds = nullptr,
+                              // float *dresultdt = nullptr)
+
+// #if defined USE_VC or defined USE_STDSIMD
+
+    // to interface with zimt's Vc and std::simd backends, we need to
+    // extract the data from the SIMDized objects and re-package the
+    // ouptut as a SIMDized object. The compiler will likely optimize
+    // this away and work the entire operation in registers, so let's
+    // call this a 'semantic manoevre'.
+
+    float scratch [ 6 * LANES + 3 * LANES ] ;
+
+    pickup.store ( scratch ) ; // stores 2 * LANES
+    dxu.store ( scratch + 2 * LANES ) ;
+    dxv.store ( scratch + 3 * LANES ) ;
+    dyu.store ( scratch + 4 * LANES ) ;
+    dyv.store ( scratch + 5 * LANES ) ;
+
+    bool result =
+    ts->texture ( th , nullptr , batch_options , Tex::RunMaskOn ,
+                  scratch , scratch + LANES ,
+                  scratch + 2 * LANES , scratch + 3 * LANES ,
+                  scratch + 4 * LANES , scratch + 5 * LANES ,
+                  nchannels , scratch + 6 * LANES ) ;
+
+    assert ( result ) ;
+    px.load ( scratch + 6 * LANES ) ;
+
+/*
+#else
 
     bool result =
     ts->texture ( th , nullptr , batch_options , Tex::RunMaskOn ,
@@ -1128,86 +1172,8 @@ struct sixfold_t
                   dyu.data() , dyv.data() ,
                   nchannels , (float*) ( px[0].data() ) ) ;
 
-    // std::cout << "pickup: " << pickup << std::endl ;
-    // std::cout << "px: " << px << std::endl ;
-
-    assert ( result ) ;
-  }
-
-  void _get_filtered_px ( crd2_v pickup ,
-                         px_v & px ,
-                         const f_v & dxu ,
-                         const f_v & dyu ,
-                         const f_v & dxv ,
-                         const f_v & dyv ) const
-  {
-    // std::cout << "*** dxu " << dxu << std::endl ;
-    // std::cout << "*** dyu " << dyu << std::endl ;
-    // std::cout << "*** dxv " << dxv << std::endl ;
-    // std::cout << "*** dyv " << dyv << std::endl ;
-    auto dx = abs ( dxu ) . at_least ( abs ( dxv ) ) ;
-    auto dy = abs ( dyu ) . at_least ( abs ( dyv ) ) ;
-
-    // auto dx = dxu ;
-    // dx ( dxv > dxu ) = dxv ;
-    // auto dy = dyu ;
-    // dy ( dyv > dyu ) = dyv ;
-    
-    // std::cout << "dx " << dx << std::endl ;
-    // std::cout << "dy " << dy << std::endl ;
-
-    auto x0 = pickup[0] - dx / 2.0f ;
-    auto x1 = pickup[0] + dx / 2.0f ;
-    x1 ( x1 <= x0 ) = x0 + .000001f ;
-
-    auto y0 = pickup[1] - dy / 2.0f ;
-    auto y1 = pickup[1] + dy / 2.0f ;
-    y1 ( y1 <= y0 ) = y0 + .000001f ;
-
-    auto x = x0 ;
-    auto xd = i_v ( ceil ( x0 ) ) ;
-    xd ( x0 == ceil ( x0 ) ) += 1 ;
-
-    f_v w = 0.0f ;
-    px = 0.0f ;
-
-    // TODO: comes out wrong if x1 < ceuil ( x0 )
-
-    while ( any_of ( x < x1 ) )
-    {
-      auto xlim = f_v ( xd ) . at_most ( x1 ) ;
-      auto sx = xlim - x ;
-      sx ( x >= x1 ) = 0.0f ;
-
-      auto y = y0 ;
-      auto yd = i_v ( ceil ( y0 ) ) ;
-      yd ( y0 == ceil ( y0 ) ) += 1 ;
-  
-      while ( any_of ( y < y1 ) )
-      {
-        auto ylim = f_v ( yd ) . at_most ( y1 ) ;
-        auto sy = ylim - y ;
-        sy ( y >= y1 ) = 0.0f ;
-
-        index_v xylow = { xd - 1 , yd - 1 } ;
-        auto ofs = ( xylow * store.strides ) . sum() * nchannels ;
-        auto p = (float*) store.data() ;
-        px_v pxp ;
-        pxp.gather ( p , ofs ) ;
-
-        auto wp = sx * sy ;
-        wp ( wp <= 0.0f ) = .000001f ;
-        px += pxp * wp ;
-        w += wp ;
-
-        yd += 1 ;
-        y = f_v ( yd ) . at_most ( y1 ) ;
-      }
-      xd += 1 ;
-      x = f_v ( xd ) . at_most ( x1 ) ;
-    }
-   assert ( all_of ( w > 0.0f ) ) ;
-   px /= w ;
+#endif
+*/
   }
 
   // variant taking derivatives of the in-face coordinate, which
@@ -1227,12 +1193,12 @@ struct sixfold_t
                           TextureOptBatch & bo ) const
   {
     crd2_v pickup ;
+
+    // obtain the pickup coordinate in texture units (in [0,1])
+
     metrics.get_pickup_coordinate_tx ( face , in_face , pickup ) ;
 
-    // // move the pickup to texture coordinates in [0,1]
-    // 
-    // pickup[0] /= store.shape[0] ;
-    // pickup[1] /= store.shape[1] ;
+    // use OIIO to get the pixel value
 
     get_filtered_px ( pickup , px , dxu , dyu , dxv , dyv , bo) ;
   }
@@ -1710,10 +1676,9 @@ struct ll_to_px_t
 
   // for lookup with OIIO's texture system, we need batch options.
   // I'd keep them in the code which actually uses them, but the
-  // OIIO 'texture' function expects an lvalue, so I have to pass
-  // them in from here by reference.
+  // OIIO 'texture' function expects an lvalue.
 
-  TextureOptBatch batch_options ;
+  TextureOptBatch & batch_options ;
 
   // source of pixel data
 
@@ -1727,16 +1692,14 @@ struct ll_to_px_t
 
   ll_to_px_t ( const sixfold_t < nchannels > & _cubemap ,
                const int & _degree ,
-               const v2_t & _delta )
+               const v2_t & _delta ,
+               TextureOptBatch & _batch_options )
   : cubemap ( _cubemap ) ,
     degree ( _degree ) ,
     delta ( _delta ) ,
+    batch_options ( _batch_options ) ,
     ll_to_ray() // g++ is picky.
-  {
-    // let's not be too conservative for now
-
-    batch_options.conservative_filter = false ;
-  }
+  { }
 
   // 'eval' function which will be called by zimt::process.
   // incoming: 2D coordinate as lat/lon in radians. Internally, we
@@ -1818,10 +1781,13 @@ struct ll_to_px_t
 
       // move the derivatives to texture coordinates in [0,1]
 
-      dxu /= cubemap.store.shape[0] ;
-      dxv /= cubemap.store.shape[0] ;
-      dyu /= cubemap.store.shape[1] ;
-      dyv /= cubemap.store.shape[1] ;
+      double confine_x = 1.0 / double ( cubemap.store.shape[0] ) ;
+      double confine_y = 1.0 / double ( cubemap.store.shape[1] ) ;
+
+      dxu *= confine_x ;
+      dxv *= confine_x ;
+      dyu *= confine_y ;
+      dyv *= confine_y ;
 
       cubemap.cubemap_to_pixel ( face , in_face , px ,
                                  dxu , dyu , dxv , dyv ,
@@ -2127,14 +2093,22 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   sf.fill_support ( 1 ) ;
   sf.fill_support ( 1 ) ;
 
-  // if ( save_ir )
-  //   save_array ( "internal.exr" , sf.store ) ;
+  // to load the texture with OIIO's texture system code, it
+  // has to be in a file, so we store it to a temporary file:
+
+  auto temp_path = std::filesystem::temp_directory_path() ;
+  auto temp_filename = temp_path / "temp_texture.exr" ;
+  std::cout << "saving texture to " << temp_filename.c_str()
+            << std::endl ;
+
+  save_array ( temp_filename.c_str() , sf.store ) ;
+
+  // now we can introduce it to the texture system and receive
+  // a texture handle for fast access
 
   TextureSystem * ts = TextureSystem::create() ;
-  ustring uenvironment ( "internal.exr" ) ;
+  ustring uenvironment ( temp_filename.c_str() ) ;
   auto th = ts->get_texture_handle ( uenvironment ) ;
-
-  std::cout << "ts: " << ts << " th: " << th << std::endl ;
 
   sf.set_ts ( ts , th ) ;
 
@@ -2147,7 +2121,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // generated is also good for mip-mapping, so we have the
   // option to switch to interpolation methods with larger
   // support, like OIIO's texture access with anisotropic
-  // antaliasing filter. We'd need the derivatives for that,
+  // antaliasing filter. We need the derivatives for that,
   // though, which is an extra complication.
   // The internal representation - as it is now - is also
   // useful for other interpolation schemes which need
@@ -2205,14 +2179,51 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // produces pixel data from the internal representation of the
   // cubemap held in the sixfold_t object
 
-  ll_to_px_t<nchannels> act ( sf , -1 , step ) ;
+  // passing -1 routes to oiio's batched texture lookup, but
+  // currently I don't get reliable results from that.
+
+  TextureOptBatch batch_options ;
+
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
+
+  batch_options.conservative_filter = false ;
+  
+  batch_options.interpmode
+    = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
+
+  // setting the second parameter to 1 here routes to pick-up with
+  // bilinear interpolation directly from the IR image with no
+  // mip-mapping or filtering. The code to use OIIO's texture lookup
+  // is there already and can be activated by passing -1, but currently
+  // that does not work reliably - every now and then, it switches off
+  // a set of lanes, which appear as vertical black stripes in the
+  // output. I opened an issue:
+  // https://github.com/AcademySoftwareFoundation/OpenImageIO/issues/4219
+
+  ll_to_px_t<nchannels> act ( sf , 1 , step , batch_options ) ;
 
   // showtime! call zimt::process.
 
   zimt::bill_t bill ;
-  bill.njobs = 1 ;
+  // bill.njobs = 1 ;
 
   zimt::process ( trg.shape , linspace , act , st , bill ) ;
+
+  // we don't need the temporary texture any more. If save_ir is
+  // set, we save it as 'internal.exr'.
+
+  if ( save_ir )
+  {
+    std::cout << "storing texture as 'internal.exr'" << std::endl ;
+    std::filesystem::rename ( temp_filename , "internal.exr" ) ;
+  }
+  else
+  {
+    std::cout << "removing texture file "
+              << temp_filename.c_str() << std::endl ;
+    std::filesystem::remove ( temp_filename ) ;
+  }
 
   // finally we store the data to an image file - note how we have
   // float data in 'trg', and OIIO will convert these on-the-fly to

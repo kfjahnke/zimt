@@ -206,7 +206,7 @@ struct lookup_t
 #if defined USE_VC or defined USE_STDSIMD
 
     // to interface with zimt's Vc and std::simd backends, we need to
-    // extract the data from the SIMDiszed objects and re-package the
+    // extract the data from the SIMDized objects and re-package the
     // ouptut as a SIMDized object. The compiler will likely optimize
     // this away and work the entire operation in registers, so let's
     // call this a 'semantic manoevre'.
@@ -342,8 +342,7 @@ void extract ( TextureSystem * ts ,
   // processing would speed up nicely. Just guessing, though - I
   // haven't looked at the code.
 
-  // for now, I'm using bilinear interpolation, no mip-mapping, and
-  // no 'conservative' filtering.
+  // use the default batch options
 
   TextureOptBatch batch_options ;
 
@@ -354,18 +353,12 @@ void extract ( TextureSystem * ts ,
   // TextureOpt enums (there's a type error) - but that is maybe due to
   // the rather old OIIO I take from debian's packet management.
 
-//   batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
-//   batch_options.interpmode
-//     = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
+  // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
+  // batch_options.interpmode
+  //   = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
 
-  batch_options.conservative_filter = false ;
+  // batch_options.conservative_filter = false ;
 
-  // we obtain the texture handle for most efficient processing of the
-  // environment lookup, and set up the lookup_t object to serve as the
-  // 'act' functor in the zimt::process invocation.
-
-  // ustring uenvironment ( environment ) ;
-  // auto th = ts->get_texture_handle ( uenvironment ) ;
   lookup_t lookup ( ts , batch_options , th , step ) ;
 
   // finally the data sink - we store to a zimt array, which makes it

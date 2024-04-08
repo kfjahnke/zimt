@@ -110,6 +110,13 @@ void convert ( const vc_simd_type < src_t , vsize > & src ,
 /// can't be 'put into' Vc::SimdArray from the outside. And, third,
 /// the template signature is uniform, avoiding Vc::SimdArray's
 /// two additional template arguments.
+// A note on the disuse of tag_t::vsize: this would be nice, but
+// g++ does not extend the usage of vsize to the friend function
+// template definitions used to implement binary operators with
+// a fundamental as LHS and proclaims vsize as undefined. One might
+// argue that the using declaration is strictly for code which is
+// 'inside' struct vc_simd_type, but I prefer clang++'s wider
+// notion of where vsize is applicable.
 
 template < typename _value_type ,
            std::size_t _vsize >
@@ -119,7 +126,8 @@ struct vc_simd_type
 {
   typedef simd_tag < _value_type , _vsize , VC > tag_t ;
   using typename tag_t::value_type ;
-  using tag_t::vsize ;
+  // using tag_t::vsize ; // works with clang++, but not with g++, hence:
+  static const std::size_t vsize = _vsize ;
   using tag_t::backend ;
 
   typedef Vc::SimdArray < _value_type , _vsize > base_t ;

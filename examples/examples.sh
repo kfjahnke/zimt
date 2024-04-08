@@ -49,7 +49,7 @@ do
   for compiler in clang++ g++
   do
 
-    common_flags="-O3 -std=c++17 -march=native -Wno-deprecated-declarations"
+    common_flags="-O3 -std=gnu++17 -march=native -Wno-deprecated-declarations"
 
     # compile without explicit SIMD code
 

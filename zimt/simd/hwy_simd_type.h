@@ -791,6 +791,13 @@ void convert ( const simd_t < src_t , vsize > & src ,
 // now comes the template class simd_t which implements the core
 // of the functionality, the SIMD data type 'standing in' for
 // gen_simd_type when USE_HWY is defined.
+// A note on the disuse of tag_t::vsize: this would be nice, but
+// g++ does not extend the usage of vsize to the friend function
+// template definitions used to implement binary operators with
+// a fundamental as LHS and proclaims vsize as undefined. One might
+// argue that the using declaration is strictly for code which is
+// 'inside' struct vc_simd_type, but I prefer clang++'s wider
+// notion of where vsize is applicable.
 
 template < typename _value_type ,
            std::size_t _vsize >
@@ -799,7 +806,8 @@ struct HWY_ALIGN simd_t
 {
   typedef simd_tag < _value_type , _vsize , HWY > tag_t ;
   using typename tag_t::value_type ;
-  using tag_t::vsize ;
+  // using tag_t::vsize ; // works with clang++, but not with g++, hence:
+  static const std::size_t vsize = _vsize ;
   using tag_t::backend ;
 
   typedef std::size_t size_type ;
