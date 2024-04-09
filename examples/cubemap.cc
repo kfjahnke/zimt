@@ -353,11 +353,13 @@ void extract ( TextureSystem * ts ,
   // TextureOpt enums (there's a type error) - but that is maybe due to
   // the rather old OIIO I take from debian's packet management.
 
+  batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeTrilinear ) ;
+
   // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
   // batch_options.interpmode
   //   = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
 
-  // batch_options.conservative_filter = false ;
+  batch_options.conservative_filter = false ;
 
   lookup_t lookup ( ts , batch_options , th , step ) ;
 

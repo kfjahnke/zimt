@@ -2190,7 +2190,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   batch_options.conservative_filter = false ;
   
   batch_options.interpmode
-    = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
+    = Tex::InterpMode ( TextureOpt::InterpSmartBicubic ) ;
 
   // setting the second parameter to 1 here routes to pick-up with
   // bilinear interpolation directly from the IR image with no
@@ -2200,8 +2200,14 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // a set of lanes, which appear as vertical black stripes in the
   // output. I opened an issue:
   // https://github.com/AcademySoftwareFoundation/OpenImageIO/issues/4219
+  // one step further: it seems to work unless one chooses the default
+  // mipmapping mode. With this mipmapping mode:
 
-  ll_to_px_t<nchannels> act ( sf , 1 , step , batch_options ) ;
+  batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeTrilinear ) ;
+
+  // I haven't yet seen the bug and the result is as expected.
+
+  ll_to_px_t<nchannels> act ( sf , -1 , step , batch_options ) ;
 
   // showtime! call zimt::process.
 
