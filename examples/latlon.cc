@@ -197,7 +197,7 @@ typedef enum
 // them, your eyes move first left to right inside the line, then
 // top to bottom from line to line, then, moving to the next pages,
 // forward in the stack. Using this order also makes the first two
-// compnents agree with normal image indexing conventions, namely
+// components agree with normal image indexing conventions, namely
 // x is to the right and y down. Note that I put the fastest-moving
 // index first, which is 'fortran' style, whereas C/C++ use the
 // opposite order for nD arrays.
@@ -211,7 +211,7 @@ bool save_ir = false ;
 bool regenerate = false ;
 
 // helper function to save a zimt array to an image file. I am
-// working with openEXR images hare, hence the HALF data type.
+// working with openEXR images here, hence the HALF data type.
 // If the output format can't produce HALF, it will use the
 // 'next-best' thing. Note that input and output should agree
 // on the colour space. If you stay within one format, that's
@@ -274,9 +274,9 @@ struct ll_to_ray_t
 
     #if defined USE_HWY or defined USE_VC
 
-    f_v sinlat , coslat , sinlon , coslon ;
-    sincos ( lat , sinlat , coslat ) ;
-    sincos ( lon , sinlon , coslon ) ;
+      f_v sinlat , coslat , sinlon , coslon ;
+      sincos ( lat , sinlat , coslat ) ;
+      sincos ( lon , sinlon , coslon ) ;
 
     #else
 
@@ -368,6 +368,7 @@ struct metrics_t
   double px_to_model ;
   double section_size ;
   double ref90 ;
+  bool discrete90 ;
 
   // the c'tor only needs one argument: the size of an individual
   // cube face image. This is the size covering the entire image,
@@ -415,15 +416,17 @@ struct metrics_t
     double overscan = 0.0 ;
     double diameter = 2.0 ;
     inherent_support = 0 ;
+    discrete90 = true ;
 
     // calculate the diameter in model space units. The diameter
     // for a ninety degree face image would be precisely 2, and
-    // if the partial image has larger filed of view, it will be
+    // if the partial image has larger field of view, it will be
     // larger.
 
     if ( face_hfov > M_PI_2 )
     {
       diameter = 2.0 * tan ( face_hfov / 2.0 ) ;
+      discrete90 = false ;
     }
 
     // calculate scaling factors from model space units to pixel
@@ -438,6 +441,9 @@ struct metrics_t
     // it's the same as (diameter / 2 - 1). Note that this value
     // may not coincide with a discrete number of pixels for
     // cube face images with more than ninety degrees fov.
+    // We have a boolean 'discrete90' which indicates whether
+    // the central 'ninety degrees proper' section coincides
+    // with a discrete size.
 
     if ( face_hfov > M_PI_2 )
     {      
@@ -448,7 +454,7 @@ struct metrics_t
       double px_overscan = model_to_px * overscan ;
 
       // truncate to integer to receive the inherent support in
-      // pixel units. If thsi value is as large or larger than the
+      // pixel units. If this value is as large or larger than the
       // required support, we needn't add any additional space.
 
       inherent_support = px_overscan ;
@@ -584,8 +590,24 @@ struct metrics_t
     target -= .5 ;
   }
 
+  // variant to get the pick-up coordinate in model space units
+
+  template < typename face_index_t , typename crd_t >
+  void get_pickup_coordinate_md ( const face_index_t & face_index ,
+                                  const crd_t & in_face_coordinate ,
+                                  crd_t & target ) const
+  {
+    target =    in_face_coordinate // in (-1,1)
+              + 1.0                // now in (0,2)
+              + ref90 ;            // distance from section UL
+
+    // we add the per-face offset and we're done.
+
+    target[1] += face_index * section_size ;
+  }
+
   // variant of get_pickup_coordinate which yields the pickup
-  // coordinate in texture units from with extent in [0,1].
+  // coordinate in texture units with extent in [0,1].
 
   template < typename face_index_t , typename crd_t >
   void get_pickup_coordinate_tx ( const face_index_t & face_index ,
@@ -639,9 +661,8 @@ struct metrics_t
 // lookups - and we can code the entire process in SIMD code. The
 // frames around the cube faces make it possible to do this with
 // mip-mapping and correct anti-aliasing, using OIIO's planar
-// texture lookup. This latter part is not yet implemented, for
-// now I aim at getting the geometry and logic right and use a
-// simple bilinear interpolation to get pixel values.
+// texture lookup. As a fall-back, there's an implementation of
+// simple bilinear interpolation directly from the IR image.
 // The template argument 'nchannels' is the number of channels
 // in the image. We accept up to four in main - RGBA should
 // come in with associated alpha.
@@ -649,7 +670,7 @@ struct metrics_t
 template < int nchannels >
 struct sixfold_t
 {
-  // shorthand for pixell and SIMDized pixels
+  // shorthand for pixels and SIMDized pixels
 
   typedef zimt::xel_t < float , nchannels > px_t ;
   typedef zimt::simdized_type < px_t , LANES > px_v ;
@@ -669,12 +690,17 @@ struct sixfold_t
   const std::size_t & frame_width ;
   const double & px_to_model ;
   const double & model_to_px ;
+
+  // pointers to an OIIO texture system and an OIIO texture handle.
+  // These are only used if the pick-up is done using OIIO's
+  // 'texture' function.
+
   TextureSystem * ts ;
   TextureSystem::TextureHandle * th ;
 
   // This array holds all the image data. We mark the array as const,
   // but the data it holds are not const. Later on, in comments, I'll
-  // refer to this array as the 'IR': the internal representation.
+  // refer to this array as the 'IR image': the internal representation.
 
   zimt::array_t < 2 , px_t > store ;
 
@@ -690,6 +716,11 @@ struct sixfold_t
     return shape ;
   }
 
+  // Note how, for now, we don't exploit all the possibilities in
+  // the metrics_t object - like cube face images with more than
+  // ninety degrees fov - but limit the scope to incoming 'proper'
+  // cubemaps with cube face images spanning precisely ninety degrees.
+
   sixfold_t ( std::size_t _face_width ,
               std::size_t _tile_width = 64 )
   : metrics ( _face_width ) ,
@@ -704,7 +735,13 @@ struct sixfold_t
     th ( nullptr )
   { }
 
-  // for now, just the TextureSystem and handle, no options
+  // We can use the fall-back bilinear interpolation to pick up
+  // pixel values from the IR image, but to use OIIO's 'texture'
+  // function, we need access to the texture system and - for
+  // speed - the texture handle. But we don't have these data
+  // when the sixfold_t is created - the texture has to be
+  // generated first, then stored to disk and then fed to the
+  // texture system. So we can only call this function later:
 
   void set_ts ( TextureSystem * _ts ,
                 TextureSystem::TextureHandle * _th )
@@ -779,7 +816,11 @@ struct sixfold_t
   // given a 3D 'ray' coordinate, find the corresponding cube face
   // and the in-face coordinate - note the two references which take
   // the result values. The incoming 'ray' coordinate does not have
-  // to be normalized.
+  // to be normalized. The resulting in-face coordinates are in the
+  // range of [-1,1] - in 'model space units' pertaining to planes
+  // 'draped' at unit distance from the origin and perpendicular
+  // to one of the axes. This function is coded as pure SIMD code,
+  // we don't need it for scalars.
 
   void ray_to_cubeface ( const crd3_v & c ,
                          i_v & face ,
@@ -997,13 +1038,13 @@ struct sixfold_t
   // given the cube face and the in-face coordinate, extract the
   // corresponding pixel values from the internal representation
   // of the cubemap held in the sixfold_t object. We have two
-  // variants here, the first one using neraest neighbour
+  // variants here, the first one using nearest neighbour
   // interpolation, the second bilinear. The first one is currently
   // unused. The pick-up is not guaranteed to look up pixel data
   // strictly inside the 90-degree cube face 'proper' but may
   // glean some information from the support frame, so this has
   // to be present. Initially we provide a one-pixel-wide
-  // support frame of mirrored pixels (if nexessary - if the
+  // support frame of mirrored pixels (if necessary - if the
   // incoming partial images have 'inherent support' because
   // they span more than ninety degrees, this is not necessary)
   // which is enough for bilinear interpolation. Once we have
@@ -1011,7 +1052,7 @@ struct sixfold_t
   // wider support.
 
   void cubemap_to_pixel ( const i_v & face ,
-                          crd2_v in_face ,
+                          const crd2_v & in_face ,
                           px_v & px ,
                           const int & degree ) const
   {
@@ -1053,7 +1094,7 @@ struct sixfold_t
       // is optimal and doesn't carry in any artifacts from the edges.
 
       const auto * p = (float*) ( store.data() ) ;
-      px_v px2 ,help ;
+      px_v px2, help ;
 
       // find the floor of the pickup coordinate by truncation
 
@@ -1102,7 +1143,16 @@ struct sixfold_t
     }
   }
 
-  void get_filtered_px ( crd2_v pickup ,
+  // this is the equivalent function to 'cubemap_to_pixel', above,
+  // using OIIO's 'texture' function to perform the gleaning of
+  // pixel data from the IR image. The IR image is not accessed
+  // directly, but provided via OIIO's texture system.
+  // On top of the pick-up coordinate (coming in in texture
+  // units in [0,1], rather than pixel units which are used in
+  // 'cubemap_to_pixel') we have the four derivatives and the
+  // OIIO texture batch options.
+
+  void get_filtered_px ( const crd2_v & pickup ,
                          px_v & px ,
                          const f_v & dxu ,
                          const f_v & dyu ,
@@ -1136,7 +1186,7 @@ struct sixfold_t
                               // float *dresultds = nullptr,
                               // float *dresultdt = nullptr)
 
-// #if defined USE_VC or defined USE_STDSIMD
+    #if defined USE_VC or defined USE_STDSIMD
 
     // to interface with zimt's Vc and std::simd backends, we need to
     // extract the data from the SIMDized objects and re-package the
@@ -1162,8 +1212,12 @@ struct sixfold_t
     assert ( result ) ;
     px.load ( scratch + 6 * LANES ) ;
 
-/*
 #else
+
+    // zimt's own and the highway backend have a representation as
+    // a C vector of fundamentals and provide a 'data' function
+    // to yield it's address. This simplifies matters, we can pass
+    // these pointers to OIIO directly.
 
     bool result =
     ts->texture ( th , nullptr , batch_options , Tex::RunMaskOn ,
@@ -1173,8 +1227,7 @@ struct sixfold_t
                   nchannels , (float*) ( px[0].data() ) ) ;
 
 #endif
-*/
-  }
+}
 
   // variant taking derivatives of the in-face coordinate, which
   // are approximated by calculating the difference to a canonical
@@ -1599,7 +1652,7 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
 
     zimt::bill_t bill ;
     
-    // now we fill in the lower an upper limits. This is a good
+    // now we fill in the lower and upper limits. This is a good
     // demonstration of how these parameters can be put to use.
     // We use a 'notional' shape which encompasses the entire
     // section, but the iteration will only visit those coordinates
@@ -1688,7 +1741,7 @@ struct ll_to_px_t
 
   // ll_to_px_t's c'tor obtains a const reference to the sixfold_t
   // object holding pixel data, the degree of the interpolator and
-  // the delta of s sampling step, to form derivatives.
+  // the delta of the sampling step, to form derivatives.
 
   ll_to_px_t ( const sixfold_t < nchannels > & _cubemap ,
                const int & _degree ,
@@ -1729,11 +1782,12 @@ struct ll_to_px_t
 
     if ( degree == -1 )
     {
+      // degree == -1 stands for "use OIIO's 'texture' function".
       // for this interpolation, we need the derivatives, in
       // pixel coordinates pertaining to the IR image. We use
       // the same approach as in cubemap.cc: we obtain source
       // image coordinates for two points, each one step in
-      // one of the canonical sirections away. Then we subtract
+      // one of the canonical directions away. Then we subtract
       // the unmodified pickup coordinate.
 
       // get a copy of the incoming 2D lat/lon coordinates and
@@ -1795,7 +1849,9 @@ struct ll_to_px_t
     }
     else
     {
-      // use this information to obtain pixel values
+      // use 'face' and 'in_face' to obtain pixel values directly
+      // from the IR image with NN (degree 0) or bilinear (degree 1)
+      // interpolation.
 
       cubemap.cubemap_to_pixel ( face , in_face , px , degree ) ;
     }
@@ -1805,7 +1861,12 @@ struct ll_to_px_t
 
 // This functor 'looks at' a full spherical image. It receives
 // 2D lat/lon coordinates and yields pixel values. Pick-up is done
-// with bilinear interpolation.
+// with bilinear interpolation. This is not needed for this program,
+// unless we 'regenerate' the cubemap from the lat/lon image we
+// produce. We might extend this program and use OIIO's function
+// 'environment' to do the pickup via OIIO's texture system. Then,
+// we could 'swallow' cubemap.cc and provide both conversions
+// in this program.
 
 template < int nchannels >
 struct eval_latlon
@@ -1979,6 +2040,8 @@ using pix_t = zimt::xel_t < float , nchannels > ;
 // this function takes a lat/lon image as it's input and transforms
 // it into the IR image of a sixfold_t. The source image is passed
 // in as a zimt::view_t, the target as a reference to sixfold_t.
+// This function is only used if the cubemap is 'regenerated' from
+// the lat/lon image we have just created.
 
 template < int nchannels >
 void fill_ir ( const zimt::view_t < 2 , pix_t<nchannels> > & latlon ,
@@ -2050,6 +2113,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   int yres = spec.height ;
 
   std::cout << "spec.width: " << spec.width << std::endl ;
+
   assert ( spec.width * 6 == spec.height ) ;
 
   // we set up the sixfold_t object, 'preparing the ground'
@@ -2088,7 +2152,9 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // data further out are good enough for their purpose
   // (namely, mip-mapping). Doing it twice may even be
   // overkill - I can't see much of a difference between
-  // using one and two runs.
+  // using one and two runs. Note that the initial one-pixel
+  // -wide line of mirrored pixels is overwritten - now we'll
+  // get better data from the bilinear interpolation.
 
   sf.fill_support ( 1 ) ;
   sf.fill_support ( 1 ) ;
@@ -2120,9 +2186,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // don't differ too much. But the substrate we have
   // generated is also good for mip-mapping, so we have the
   // option to switch to interpolation methods with larger
-  // support, like OIIO's texture access with anisotropic
-  // antaliasing filter. We need the derivatives for that,
-  // though, which is an extra complication.
+  // support, like OIIO's texture access.
   // The internal representation - as it is now - is also
   // useful for other interpolation schemes which need
   // support - if the frame is wide enough, running a b-spline
@@ -2135,7 +2199,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // index and in-face coordinate) picking up the result is also
   // more efficient and may outperform the current method used
   // in lux, making cubemaps even better suited as environments.
-  // It may be a good idea to store the entire internal
+  // It might be a good idea to store the entire internal
   // representation - cubefaces plus support - to an image file
   // for faster access, avoiding the production of the support
   // area from outher cube faces, at the cost of saving a few
@@ -2143,7 +2207,9 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // support which is just as good as support which is created
   // by rendering cube face images with slightly more than ninety
   // degrees (as it can be done in lux), so we can process the
-  // 'orthodox' format and yet avoid it's shortcomings.
+  // 'orthodox' format and yet avoid it's shortcomings. For now
+  // I'll stick to using the the cubemap format with cube face
+  // images covering precisely ninety degrees.
 
   // time to do the remaining work.
 
@@ -2153,11 +2219,15 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
   zimt::array_t < 2, px_t > trg ( { 2 * height , height } ) ;
 
+  // we directly provide input in 'model space units' with a
+  // zimt linspace_t object, rather than feeding discrete coordinates
+  // and scaling and shifting them, which would work just the same.
+
   // set up a linspace_t over the lon/lat sample points as get_t
   // (a.k.a input generator). d is the step width from one sample
   // to the next:
 
-  double d = 2.0 * M_PI / trg.shape[0] ;
+  double d = M_PI / height ;
 
   // note that the first sample point is not at -pi, -pi/2 but
   // half a sample step in the horizonal and vertical toward the
@@ -2174,45 +2244,39 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
   zimt::storer < float , nchannels , 2 , LANES > st ( trg ) ;
 
-  // set up ll_to_px_t using bilinear interpolation (argument 1).
-  // This is the functor which takes lon/lat coordinates and
-  // produces pixel data from the internal representation of the
-  // cubemap held in the sixfold_t object
-
-  // passing -1 routes to oiio's batched texture lookup, but
-  // currently I don't get reliable results from that.
 
   TextureOptBatch batch_options ;
 
   for ( int i = 0 ; i < 16 ; i++ )
-    batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
+    batch_options.swidth[i] = batch_options.twidth[i] = 1 ;
 
   batch_options.conservative_filter = false ;
   
   batch_options.interpmode
     = Tex::InterpMode ( TextureOpt::InterpSmartBicubic ) ;
 
-  // setting the second parameter to 1 here routes to pick-up with
-  // bilinear interpolation directly from the IR image with no
-  // mip-mapping or filtering. The code to use OIIO's texture lookup
-  // is there already and can be activated by passing -1, but currently
-  // that does not work reliably - every now and then, it switches off
-  // a set of lanes, which appear as vertical black stripes in the
-  // output. I opened an issue:
-  // https://github.com/AcademySoftwareFoundation/OpenImageIO/issues/4219
-  // one step further: it seems to work unless one chooses the default
-  // mipmapping mode. With this mipmapping mode:
 
   batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeTrilinear ) ;
 
-  // I haven't yet seen the bug and the result is as expected.
+  // set up ll_to_px_t using bilinear interpolation (argument 1)
+  // or argument -1 to use pick-up with OIIO's 'texture' function.
+  // This is the functor which takes lon/lat coordinates and produces
+  // pixel data from the internal representation of the cubemap held
+  // in the sixfold_t object.
+  // With the default mipmapping mode, I get faulty output; I opened
+  // an issue, see there for the description:
+  // https://github.com/AcademySoftwareFoundation/OpenImageIO/issues/4219
+  // The other mipmapping modes seem to work as expected, so I use 
+  // MipModeTrilinear in the batch options above, but the anisotropic
+  // filter steered by the derivatives (the default) should be superior,
+  // especially when there are scale changes: coming from a small cubemap,
+  // the output to a large lat/lon has noticeable staircase artifacts.
 
   ll_to_px_t<nchannels> act ( sf , -1 , step , batch_options ) ;
 
   // showtime! call zimt::process.
 
   zimt::bill_t bill ;
-  // bill.njobs = 1 ;
 
   zimt::process ( trg.shape , linspace , act , st , bill ) ;
 
@@ -2226,7 +2290,7 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   }
   else
   {
-    std::cout << "removing texture file "
+    std::cout << "removing temporary texture file "
               << temp_filename.c_str() << std::endl ;
     std::filesystem::remove ( temp_filename ) ;
   }
@@ -2246,8 +2310,8 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // 'store' - the IR image. The resulting image is then saved to
   // 'regen.exr'. this image can be compared to 'internal.exr' which
   // can be produced by setting save_ir true. We'll see some degradation
-  // due to the to-and-fro conversion, both 'only' with bilinear
-  // interpolation, but we can also see that the geometry is correct.
+  // due to the to-and-fro conversion, but we can also see that the
+  // geometry is correct.
 
   if ( regenerate )
   {
@@ -2282,11 +2346,15 @@ int main ( int argc , char * argv[] )
             << " output height: " << height
             << " output: " << latlon << std::endl ;
 
-  // uncomment this to see the IR and the image regenerated from
+  // this is to see the IR and the image regenerated from
   // the output, which should be like the IR image, with some
   // degradation due to the transformation to lat/lon and back.
+  // It's not needed to only do the conversion to lon/lat, you
+  // can comment the two lines out if you don't want the
+  // double-check.
 
   save_ir = true ;
+  regenerate = true ;
 
   auto inp = ImageInput::open ( skybox ) ;
   assert ( inp != nullptr ) ;

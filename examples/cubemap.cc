@@ -46,6 +46,8 @@
 // are chosen to coincide with openEXR cubemap format. For the
 // technicalities of the rendition, refer to rectilinear.cc.
 
+// TODO: extend this program to deal with other channel counts 
+
 #include <array>
 
 #include <zimt/zimt.h>
