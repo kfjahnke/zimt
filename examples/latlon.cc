@@ -611,10 +611,10 @@ struct metrics_t
 
   template < typename face_index_t , typename crd_t >
   void get_pickup_coordinate_tx ( const face_index_t & face_index ,
-                                  const crd_t & in_face_coordinate ,
+                                  const crd_t & in_face ,
                                   crd_t & target ) const
   {
-    target =    in_face_coordinate // in (-1,1)
+    target =    in_face // in (-1,1)
               + 1.0                // now in (0,2)
               + ref90 ;            // distance from section UL
 
@@ -812,6 +812,69 @@ struct sixfold_t
       assert ( success ) ;
     }
   }
+
+  // store_cubemap stores a standard cubemap with cube faces with
+  // a field of view of precisely ninety degrees. The store is
+  // expected to hold the data ready to export, so discrete90
+  // is mandatory - the data aren't gleaned by interpolation,
+  // but simply copied out from the central parts of each
+  // section.
+
+  void store_cubemap ( const std::string & filename )
+  {
+    assert ( metrics.discrete90 ) ;
+
+    auto inner_width = outer_width - 2 * frame_width ;
+    const int xres = inner_width ;
+    const int yres = 6 * inner_width ;
+
+    std::unique_ptr<ImageOutput> out
+      = ImageOutput::create ( filename.c_str() ) ;
+
+    if ( ! out )
+        return ;
+
+    ImageSpec spec ( xres , yres , nchannels , TypeDesc::HALF ) ;
+    out->open ( filename.c_str() , spec ) ;
+
+    auto p_base = store.data() ;
+    p_base += ( frame_width * store.strides ) . sum() ;
+    auto p_offset = outer_width * outer_width ;
+
+    for ( int face = 0 ; face < 6 ; face++ )
+    {
+      // virtual bool write_scanlines ( int ybegin , int yend , int z ,
+      //                                TypeDesc format ,
+      //                                const void * data ,
+      //                                stride_t xstride = AutoStride ,
+      //                                stride_t ystride = AutoStride )
+
+      auto success = out->write_scanlines ( face * inner_width ,
+                                            ( face + 1 ) * inner_width ,
+                                            0 ,
+                                            TypeDesc::FLOAT ,
+                                            p_base + face * p_offset ,
+                                    store.strides[0] * nchannels * 4 ,
+                                    store.strides[1] * nchannels * 4 ) ;
+
+      assert ( success ) ;
+    }
+
+    out->close() ;
+  }
+
+  // this is coded further down because it needs additional
+  // functors. It generates a cubemap with the given width from
+  // the data in the internal representation. If the central
+  // 90 degree section is contained in a discrete number of
+  // pixels and it's extent matches the desired width, the
+  // data are simply copied out, otherwise they are generated
+  // by interpolation from the IR image - per default by
+  // bilinear interpolation.
+
+  void gen_cubemap ( const std::string & filename ,
+                     const std::size_t & width ,
+                     const int degree = 1 ) ;
 
   // given a 3D 'ray' coordinate, find the corresponding cube face
   // and the in-face coordinate - note the two references which take
@@ -1154,10 +1217,10 @@ struct sixfold_t
 
   void get_filtered_px ( const crd2_v & pickup ,
                          px_v & px ,
-                         const f_v & dxu ,
-                         const f_v & dyu ,
-                         const f_v & dxv ,
-                         const f_v & dyv ,
+                         const f_v & dsdx ,
+                         const f_v & dtdx ,
+                         const f_v & dsdy ,
+                         const f_v & dtdy ,
                          TextureOptBatch & batch_options ) const
   {
     // code to truncate the pickup coordinate to int and gather,
@@ -1197,10 +1260,10 @@ struct sixfold_t
     float scratch [ 6 * LANES + 3 * LANES ] ;
 
     pickup.store ( scratch ) ; // stores 2 * LANES
-    dxu.store ( scratch + 2 * LANES ) ;
-    dxv.store ( scratch + 3 * LANES ) ;
-    dyu.store ( scratch + 4 * LANES ) ;
-    dyv.store ( scratch + 5 * LANES ) ;
+    dsdx.store ( scratch + 2 * LANES ) ;
+    dtdx.store ( scratch + 3 * LANES ) ;
+    dsdy.store ( scratch + 4 * LANES ) ;
+    dtdy.store ( scratch + 5 * LANES ) ;
 
     bool result =
     ts->texture ( th , nullptr , batch_options , Tex::RunMaskOn ,
@@ -1212,7 +1275,7 @@ struct sixfold_t
     assert ( result ) ;
     px.load ( scratch + 6 * LANES ) ;
 
-#else
+    #else
 
     // zimt's own and the highway backend have a representation as
     // a C vector of fundamentals and provide a 'data' function
@@ -1222,11 +1285,11 @@ struct sixfold_t
     bool result =
     ts->texture ( th , nullptr , batch_options , Tex::RunMaskOn ,
                   pickup[0].data() , pickup[1].data() ,
-                  dxu.data() , dxv.data() ,
-                  dyu.data() , dyv.data() ,
+                  dsdx.data() , dtdx.data() ,
+                  dsdy.data() , dtdy.data() ,
                   nchannels , (float*) ( px[0].data() ) ) ;
 
-#endif
+    #endif
 }
 
   // variant taking derivatives of the in-face coordinate, which
@@ -1239,10 +1302,10 @@ struct sixfold_t
   void cubemap_to_pixel ( const i_v & face ,
                           crd2_v in_face ,
                           px_v & px ,
-                          const f_v & dxu ,
-                          const f_v & dyu ,
-                          const f_v & dxv ,
-                          const f_v & dyv ,
+                          const f_v & dsdx ,
+                          const f_v & dtdx ,
+                          const f_v & dsdy ,
+                          const f_v & dtdy ,
                           TextureOptBatch & bo ) const
   {
     crd2_v pickup ;
@@ -1253,7 +1316,7 @@ struct sixfold_t
 
     // use OIIO to get the pixel value
 
-    get_filtered_px ( pickup , px , dxu , dyu , dxv , dyv , bo) ;
+    get_filtered_px ( pickup , px , dsdx , dtdx , dsdy , dtdy , bo) ;
   }
 
   // After the cube faces have been read from disk, they are surrounded
@@ -1697,6 +1760,114 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
   }
 }
 
+// this functor takes float 2D in-face coordinates and yields pixels.
+
+template < int nchannels >
+struct fill_ir_t
+: public zimt::unary_functor
+    < v2_t , zimt::xel_t < float , nchannels > , LANES >
+{
+  const sixfold_t < nchannels > & sf ;
+  const int face ;
+  const int degree ;
+
+  typedef zimt::xel_t < float , nchannels > px_t ;
+  typedef zimt::simdized_type < px_t , LANES > px_v ;
+
+  fill_ir_t ( const sixfold_t < nchannels > & _cubemap ,
+              const int & _face ,
+              const int & _degree )
+  : sf ( _cubemap ) ,
+    face ( _face ) ,
+    degree ( _degree )
+  {
+    assert ( degree == 0 || degree == 1 ) ;
+  }
+
+  template < typename I , typename O >
+  void eval ( const I & crd2 , O & px ) const
+  {
+    sf.cubemap_to_pixel ( face , crd2 , px , degree ) ;
+  }
+} ;
+
+template < int nchannels >
+void sixfold_t < nchannels > :: gen_cubemap
+  ( const std::string & filename ,
+    const std::size_t & width ,
+    const int degree )
+{
+  // if the IR already has the data handy, we use store_cubemap
+
+  if (    metrics.discrete90
+       && ( width == outer_width - 2 * frame_width ) )
+  {
+    store_cubemap ( filename ) ;
+    return ;
+  }
+
+  // otherwise we have to calculate the data by interpolation
+
+  const int xres = width ;
+  const int yres = 6 * width ;
+
+  std::unique_ptr<ImageOutput> out
+    = ImageOutput::create ( filename.c_str() ) ;
+
+  if ( ! out )
+    return ;
+
+  ImageSpec spec ( xres , yres , nchannels , TypeDesc::HALF ) ;
+  out->open ( filename.c_str() , spec ) ;
+
+  // set up an array for a single cube face
+
+  zimt::array_t < 2 , px_t > section ( { width , width } ) ;
+
+  for ( int face = 0 ; face < 6 ; face++ )
+  {
+    // set up the sample step width and the starting point
+
+    double delta = 2.0 / double ( width ) ;
+    double start = -1.0 + delta / 2.0 ;
+
+    // set up a linspace as data source and a storer as data sink
+
+    zimt::linspace_t < float , 2 , 2 , LANES > ls ( start , delta ) ;
+    zimt::storer < float , nchannels , 2 , LANES > st ( section ) ;
+
+    // set up the act functor. We have incoming in-face coordinates
+    // and a fixed face index, and we have fill_ir_t just for that.
+    // For now, we don't offer interpolation with OIIO's 'texture'
+    // function, but only nearest-neighbour (degree 0) or bilinear
+    // (degree 1)
+
+    fill_ir_t fill_ir ( *this , face , degree ) ;
+
+    // fill the 'section' array with pixel data
+
+    zimt::process ( section.shape , ls , fill_ir , st ) ;
+
+    // write the cube face to the output file
+
+    // virtual bool write_scanlines ( int ybegin , int yend , int z ,
+    //                                TypeDesc format ,
+    //                                const void * data ,
+    //                                stride_t xstride = AutoStride ,
+    //                                stride_t ystride = AutoStride )
+
+    auto success = out->write_scanlines ( face * width ,
+                                          ( face + 1 ) * width ,
+                                          0 ,
+                                          TypeDesc::FLOAT ,
+                                          section.data() ) ;
+
+    assert ( success ) ;
+  }
+
+  out->close() ;
+}
+
 // ll_to_px_t is the functor used as 'act' functor for zimt::process
 // to produce pixel values for lat/lon coordinates.
 // This functor accesses the data in the sixfold_t object, yielding
@@ -1814,8 +1985,8 @@ struct ll_to_px_t
       // the pick-up location. We get two components, which we
       // handle separately, and we scale to pixel coordinates.
 
-      auto dxu = ( dx1_if[0] - in_face[0] ) * cubemap.model_to_px ;
-      auto dyu = ( dx1_if[1] - in_face[1] ) * cubemap.model_to_px ;
+      auto dsdx = ( dx1_if[0] - in_face[0] ) * cubemap.model_to_px ;
+      auto dtdx = ( dx1_if[1] - in_face[1] ) * cubemap.model_to_px ;
 
       // we repeat the process for a coordinate one sample step away
       // along the vertical axis
@@ -1827,24 +1998,24 @@ struct ll_to_px_t
       crd2_v dy1_if ;
       cubemap.ray_to_cubeface_fixed ( dy1_3 , face , dy1_if ) ;
 
-      auto dxv = ( dy1_if[0] - in_face[0] ) * cubemap.model_to_px ;
-      auto dyv = ( dy1_if[1] - in_face[1] ) * cubemap.model_to_px ;
+      auto dsdy = ( dy1_if[0] - in_face[0] ) * cubemap.model_to_px ;
+      auto dtdy = ( dy1_if[1] - in_face[1] ) * cubemap.model_to_px ;
 
       // now we can call the cubemap_to_pixel variant which takes
       // derivatives
 
       // move the derivatives to texture coordinates in [0,1]
 
-      double confine_x = 1.0 / double ( cubemap.store.shape[0] ) ;
-      double confine_y = 1.0 / double ( cubemap.store.shape[1] ) ;
+      float confine_x = 1.0 / double ( cubemap.store.shape[0] ) ;
+      float confine_y = 1.0 / double ( cubemap.store.shape[1] ) ;
 
-      dxu *= confine_x ;
-      dxv *= confine_x ;
-      dyu *= confine_y ;
-      dyv *= confine_y ;
+      dsdx *= confine_x ;
+      dtdx *= confine_x ;
+      dsdy *= confine_y ;
+      dtdy *= confine_y ;
 
       cubemap.cubemap_to_pixel ( face , in_face , px ,
-                                 dxu , dyu , dxv , dyv ,
+                                 dsdx , dtdx , dsdy , dtdy ,
                                  batch_options ) ;
     }
     else
@@ -2007,13 +2178,13 @@ struct eval_latlon
     // obtain the four constituents by first truncating their
     // coordinate to int and then gathering from p.
 
-    index_v idxul { uli[0] , uli[1] } ;
-    auto ofs = ( idxul * latlon.strides ) . sum() * nchannels ;
+    index_v idsdxl { uli[0] , uli[1] } ;
+    auto ofs = ( idsdxl * latlon.strides ) . sum() * nchannels ;
     px_v pxul ;
     pxul.gather ( p , ofs ) ;
 
-    index_v idxur { uri[0] , uri[1] } ;
-    ofs = ( idxur * latlon.strides ) . sum() * nchannels ;
+    index_v idsdxr { uri[0] , uri[1] } ;
+    ofs = ( idsdxr * latlon.strides ) . sum() * nchannels ;
     px_v pxur ;
     pxur.gather ( p , ofs ) ;
 
@@ -2247,16 +2418,13 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
   TextureOptBatch batch_options ;
 
+  // TextureOptBatch's c'tor does not initialize these members, hence:
+
   for ( int i = 0 ; i < 16 ; i++ )
     batch_options.swidth[i] = batch_options.twidth[i] = 1 ;
-
-  batch_options.conservative_filter = false ;
   
-  batch_options.interpmode
-    = Tex::InterpMode ( TextureOpt::InterpSmartBicubic ) ;
-
-
-  batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeTrilinear ) ;
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.sblur[i] = batch_options.tblur[i] = 0 ;
 
   // set up ll_to_px_t using bilinear interpolation (argument 1)
   // or argument -1 to use pick-up with OIIO's 'texture' function.
@@ -2266,17 +2434,15 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
   // With the default mipmapping mode, I get faulty output; I opened
   // an issue, see there for the description:
   // https://github.com/AcademySoftwareFoundation/OpenImageIO/issues/4219
-  // The other mipmapping modes seem to work as expected, so I use 
-  // MipModeTrilinear in the batch options above, but the anisotropic
-  // filter steered by the derivatives (the default) should be superior,
-  // especially when there are scale changes: coming from a small cubemap,
-  // the output to a large lat/lon has noticeable staircase artifacts.
+  // I figured out what's wrong: the width and blur parameters in the
+  // TextureOptBatch aren't initialized, so for now I do that explicitly.
 
   ll_to_px_t<nchannels> act ( sf , -1 , step , batch_options ) ;
 
   // showtime! call zimt::process.
 
   zimt::bill_t bill ;
+  // bill.njobs = 1 ;
 
   zimt::process ( trg.shape , linspace , act , st , bill ) ;
 
@@ -2321,6 +2487,11 @@ void worker ( std::unique_ptr < ImageInput > & inp ,
 
     save_array ( "regen.exr" , sf.store ) ;
   }
+
+  // for testing:
+
+  // sf.store_cubemap ( "cubemap90.exr" ) ;
+  // sf.gen_cubemap ( "cubemap_gen.exr" , 1024 ) ;
 }
 
 int main ( int argc , char * argv[] )
@@ -2353,8 +2524,8 @@ int main ( int argc , char * argv[] )
   // can comment the two lines out if you don't want the
   // double-check.
 
-  save_ir = true ;
-  regenerate = true ;
+  // save_ir = true ;
+  // regenerate = true ;
 
   auto inp = ImageInput::open ( skybox ) ;
   assert ( inp != nullptr ) ;

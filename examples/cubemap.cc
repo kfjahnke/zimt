@@ -348,20 +348,13 @@ void extract ( TextureSystem * ts ,
 
   TextureOptBatch batch_options ;
 
-  // for ( int i = 0 ; i < 16 ; i++ )
-  //   batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
+  // TextureOptBatch's c'tor does not initialize these members, hence:
 
-  // This is a bit awkward - the batch_options don't accept plain
-  // TextureOpt enums (there's a type error) - but that is maybe due to
-  // the rather old OIIO I take from debian's packet management.
-
-  batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeTrilinear ) ;
-
-  // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
-  // batch_options.interpmode
-  //   = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
-
-  batch_options.conservative_filter = false ;
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.swidth[i] = batch_options.twidth[i] = 1 ;
+  
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.sblur[i] = batch_options.tblur[i] = 0 ;
 
   lookup_t lookup ( ts , batch_options , th , step ) ;
 
