@@ -60,11 +60,20 @@
 // amount of logic, and the sequence and (for the top and bottom square)
 // orientation of the cube faces isn't obvious and leaves room for error.
 // There are standards, though - openEXR defines a cubemap format with
-// specific sequence and orientations, and this is the format I use
+// specific sequence and orientations, and this is the convention I use
 // in this program. openEXR offers a tool to convert between the two
 // types of environment, but I found that it doesn't seem to work
 // correctly - see this issue:
 // https://github.com/AcademySoftwareFoundation/openexr/issues/1675
+// I now think that this may be due to a difference in conception:
+// Some documentation I've looked at seems to suggest that the cube
+// face images openEXR expects are what I would consider slightly
+// wider than ninety degrees: Their outermost pixels coincide with
+// the cube's edges, whereas the cube faces I use have their outermost
+// pixels half a sample step away from the cube's edges. The openEXR
+// way has some merits - e.g. bilinear interpolation is immediately
+// possible over the entire cube face - but I won't cater for that
+// type of cube face in this program.
 // Since I am processing both types of environment representation in
 // lux, I have a special interest in them and writing some image
 // processing code in zimt+OpenImageIO offers a good opportunity to
@@ -98,12 +107,8 @@
 // the 'raw' cubemap input to deal with the first two issues can't
 // simply be fed back to OIIO's texture system, because they are
 // in memory, whereas the texture system wants them on disk. I'd
-// like to find a way to feed them directly, but for now I think
-// I may use an intermediate image on disk for the task. As it
-// stands, this program doesn't yet use OIIO's texture system but
-// relies on bilinear interpolation, which is adequate for the
-// format conversion as long as the resolution of input and output
-// are roughly the same. So there is some work waiting to be done.
+// like to find a way to feed them directly, but for now I use
+// an intermediate image on disk for the task.
 //
 // I have mentioned that I have dealt with the two first issues,
 // so I'll give a quick outline here - the code is amply commented
@@ -123,29 +128,33 @@
 // it could be subjected to filters with large-ish support, and the
 // array of six 'widened' cube faces might even stand as a useful
 // format by itself, which would be quite easy to describe formally
-// because it's a derivative of the openEXR cubemap format.
+// because it's a derivative of the openEXR cubemap layout.
 // You can store this intermediate in a file called internal.exr
-// by setting the global save_ir to true.
-// I mentioned above that I haven't found a way to directly use
-// OpenImageIO's texture system code on the data in RAM, so for the
-// time being, I pick output data with bilinear interpolation to
-// populate the target image in lat/lon format. Having coded the
-// process to this point gives me a 'decent' quality and I can now
-// ascertain that my code is geometrically correct, and I can also
-// test how much image degradation I get with repeated conversions
-// from one environment format to the other, using 'cubemap.cc'
-// for the reverse process. The forward-backward conversion is
-// 'quite hard on the data' - looking at the re-generated lat/lon
-// image compared to the original lat/lon image, both artifacts
-// due to filtering and due to interpolation are apparent. One way
-// to improve the fidelity greatly is by rendering to a cubemap
-// with twice the size as intermediate. Processing speed of this
-// program is fast, probably mostly bound by I/O, but then it's
-// using bilinear interpolation only. Mind you, the entire process
-// is coded to use multithreaded SIMD code, so it does at least
-// exploit the CPU resources properly. There is little difference
-// in performance between the four SIMD back-ends and the two
-// compilers I test regularly.
+// by setting the global boolean 'save_ir' to true.
+// The program has grown since it's inception to provide more code
+// on the topic, which I use for now to verify that the conversion
+// is correct and to be able to look at intermediate images. The
+// central object, the 'sixfold_t', which holds the internal
+// representation of the data, might be a good candidate to factor
+// out into a separate TU.
+// I use some unconventional terminology: 'model space units' are
+// coordinates pertaining to 'archetypal' 2D manifolds 'draped'
+// in space. The image plane is draped at unit distance forward
+// from the origin, and the image points are distributed on it
+// so that their other two coordinates coincide with intersections
+// of rays pointing at them. Using this scheme makes conversions
+// easier and provides a common frame of reference. For spherical
+// data, I use the surface of a sphere with unit radius as the
+// 'archetypal' 2D manifold, and the image points are located
+// where the rays pointing towards them intersect with this sphere.
+// This results in the 'draped' image points residing at unit
+// distance from the origin. A full spherical image is draped so
+// that it's center coincides with the center of the image plane,
+// and a rectilinear image is draped in the same way.
+// I use lux coordinate system convention: x axis points right,
+// y axis points down, z axis points forward.
+// 'simdized' values are in SoA format, so a simdized pixel is
+// made up from three vectors with LANES elements each.
 
 #include <array>
 #include <filesystem>
@@ -163,7 +172,8 @@ typedef zimt::xel_t < std::size_t , 2 > shape_type ;
 typedef zimt::xel_t < float , 2 > v2_t ;
 typedef zimt::xel_t < float , 3 > v3_t ;
 
-// some SIMDized types we'll use. I use 16 SIMD lanes for now.
+// some SIMDized types we'll use. I use 16 SIMD lanes for now,
+// which is also the lane count currently supported by OIIO.
 
 #define LANES 16
 
@@ -175,7 +185,7 @@ typedef zimt::simdized_type < v3_t ,  LANES > crd3_v ;
 typedef zimt::simdized_type < index_type , LANES > index_v ;
 
 // enum encoding the sequence of cube face images in the cubemap
-// This is the sequence used for openEXR cubmap format. The top
+// This is the sequence used for openEXR cubmap layout. The top
 // and bottom squares are oriented so as to align with the back
 // image. Of course, the labels are debatable: my understanding
 // of 'front' is 'aligned with the image center'. If one were to
@@ -240,10 +250,9 @@ void save_array ( const std::string & filename ,
 
 // code to convert lat/lon to 3D ray. Note that I am using lux
 // coordinate convention ('book order': x is right, y down and
-// z forward). I use a template here, the code is good for scalar
-// values and SIMD data alike. The lat/lon values coming in are
+// z forward). The lat/lon values coming in are
 // angles in radians, and the resulting 'ray' coordinates are
-// in model space units. We're using an implicit radius of 1.0
+// in 'model space' units. We're using an implicit radius of 1.0
 // for the conversion from spherical to cartesian coordinates,
 // so the output has unit length.
 
@@ -638,7 +647,7 @@ struct metrics_t
 
 // sixfold_t contains data for a six-square sky box with support
 // around the cube faces to allow for proper filtering and
-// interpolation. The content is set up following conventions
+// interpolation. The content is set up following the layout
 // of openEXR environment maps. cubemaps in openEXR contain six
 // square images concatenated vertically. The sequence of the
 // images, from top to bottom, is: left, right, top, bottom,
@@ -647,7 +656,8 @@ struct metrics_t
 // the front image) - but note that labels like 'front' are
 // somewhat arbitrary - I associate 'front' with the center of
 // a full spherical image and 'left' with the first image in the
-// cubemap.
+// cubemap. Note, again, that openEXR's 'own' cubemap format
+// uses slightly larger cube faces than what I use here.
 // The sixfold_t object also combines the six images in one
 // array, but it adds a frame of additional 'support' pixels
 // around each square image to allow for interpolation with
@@ -781,36 +791,101 @@ struct sixfold_t
     std::ptrdiff_t offset = outer_width * outer_width ;
 
     // read the six cube face images from the 1:6 stripe into the
-    // appropriate slots in the sixfold_t object's 'store' array
+    // appropriate slots in the sixfold_t object's 'store' array.
 
-    for ( int face = 0 ; face < 6 ; face++ )
+    if ( inp->supports ( "scanlines" ) )
     {
-      auto * p_trg = p_ul + face * offset ;
+      // if the input is scanline-based, we copy batches of
+      // scanlines into the cube face slots in the store
 
-      // for reference: OIIO's read_scanlines' signature
-
-      // virtual bool read_scanlines ( int subimage, int miplevel,
-      //                               int ybegin, int yend,
-      //                               int z, int chbegin, int chend,
-      //                               TypeDesc format, void *data,
-      //                               stride_t xstride = AutoStride,
-      //                               stride_t ystride = AutoStride)
-
-      // note how we read face_width scanlines in one go, using
-      // appropriate strides to place the image data inside the
-      // larger 'store' array, converting to float as we go along.
-      // The channels are capped at nchannels. We ask OIIO to
-      // provide float data.
-
-      auto success =
-      inp->read_scanlines ( 0 , 0 ,
-                            face * face_width , (face+1) * face_width ,
-                            0 , 0 , nchannels ,
-                            TypeDesc::FLOAT , p_trg ,
-                            nchannels * 4 ,
-                            nchannels * 4 * store.strides[1] ) ;
-      assert ( success ) ;
+      for ( int face = 0 ; face < 6 ; face++ )
+      {
+        auto * p_trg = p_ul + face * offset ;
+      
+        // for reference: OIIO's read_scanlines' signature
+      
+        // virtual bool read_scanlines ( int subimage, int miplevel,
+        //                               int ybegin, int yend,
+        //                               int z, int chbegin, int chend,
+        //                               TypeDesc format, void *data,
+        //                               stride_t xstride = AutoStride,
+        //                               stride_t ystride = AutoStride)
+      
+        // note how we read face_width scanlines in one go, using
+        // appropriate strides to place the image data inside the
+        // larger 'store' array, converting to float as we go along.
+        // The channels are capped at nchannels. We ask OIIO to
+        // provide float data.
+      
+        // TODO: read_scanlines doesn't work with tile-based files
+      
+        auto success =
+        inp->read_scanlines ( 0 , 0 ,
+                              face * face_width , (face+1) * face_width ,
+                              0 , 0 , nchannels ,
+                              TypeDesc::FLOAT , p_trg ,
+                              nchannels * 4 ,
+                              nchannels * 4 * store.strides[1] ) ;
+        assert ( success ) ;
+      }
     }
+    else
+    {
+      // if the input is not scanline-based, we read the entire image
+      // into a buffer, then copy the cube faces to the store. We can
+      // use a 3D array as a target, with the six cube faces 'on
+      // top of each other' populating the third spatial dimension
+
+      zimt::array_t < 3 , px_t >
+        buffer ( { face_width , face_width , 6UL } ) ;
+      
+      // and a view to the store with the same shape, but strides to
+      // match the metrics of the target memory area in the store
+        
+      zimt::view_t < 3 , px_t >
+        target ( p_ul ,
+                { 1L , long(outer_width) , long(offset) } ,
+                { face_width , face_width , 6UL } ) ;
+      
+      inp->read_image ( 0 , 0 , 0 , nchannels ,
+                        TypeDesc::FLOAT ,
+                        buffer.data() ) ;
+
+      // zimt handles the data transfer from the buffer to the view
+
+      target.copy_data ( buffer ) ;
+    }
+    
+    // for ( int face = 0 ; face < 6 ; face++ )
+    // {
+    //   auto * p_trg = p_ul + face * offset ;
+    // 
+    //   // for reference: OIIO's read_scanlines' signature
+    // 
+    //   // virtual bool read_scanlines ( int subimage, int miplevel,
+    //   //                               int ybegin, int yend,
+    //   //                               int z, int chbegin, int chend,
+    //   //                               TypeDesc format, void *data,
+    //   //                               stride_t xstride = AutoStride,
+    //   //                               stride_t ystride = AutoStride)
+    // 
+    //   // note how we read face_width scanlines in one go, using
+    //   // appropriate strides to place the image data inside the
+    //   // larger 'store' array, converting to float as we go along.
+    //   // The channels are capped at nchannels. We ask OIIO to
+    //   // provide float data.
+    // 
+    //   // TODO: read_scanlines doesn't work with tile-based files
+    // 
+    //   auto success =
+    //   inp->read_scanlines ( 0 , 0 ,
+    //                         face * face_width , (face+1) * face_width ,
+    //                         0 , 0 , nchannels ,
+    //                         TypeDesc::FLOAT , p_trg ,
+    //                         nchannels * 4 ,
+    //                         nchannels * 4 * store.strides[1] ) ;
+    //   assert ( success ) ;
+    // }
   }
 
   // store_cubemap stores a standard cubemap with cube faces with
@@ -1257,7 +1332,7 @@ struct sixfold_t
     // this away and work the entire operation in registers, so let's
     // call this a 'semantic manoevre'.
 
-    float scratch [ 6 * LANES + 3 * LANES ] ;
+    float scratch [ 6 * LANES + nchannels * LANES ] ;
 
     pickup.store ( scratch ) ; // stores 2 * LANES
     dsdx.store ( scratch + 2 * LANES ) ;

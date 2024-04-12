@@ -171,7 +171,10 @@ struct lookup_t
     in_v dt = _crd + step[1] ;
     dt /= norm ( dt ) ;
     dt -= crd ;
-    
+
+    ds *= .5 ;
+    dt *= .5 ;
+
     // Note the simplicity of interfacing the zimt code with the OIIO
     // code, and note also that there is a good chance that the compiler
     // will not even 'go through memory' to transfer zimt's SIMD data
@@ -327,28 +330,17 @@ void extract ( TextureSystem * ts ,
 
   zimt::gridspace_t < float , 3 , 2 , 16 > ls ( start , step ) ;
 
-  // now we set up the TextureSystem, which is really simple.
-
-  // auto * ts = TextureSystem::create() ; 
-
   // The options for the lookup determine the quality of the output
   // and the time it takes to compute it. Switching MipMapping off
   // for example reduces processing time greatly, and the other
-  // commented-out settings also reduce processing time, sacrificing
-  // quality for speed. My conclusion is that zimt and OIIO play
-  // well together, but I suspect that allowing invariants for
-  // options which can be tuned on a per-lane basis might reduce
-  // processing load with little loss of quality. If the MIP
-  // level could be fixed for the entire run (like when it's switched
-  // off altogether) rather than looking at the derivatives, I think
-  // processing would speed up nicely. Just guessing, though - I
-  // haven't looked at the code.
-
-  // use the default batch options
+  // settings also reduce processing time, sacrificing quality for
+  // speed. Please refer to the OIIO documentation for the batch
+  // lookup options - here, I simply use the defaults.
 
   TextureOptBatch batch_options ;
 
-  // TextureOptBatch's c'tor does not initialize these members, hence:
+  // Note that the batch options aren't fully initialized (this is
+  // a bug), so as a workaround I initialize some of them manually:
 
   for ( int i = 0 ; i < 16 ; i++ )
     batch_options.swidth[i] = batch_options.twidth[i] = 1 ;

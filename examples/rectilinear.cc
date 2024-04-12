@@ -41,19 +41,40 @@
 // this program produces images you'd obtain by taking photographs
 // of the environment with a rectilinear lens, hence the name.
 // You can freely choose the camera orientation, resolution, field
-// of view and target image format.
+// of view and target image format, but the output will be in the
+// same colour space as the input, so beware when changing the
+// format - openEXR to JPG will, for example, not work out correctly.
 // This example uses a zimt 'gridspace_t' to provide 3D coordinates of 
 // the sample points of a rectilinear image 'draped' in space so that
 // it represents the target image after application of a set of three
-// Euler angles (ywa, pich, roll).
+// Euler angles (yaw, pich, roll).
 // Pass a 2:1 environment map (a 'full spherical', 360 degree panorama),
 // decide on the size of the output and the output's field of view, also
-// pass yaw, picth and roll and the program will produce a rectilinear
+// pass yaw, pitch and roll and the program will produce a rectilinear
 // view and write it to a file. If you don't touch parameterization,
 // this will do a high-quality rendition, with proper antialiasing.
 // The program isn't blazingly fast, but it does a good job. It's
 // to demonstrate the ease of integrating zimt, OIIO and IMath code,
 // producing a useful utility program with little coding effort.
+// AFAICT, OIIO does not process cubemap environments - I tried
+// creating a cubemap with openEXR's exrenvmap utility and feeding
+// it to this program, but the result shows that the format is not
+// understood. So, for now, input must be a lat/lon environment map,
+// a.k.a full spherical. Note also that the full spherical image which
+// this program expects should be uniformly sampled in a particular way:
+// if the image is h pixels high and w = 2 * h pixels wide, then the
+// image center, coinciding with the view straight ahead, is at
+// (w+1)/2 , (h+1)/h. The first and last samples are taken half a sample
+// step from the wrap-around, so the first line of pixels samples a
+// circle at a small distance from the pole, and the horizontal
+// wrap-around point is assumed to be halfway between the last and first
+// pixel in a line. There are other schemes - one is to repeat the
+// leftmost column in the rightmost one and storing identical values
+// in the top row and identical values in the bottom row, representing
+// the pole values - but this program does not cater for these schemes.
+// I think OIIO uses the same convention I use here, because the
+// lookup via OIIO's 'environment' function comes out as one would
+// expect with this scheme.
 
 #include <array>
 
@@ -182,7 +203,12 @@ struct lookup_t
     // instead do the entire operation in registers, making the code
     // as fast as possible. How well the integration succeeds will
     // depend on the compiler used, and the specific SIMD backend
-    // used by zimt.
+    // used by zimt - and, as of this writing, OIIO does not actually
+    // provide 'proper' SIMD code for the environment lookup, but
+    // instead uses a loop over the lanes, which is slow and defeats
+    // the purpose of a SIMDized interface. But if OIIO comes round to
+    // providing proper SIMD code, we're already there and this program
+    // will immediately exploit it.
     // Not also that the zimt::process 'driver' code which calls the
     // 'act' functor repeatedly is multithreaded: there will be several
     // worker threads which cooperate to get through all the lookups
@@ -211,7 +237,7 @@ struct lookup_t
 #if defined USE_VC or defined USE_STDSIMD
 
     // to interface with zimt's Vc and std::simd backends, we need to
-    // extract the data from the SIMDiszed objects and re-package the
+    // extract the data from the SIMDized objects and re-package the
     // ouptut as a SIMDized object. The compiler will likely optimize
     // this away and work the entire operation in registers, so let's
     // call this a 'semantic manoevre'.
@@ -232,7 +258,7 @@ struct lookup_t
 #else
 
     // the highway and zimt's own backend have an internal representation
-    // as a C vector of fundamentals, so we van use data() on them, making
+    // as a C vector of fundamentals, so we can use data() on them, making
     // the code even simpler - though the code above would work just the
     // same.
 
@@ -364,30 +390,20 @@ int main ( int argc , char * argv[] )
   // The options for the lookup determine the quality of the output
   // and the time it takes to compute it. Switching MipMapping off
   // for example reduces processing time greatly, and the other
-  // commented-out settings also reduce processing time, sacrificing
-  // quality for speed. My conclusion is that zimt and OIIO play
-  // well together, but I suspect that allowing invariants for
-  // options which can be tuned on a per-lane basis might reduce
-  // processing load with little loss of quality. If the MIP
-  // level could be fixed for the entire run (like when it's switched
-  // off altogether) rather than looking at the derivatives, I think
-  // processing would speed up nicely. Just guessing, though - I
-  // haven't looked at the code.
+  // settings also reduce processing time, sacrificing quality for
+  // speed. Please refer to the OIIO documentation for the batch
+  // lookup options - here, I simply use the defaults.
 
   TextureOptBatch batch_options ;
 
-  // for ( int i = 0 ; i < 16 ; i++ )
-  //   batch_options.swidth[i] = batch_options.twidth[i] = 0 ;
+  // Note that the batch options aren't fully initialized (this is
+  // a bug), so as a workaround I initialize some of them manually:
 
-  // This is a bit awkward - the batch_options don't accept plain
-  // TextureOpt enums (there's a type error) - but that is maybe due to
-  // the rather old OIIO I take from debian's packet management.
-
-  // batch_options.mipmode = Tex::MipMode ( TextureOpt::MipModeNoMIP ) ;
-  // batch_options.interpmode
-  //   = Tex::InterpMode ( TextureOpt::InterpBilinear ) ;
-
-  // batch_options.conservative_filter = false ;
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.swidth[i] = batch_options.twidth[i] = 1 ;
+  
+  for ( int i = 0 ; i < 16 ; i++ )
+    batch_options.sblur[i] = batch_options.tblur[i] = 0 ;
 
   // we obtain the texture handle for most efficient processing of the
   // environment lookup, and set up the lookup_t object to serve as the
