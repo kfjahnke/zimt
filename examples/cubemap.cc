@@ -45,6 +45,9 @@
 // orientation and sequence of the cubeface images in the stripe
 // are chosen to coincide with openEXR cubemap format. For the
 // technicalities of the rendition, refer to rectilinear.cc.
+// Note that there is now a program 'envutil.cc' which can convert
+// both ways and is more comprehensive. For 'real' work use envutil;
+// this program is more a zimt demo program.
 
 // TODO: extend this program to deal with other channel counts 
 

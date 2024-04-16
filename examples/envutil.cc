@@ -37,6 +37,7 @@
 /************************************************************************/
 
 // utility program producing a lat/lon 'environment map' from a cubemap.
+// and the reverse.
 
 // As an example program for zimt, this program is maybe too complex
 // and not entirely on the topic, but it does demonstrate the use
@@ -2995,7 +2996,7 @@ int main ( int argc , const char ** argv )
   Filesystem::convert_native_arguments(argc, (const char**)argv);
   ArgParse ap;
   ap.intro("envutil -- convert between lat/lon and cubemap format\n")
-    .usage("envutil [options]");
+    .usage("envutil [options] --input INPUT --output OUTPUT");
   ap.arg("-v", &verbose)
     .help("Verbose output");
   ap.arg("--input INPUT")
