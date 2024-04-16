@@ -49,7 +49,7 @@
 // requires using transcendental functions to move between the
 // lat/lon spherical coordinates and 3D 'ray' geometry. The second
 // format, which - I have been told - is less common, is the
-// 'cubemap' or 'cubemap' format. It captures the environment in
+// 'cubemap' or 'sky box' format. It captures the environment in
 // six square images representing the faces of a virtual cube
 // surrounding the origin. For viewing purposes, this format has
 // some advantages and some disadvantages. On the plus side is the
@@ -66,15 +66,16 @@
 // types of environment, but I found that it doesn't seem to work
 // correctly - see this issue:
 // https://github.com/AcademySoftwareFoundation/openexr/issues/1675
-// I now think that this may be due to a difference in conception:
+// I now think that this may be partly due to a difference in conception:
 // Some documentation I've looked at seems to suggest that the cube
 // face images openEXR expects are what I would consider slightly
 // wider than ninety degrees: Their outermost pixels coincide with
 // the cube's edges, whereas the cube faces I use have their outermost
-// pixels half a sample step away from the cube's edges. The openEXR
+// pixels half a sample step inwards from the cube's edges. The openEXR
 // way has some merits - e.g. bilinear interpolation is immediately
 // possible over the entire cube face - but I won't cater for that
-// type of cube face in this program.
+// type of cube face in this program, and the images I render may
+// not be 100% compatible to the openEXR standard.
 // Since I am processing both types of environment representation in
 // lux, I have a special interest in them and writing some image
 // processing code in zimt+OpenImageIO offers a good opportunity to
@@ -85,7 +86,7 @@
 // OpenImageIO. I use this code to good effect, producing output
 // with a very 'proper' anisotropic anti-aliasing filter. The
 // reverse transformation - from a cubemap to lat/lon format - is
-// what I'm coding in this program. Here, employing OpenImageIO for
+// what I've added in this program. Here, employing OpenImageIO for
 // the task of picking up data from the environment is not available
 // out-of-the-box - OpenImageIO does not support this format. This
 // may well be because it is less used and harder to handle. In my
@@ -133,11 +134,15 @@
 // You can store this intermediate in a file called internal.exr
 // by setting the global boolean 'save_ir' to true.
 // The program has grown since it's inception to provide more code
-// on the topic, which I use for now to verify that the conversion
-// is correct and to be able to look at intermediate images. The
+// on the topic, which I used to verify that the conversion is
+// correct and to be able to look at intermediate images. The
 // central object, the 'sixfold_t', which holds the internal
 // representation of the data, might be a good candidate to factor
-// out into a separate TU.
+// out into a separate TU. I also coded the conversion from a lat/lon
+// environment into a cubemap - there is 'cubemap.cc' which also
+// does that, but it's more a brief zimt demo program; the conversion
+// I offer in this program is more flexible and comprehensive.
+
 // I use some unconventional terminology: 'model space units' are
 // coordinates pertaining to 'archetypal' 2D manifolds 'draped'
 // in space. The image plane is draped at unit distance forward
@@ -153,7 +158,9 @@
 // that it's center coincides with the center of the image plane,
 // and a rectilinear image is draped in the same way.
 // I use lux coordinate system convention: x axis points right,
-// y axis points down, z axis points forward.
+// y axis points down, z axis points forward. Where needed, I
+// switch to openEXR axis convention - OIIO's lat/lon environment
+// lookup expects 3D ray coordinates using opneEXR convention.
 // 'simdized' values are in SoA format, so a simdized pixel is
 // made up from three vectors with LANES elements each.
 
