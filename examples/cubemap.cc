@@ -172,9 +172,6 @@ struct lookup_t
     dt /= norm ( dt ) ;
     dt -= crd ;
 
-    ds *= .5 ;
-    dt *= .5 ;
-
     // Note the simplicity of interfacing the zimt code with the OIIO
     // code, and note also that there is a good chance that the compiler
     // will not even 'go through memory' to transfer zimt's SIMD data
