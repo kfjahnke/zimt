@@ -252,12 +252,14 @@ enum { EXR_LEFT , EXR_UP , EXR_FORWARD } ;
 #include <OpenImageIO/argparse.h>
 
 static bool verbose = false;
+static bool ctc = false ;
 static bool help    = false;
 static std::string metamatch;
 static std::regex field_re;
-std::string input , output , save_ir ;
-int extent ;
+std::string input , output , save_ir , ts_options ;
+int extent , support_min , tile_width ;
 int itp ;
+double face_fov ;
 
 // helper function to save a zimt array to an image file. I am
 // working with openEXR images here, hence the HALF data type.
@@ -395,298 +397,7 @@ struct ray_to_ll_t
   }
 } ;
 
-// this structure is used to calculate the metrics of a sixfold_t.
-// These values depend on four input values: the tile size, the
-// size of a cube face image, as found in the input image(s), the
-// horizontal field of view of a cube face image, and a minimum
-// value for the size of the 'support'. The first two are in units of
-// pixels, the third is a floating point value. The support size
-// (in pixel units) is the minimal width of the surrounding frame
-// which we need to set up good-quality interpolators.
-
-struct metrics_t
-{
-  const std::size_t tile_width ;
-  const std::size_t face_width ;
-  const std::size_t support_min ;
-  std::size_t inherent_support ;
-  std::size_t additional_support ;
-  const double face_hfov ;
-  double outer_fov ;
-  std::size_t frame_width ;
-  std::size_t n_tiles ;
-  std::size_t outer_width ;
-  double model_to_px ;
-  double px_to_model ;
-  double section_size ;
-  double ref90 ;
-  bool discrete90 ;
-
-  // the c'tor only needs one argument: the size of an individual
-  // cube face image. This is the size covering the entire image,
-  // whose field of view may be ninety degrees or more. The default
-  // is ninety degrees, as we would see with standard openEXR
-  // cubemaps, but we want to cater for cube face images which
-  // already contain some support themselves. A minimal support of
-  // four is ample for most direct interpolators.
-
-  metrics_t ( std::size_t _face_width ,
-              double _face_hfov = M_PI_2 ,
-              std::size_t _support_min = 4UL ,
-              std::size_t _tile_width = 64UL
-            )
-  : face_width ( _face_width ) ,
-    face_hfov ( _face_hfov ) ,
-    support_min ( _support_min ) ,
-    tile_width ( _tile_width )
-  {
-    // first make sure that certain minimal requirements are met
-
-    // we want even face size for now TODO can we use odd sizes?
-
-    assert ( ( face_width & 1 ) == 0 ) ;
-
-    // the cube face images must have at least 90 degrees fov
-
-    assert ( face_hfov >= M_PI_2 ) ;
-
-    // the tile size must be at least one
-
-    assert ( tile_width > 0 ) ;
-
-    // the tile size must be a power of two
-
-    assert ( ( tile_width & ( tile_width - 1 ) ) == 0 ) ;
-
-    // given the face image's field of view, how much support does
-    // the face image already contain? We start out by calculating
-    // The cube face image's diameter (in model space units) and the
-    // 'overscan' - by how much the diameter exceeds the 2.0 diameter
-    // which occurs with a cube face image of precisely ninety degrees
-    // field of view
-
-    double overscan = 0.0 ;
-    double diameter = 2.0 ;
-    inherent_support = 0 ;
-    discrete90 = true ;
-
-    // calculate the diameter in model space units. The diameter
-    // for a ninety degree face image would be precisely 2, and
-    // if the partial image has larger field of view, it will be
-    // larger.
-
-    if ( face_hfov > M_PI_2 )
-    {
-      diameter = 2.0 * tan ( face_hfov / 2.0 ) ;
-      discrete90 = false ;
-    }
-
-    // calculate scaling factors from model space units to pixel
-    // units and from pixel units to model space units.
-
-    model_to_px = double ( face_width ) / diameter ;
-    px_to_model = diameter / double ( face_width ) ;
-
-    // The overscan is the distance, in model space units, from
-    // the cube face image's edge to the edge of it's central
-    // section, holding the ninety degrees wide cube face proper.
-    // it's the same as (diameter / 2 - 1). Note that this value
-    // may not coincide with a discrete number of pixels for
-    // cube face images with more than ninety degrees fov.
-    // We have a boolean 'discrete90' which indicates whether
-    // the central 'ninety degrees proper' section coincides
-    // with a discrete size.
-
-    if ( face_hfov > M_PI_2 )
-    {      
-      overscan = tan ( face_hfov / 2.0 ) - 1.0 ;
-
-      // how wide is the overscan, expressed in pixel units?
-
-      double px_overscan = model_to_px * overscan ;
-
-      // truncate to integer to receive the inherent support in
-      // pixel units. If this value is as large or larger than the
-      // required support, we needn't add any additional space.
-
-      inherent_support = px_overscan ;
-
-      // we are conservative with the 'inherent support': the UL
-      // point of the ninety-degrees-proper central part is not
-      // on a pixel boundary, so rounding may land us either side.
-      // If we're not conservative here, we may end up with too
-      // little support.
-
-      if ( inherent_support > 0 )
-        inherent_support-- ;
-    }
-
-    // if there is more inherent support than the minimal support
-    // required, we don't need to provide additional support. If
-    // the inherent support is too small, we do need additional
-    // support.
-  
-    if ( inherent_support >= support_min )
-      additional_support = 0 ;
-    else
-      additional_support = support_min - inherent_support ;
-
-    // given the additional support we need - if any - how many tiles
-    // are needed to contain a cube face image and it's support?
-
-    std::size_t px_min = face_width + 2 * additional_support ;
-
-    // if the user passes a tile size of one, n_tiles will end up
-    // equal to px_min.
-
-    n_tiles = px_min / tile_width ;
-    if ( n_tiles * tile_width < px_min )
-      n_tiles++ ;
-
-    // this gives us the 'outer width': the size, in pixels, which
-    // the required number of tiles will occupy, and the frame size,
-    // the number of pixels from the edge of the IR section to
-    // the first pixel originating from the cube face image.
-
-    outer_width = n_tiles * tile_width ;
-    frame_width = ( outer_width - face_width ) / 2UL ;
-
-    // paranoid
-
-    assert ( ( 2UL * frame_width + face_width ) == outer_width ) ;
-
-    // the central part of each partial image, which covers
-    // precisely ninety degrees - the cube face proper - is at
-    // a specific distance from the edge of the total section.
-    // we know that it's precisely 1.0 from the cube face image's
-    // center in model space units. So first we convert the
-    // 'outer width' to model space units
-
-    section_size = px_to_model * outer_width ;
-
-    // then subtract 2.0 - the space occupied by the central
-    // section of the partial image - the 'cube face proper',
-    // spanning ninety degrees - and divide by two:
-
-    ref90 = ( section_size - 2.0 ) / 2.0 ;
-
-    // outer_fov: the field of view covered by the complete
-    // 1/6 section of the IR. To fill the entire section with
-    // image data from some other source, a rectilinear image
-    // with precisely this field of view has to be placed in
-    // the corresponding section. This is the same code as
-    // for the filling-in of the cubemap with ninety-degree
-    // cube faces, only the per-cubeface fov value has to be
-    // adapted. If the source is e.g. a full spherical, the
-    // resulting sixfold will be very close to what can be
-    // 'regenerated' with code in this program from a cubemap
-    // with 90-degree faces.
-
-    outer_fov = 2.0 * atan ( section_size / 2.0 ) ;
-  }
-
-  // get_pickup_coordinate receives the in-face coordinate and
-  // the face index and produces the corresponding coordinate,
-  // in pixel units, which is equivalent in the total internal
-  // representation image. So this coordinate can be used to
-  // 'pick up' the pixel value from the IR image by using the
-  // desired interpolation method, and it can be picked up
-  // with a single interpolator invocation without any case
-  // switching or conditionals to choose the correct cube face
-  // image - all the images are combined in the IR.
-
-  // The function is coded as a template to allow for scalar
-  // and SIMDized pickups alike. Incoming we have face index(es)
-  // and in-face coordinate(s) in model space units, and outgoing
-  // we have a coordinate in pixel units pertaining to the entire
-  // IR image. Note that the outgoing value is in pixel units,
-  // but it's not discrete.
-
-  template < typename face_index_t , typename crd_t >
-  void get_pickup_coordinate ( const face_index_t & face_index ,
-                               const crd_t & in_face_coordinate ,
-                               crd_t & target ) const
-  {
-    target =    in_face_coordinate // in (-1,1)
-              + 1.0                // now in (0,2)
-              + ref90 ;            // distance from section UL
-
-    // we could add the per-face offset here, but see below:
-
-    // target[1] += face_index * section_size ;
-
-    // move from model space units to pixel units. This yields us
-    // a coordinate in pixel units pertaining to the section.
-
-    target *= model_to_px ;
-
-    // add the per-section offset - Doing this after the move to
-    // pixel units makes the calculation more precise, because
-    // we can derive the offset from integer values.
-
-    target[1] += f_v ( face_index * int(outer_width) ) ;
-
-    // Subtract 0.5 - we look at pixels as small squares with an
-    // extent of 1 pixel unit, and an incoming coordinate which
-    // is precisely on the margin of the cube face (a value of
-    // +/- 1) has to be mapped to the outermost pixel's margin as
-    // well.
-    // Note that the output is now in the range (-0.5, width-0.5)
-    // and using this with interpolators needing support may
-    // access pixels outside the 'ninety degrees proper'.
-    // We provide support to cater for that, but its'
-    // good to keep the fact in mind. Even nearest-neighbour
-    // pickup might fall outside the 'ninety degrees proper'
-    // due to small imprecisions and subsequent rounding.
-
-    target -= .5 ;
-  }
-
-  // variant to get the pick-up coordinate in model space units
-
-  template < typename face_index_t , typename crd_t >
-  void get_pickup_coordinate_md ( const face_index_t & face_index ,
-                                  const crd_t & in_face_coordinate ,
-                                  crd_t & target ) const
-  {
-    target =    in_face_coordinate // in (-1,1)
-              + 1.0                // now in (0,2)
-              + ref90 ;            // distance from section UL
-
-    // we add the per-face offset and we're done.
-
-    target[1] += face_index * section_size ;
-  }
-
-  // variant of get_pickup_coordinate which yields the pickup
-  // coordinate in texture units with extent in [0,1].
-
-  template < typename face_index_t , typename crd_t >
-  void get_pickup_coordinate_tx ( const face_index_t & face_index ,
-                                  const crd_t & in_face ,
-                                  crd_t & target ) const
-  {
-    target =    in_face // in (-1,1)
-              + 1.0                // now in (0,2)
-              + ref90 ;            // distance from section UL
-
-    // move from model space units to pixel units. This yields us
-    // a coordinate in pixel units pertaining to the section.
-
-    target *= model_to_px ;
-
-    // add the per-section offset - Doing this after the move to
-    // pixel units makes the calculation more precise, because
-    // we can derive the offset from integer values.
-
-    target[1] += f_v ( face_index * int(outer_width) ) ;
-
-    // move to texture coordinates in [0,1]
-
-    target[0] /= float ( outer_width ) ;
-    target[1] /= float ( 6 * outer_width ) ;
-  }
-} ;
+#include "metrics.h"
 
 // sixfold_t contains data for a six-square sky box with support
 // around the cube faces to allow for proper filtering and
@@ -738,11 +449,12 @@ struct sixfold_t
   // This is merely for cenvenience.
 
   const std::size_t & face_width ;
-  const std::size_t & outer_width ;
+  const std::size_t & section_width ;
   const std::size_t & tile_width ;
   const std::size_t & frame_width ;
   const double & px_to_model ;
   const double & model_to_px ;
+  const bool & discrete90 ;
 
   // pointers to an OIIO texture system and an OIIO texture handle.
   // These are only used if the pick-up is done using OIIO's
@@ -765,7 +477,7 @@ struct sixfold_t
   static shape_type get_store_shape ( std::size_t _face_width )
   {
     metrics_t metrics ( _face_width ) ;
-    shape_type shape { metrics.outer_width , 6 * metrics.outer_width } ;
+    shape_type shape { metrics.section_width , 6 * metrics.section_width } ;
     return shape ;
   }
 
@@ -775,14 +487,17 @@ struct sixfold_t
   // cubemaps with cube face images spanning precisely ninety degrees.
 
   sixfold_t ( std::size_t _face_width ,
-              std::size_t _tile_width = 64 )
-  : metrics ( _face_width ) ,
+              std::size_t _support_min = 4UL ,
+              std::size_t _tile_width = 64UL ,
+              double _face_fov = M_PI_2 )
+  : metrics ( _face_width , _face_fov , _support_min , _tile_width ) ,
     face_width ( metrics.face_width ) ,
     tile_width ( metrics.tile_width ) ,
-    outer_width ( metrics.outer_width ) ,
+    section_width ( metrics.section_width ) ,
     frame_width ( metrics.frame_width ) ,
     px_to_model ( metrics.px_to_model ) ,
     model_to_px ( metrics.model_to_px ) ,
+    discrete90 ( metrics.discrete90 ) ,
     store ( get_store_shape ( _face_width ) ) ,
     ts ( nullptr ) ,
     th ( nullptr )
@@ -831,7 +546,7 @@ struct sixfold_t
 
     // what's the offset to the same location in the next section?
 
-    std::ptrdiff_t offset = outer_width * outer_width ;
+    std::ptrdiff_t offset = section_width * section_width ;
 
     // read the six cube face images from the 1:6 stripe into the
     // appropriate slots in the sixfold_t object's 'store' array.
@@ -887,7 +602,7 @@ struct sixfold_t
         
       zimt::view_t < 3 , px_t >
         target ( p_ul ,
-                { 1L , long(outer_width) , long(offset) } ,
+                { 1L , long(section_width) , long(offset) } ,
                 { face_width , face_width , 6UL } ) ;
       
       inp->read_image ( 0 , 0 , 0 , nchannels ,
@@ -898,37 +613,6 @@ struct sixfold_t
 
       target.copy_data ( buffer ) ;
     }
-    
-    // for ( int face = 0 ; face < 6 ; face++ )
-    // {
-    //   auto * p_trg = p_ul + face * offset ;
-    // 
-    //   // for reference: OIIO's read_scanlines' signature
-    // 
-    //   // virtual bool read_scanlines ( int subimage, int miplevel,
-    //   //                               int ybegin, int yend,
-    //   //                               int z, int chbegin, int chend,
-    //   //                               TypeDesc format, void *data,
-    //   //                               stride_t xstride = AutoStride,
-    //   //                               stride_t ystride = AutoStride)
-    // 
-    //   // note how we read face_width scanlines in one go, using
-    //   // appropriate strides to place the image data inside the
-    //   // larger 'store' array, converting to float as we go along.
-    //   // The channels are capped at nchannels. We ask OIIO to
-    //   // provide float data.
-    // 
-    //   // TODO: read_scanlines doesn't work with tile-based files
-    // 
-    //   auto success =
-    //   inp->read_scanlines ( 0 , 0 ,
-    //                         face * face_width , (face+1) * face_width ,
-    //                         0 , 0 , nchannels ,
-    //                         TypeDesc::FLOAT , p_trg ,
-    //                         nchannels * 4 ,
-    //                         nchannels * 4 * store.strides[1] ) ;
-    //   assert ( success ) ;
-    // }
   }
 
   // store_cubemap stores a standard cubemap with cube faces with
@@ -942,7 +626,7 @@ struct sixfold_t
   {
     assert ( metrics.discrete90 ) ;
 
-    auto inner_width = outer_width - 2 * frame_width ;
+    auto inner_width = section_width - 2 * frame_width ;
     const int xres = inner_width ;
     const int yres = 6 * inner_width ;
 
@@ -956,7 +640,7 @@ struct sixfold_t
 
     auto p_base = store.data() ;
     p_base += ( frame_width * store.strides ) . sum() ;
-    auto p_offset = outer_width * outer_width ;
+    auto p_offset = section_width * section_width ;
 
     for ( int face = 0 ; face < 6 ; face++ )
     {
@@ -1459,7 +1143,7 @@ struct sixfold_t
     {
       // get a pointer to the upper left of the cube face 'proper'
 
-      auto * p_frame = p_base + face * outer_width * store.strides[1]
+      auto * p_frame = p_base + face * section_width * store.strides[1]
                               + frame_width * store.strides[1]
                               + frame_width * store.strides[0] ;
 
@@ -1922,7 +1606,7 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
   
     // get a pointer to the upper left of the section of the IR
 
-    auto * p_frame = p_base + face * outer_width * store.strides[1] ;
+    auto * p_frame = p_base + face * section_width * store.strides[1] ;
     
     // we form a view to the current section of the array in the
     // sixfold_t object. The shape of this view is the 'notional
@@ -1930,7 +1614,7 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
 
     zimt::view_t < 2 , px_t >
       section ( p_frame , store.strides ,
-               { outer_width , outer_width } ) ;
+               { section_width , section_width } ) ;
 
     auto & shp = section.shape ;
 
@@ -1950,10 +1634,10 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
     // sampling mathematics entirely in int until the stage
     // where we do the unavoidable division to project the
     // ray onto a plane. Without the doubling, we'd have to
-    // start out at ( outer_width -1 ) / 2, which can't be
+    // start out at ( section_width -1 ) / 2, which can't be
     // expressed precisely in int.
 
-    auto ishift = outer_width - 1 ;
+    auto ishift = section_width - 1 ;
     zimt::linspace_t < int , 2 , 2 , LANES > ls ( -ishift , 2 ) ;
 
     zimt::storer < float , nchannels , 2 , LANES > st ( section ) ;
@@ -1961,25 +1645,29 @@ void sixfold_t < nchannels > :: fill_support ( int degree )
     // fill in the stripe above the cube face
 
     bill.lower_limit = { 0 , 0 } ;
-    bill.upper_limit = { long(outer_width) , long(frame_width) } ;
+    bill.upper_limit = { long(section_width) , long(frame_width) } ;
     zimt::process ( shp , ls , fill_frame , st , bill ) ;
 
     // fill in the stripe below the cube face
 
     bill.lower_limit = { 0 , long(frame_width + face_width) } ;
-    bill.upper_limit = { long(outer_width) , long(outer_width) } ;
+    bill.upper_limit = { long(section_width) , long(section_width) } ;
     zimt::process ( shp , ls , fill_frame , st , bill ) ;
 
     // fill in the stripe to the left of the cube face
 
-    bill.lower_limit = { 0 , 0 } ;
-    bill.upper_limit = { long(frame_width) , long(outer_width) } ;
+    bill.lower_limit = { 0 , long(frame_width) } ;
+    bill.upper_limit = { long(frame_width) ,
+                         long(section_width) - long(frame_width) } ;
     zimt::process ( shp , ls , fill_frame , st , bill ) ;
 
     // fill in the stripe to the right of the cube face
 
-    bill.lower_limit = { long(frame_width + face_width) , 0 } ;
-    bill.upper_limit = { long(outer_width) , long(outer_width) } ;
+    bill.lower_limit = { long(frame_width + face_width) ,
+                         long(frame_width) } ;
+    bill.upper_limit = { long(section_width) ,
+                         long(section_width) - long(frame_width) } ;
+
     zimt::process ( shp , ls , fill_frame , st , bill ) ;
   }
 }
@@ -2024,7 +1712,7 @@ void sixfold_t < nchannels > :: gen_cubemap
   // if the IR already has the data handy, we use store_cubemap
 
   if (    metrics.discrete90
-       && ( width == outer_width - 2 * frame_width ) )
+       && ( width == section_width - 2 * frame_width ) )
   {
     store_cubemap ( filename ) ;
     return ;
@@ -2529,7 +2217,7 @@ struct eval_env
   : ts ( _ts ) ,
     batch_options ( _batch_options ) ,
     th ( _th ) ,
-    width ( int ( _sf.outer_width ) ) ,
+    width ( int ( _sf.section_width ) ) ,
     px2_to_model ( _sf.px_to_model * 0.5 ) ,
     sf ( _sf ) ,
     ir_to_exr ( _sf )
@@ -2671,7 +2359,10 @@ void cubemap_to_latlon ( std::unique_ptr < ImageInput > & inp ,
   // we set up the sixfold_t object, 'preparing the ground'
   // to pull in the image data
 
-  sixfold_t<nchannels> sf ( spec.width ) ;
+  sixfold_t<nchannels> sf ( spec.width ,
+                            support_min ,
+                            tile_width ,
+                            face_fov ) ;
 
   // load the cube faces into slots in the array in the
   // sixfold_t object
@@ -2738,6 +2429,15 @@ void cubemap_to_latlon ( std::unique_ptr < ImageInput > & inp ,
     auto th = ts->get_texture_handle ( uenvironment ) ;
 
     sf.set_ts ( ts , th ) ;
+
+    if ( ts_options != std::string() )
+    {
+      if ( verbose )
+        std::cout << "adding texture system options: " << ts_options
+                  << std::endl ;
+
+      ts->attribute ( "options" , ts_options ) ;
+    }
   }
 
   // with proper support near the edges, we can now run the
@@ -2901,11 +2601,17 @@ void _latlon_to_cubemap ( const std::string & latlon ,
 
   assert ( success ) ;
 
-  sixfold_t<nchannels> sf ( width ) ;
+  sixfold_t<nchannels> sf ( width ,
+                            support_min ,
+                            tile_width ,
+                            face_fov ) ;
 
   latlon_to_ir < nchannels > ( src , sf ) ;
 
-  sf.store_cubemap ( cubemap ) ;
+  if ( sf.discrete90 )
+    sf.store_cubemap ( cubemap ) ;
+  else
+    sf.gen_cubemap ( cubemap , tile_width , itp ) ;
 }
 
 // convert a lat/lon environment map into a cubemap. The 'width'
@@ -2920,7 +2626,10 @@ void latlon_to_cubemap ( const std::string & latlon ,
                          const std::string & cubemap ,
                          int degree )
 {
-  sixfold_t<nchannels> sf ( width ) ;
+  sixfold_t<nchannels> sf ( width ,
+                            support_min ,
+                            tile_width ,
+                            face_fov ) ;
 
   if ( degree == 1 )
   {
@@ -2946,6 +2655,14 @@ void latlon_to_cubemap ( const std::string & latlon ,
   else
   {
     TextureSystem * ts = TextureSystem::create() ;
+    if ( ts_options != std::string() )
+    {
+      if ( verbose )
+        std::cout << "adding texture system options: " << ts_options
+                  << std::endl ;
+
+      ts->attribute ( "options" , ts_options ) ;
+    }
     ustring uenvironment ( latlon.c_str() ) ;
     auto th = ts->get_texture_handle ( uenvironment ) ;
     TextureOptBatch batch_options ;
@@ -2982,7 +2699,10 @@ void latlon_to_cubemap ( const std::string & latlon ,
   if ( verbose )
     std::cout << "saving cubemap to '" << cubemap << "'" << std::endl ;
 
-  sf.store_cubemap ( cubemap ) ;
+  if ( sf.discrete90 )
+    sf.store_cubemap ( cubemap ) ;
+  else
+    sf.gen_cubemap ( cubemap , tile_width , itp ) ;
 
   if ( save_ir != std::string() )
   {
@@ -3015,12 +2735,26 @@ int main ( int argc , const char ** argv )
   ap.arg("--save_ir INTERNAL")
     .help("save IR image to this file")
     .metavar("INTERNAL");
+  ap.arg("--ts_options OPTIONS")
+    .help("pass comma-separates k=v list of options to OIIO's texture system")
+    .metavar("OPTIONS");
   ap.arg("--extent EXTENT")
     .help("width of the cubemap / height of the envmap")
     .metavar("EXTENT");
   ap.arg("--itp ITP")
     .help("interpolator: 1 for direct bilinear, -1 for OIIO's anisotropic")
     .metavar("ITP");
+  ap.arg("--face_fov FOV")
+    .help("field of view of the cube faces of a cubemap input (in degrees)")
+    .metavar("FOV");
+  ap.arg("--support_min EXTENT")
+    .help("minimal additional support around the cube face proper")
+    .metavar("EXTENT");
+  ap.arg("--tile_width EXTENT")
+    .help("tile width for the internal representation image")
+    .metavar("EXTENT");
+  ap.arg("--ctc", &ctc)
+    .help("flag indicating fov is measured between marginal pixel centers");
     
   if (ap.parse(argc, argv) < 0 ) {
       std::cerr << ap.geterror() << std::endl;
@@ -3037,9 +2771,14 @@ int main ( int argc , const char ** argv )
 
   input = ap["input"].as_string("");
   output = ap["output"].as_string("");
+  ts_options = ap["ts_options"].as_string("");
   save_ir = ap["save_ir"].as_string("");
   extent = ap["extent"].get<int>(0);
   itp = ap["itp"].get<int>(-1);
+  support_min = ap["support_min"].get<int>(4);
+  tile_width = ap["tile_width"].get<int>(64);
+  face_fov = ap["face_fov"].get<float>(90.0);
+  face_fov *= M_PI / 180.0 ;
 
   assert ( input != std::string() ) ;
   assert ( output != std::string() ) ;
@@ -3051,6 +2790,7 @@ int main ( int argc , const char ** argv )
     std::cout << "interpolation: "
               << ( itp == 1 ? "direct bilinear" : "OIIO anisotropic" )
               << std::endl ;
+    std::cout << "cube face fov: " << face_fov << std::endl ;
   }
 
   auto inp = ImageInput::open ( input ) ;
@@ -3107,6 +2847,24 @@ int main ( int argc , const char ** argv )
     if ( verbose )
       std::cout << "input has 1:6 aspect ratio, assuming cubemap"
                 << std::endl ;
+
+    // the 'ctc' flag indicates that the field of view of the
+    // incoming cube face images is given referring to the angle
+    // between the leftmost and rightmost pixel's center, as
+    // opposed to edge-to-edge, which is standard. Some cubemaps
+    // are said to be made this way - if the face fov is given
+    // as ninety degrees, we'll calculate with the adjusted
+    // slightly larger value here to come out right.
+
+    if ( ctc )
+    {
+      double half_size = tan ( face_fov / 2.0 ) ;
+      half_size *= ( ( w + 1.0 ) / w ) ;
+      face_fov = atan ( half_size ) * 2.0 ;
+      if ( verbose )
+        std::cout << "ctc is set, adjusted face_fov to "
+                  << face_fov << std::endl ;
+    }
 
     if ( extent == 0 )
     {
