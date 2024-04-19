@@ -258,7 +258,7 @@ static std::string metamatch;
 static std::regex field_re;
 std::string input , output , save_ir , ts_options ;
 int extent , support_min , tile_width ;
-int itp ;
+int itp , twine ;
 double face_fov ;
 
 // helper function to save a zimt array to an image file. I am
@@ -363,6 +363,96 @@ struct ll_to_ray_t
     down = sinlat ;
   }
 } ;
+
+// as an augmentation which also can reduce alisasing
+// if certain criteria are met, we introduce class twine_t.
+// The signal is evaluated several times in the close vicinity
+// of the pick-up point, the values are weighted and summed up.
+// this functor wraps an inner functor, to which single-location
+// lookups are routed. The inner functor doesn't have to be of
+// very high quality - bilinear is perfectly sufficient, but
+// twining is independent of the 'inner' interpolator. Using it
+// with an interpolator which already does good antialiasing
+// (like OIIO's default) is pointless, though, and will only
+// result in very slight additional blur, so it's best used with
+// itp == 1, bilinear interpolation.
+// With a 'spread' calculated with 'make_spread' (below), the
+// overall result is precisely the same as oversampling the
+// signal resulting from bilinear interpolation and subsequently
+// applying a small box filter.
+// Note that the parameterization allows not only for 'conventional'
+// filters with evenly sampled kernel values, but for a generalized
+// form of filter, which can locate the contributing pick-ups at
+// arbitrary distance from the central ('un-twined') target
+// coordinate and with arbitrary weights. This is not exploited
+// here. Likely candidates would be circular patterns and gaussians.
+
+template < int nchannels >
+struct twine_t
+: public zimt::unary_functor
+           < v2_t , zimt::xel_t < float , nchannels > , LANES >
+{
+  zimt::grok_type 
+    < v2_t , zimt::xel_t < float , nchannels > , LANES > inner ;
+
+  const std::vector < zimt::xel_t < float , 3 > > & spread ;
+  
+  twine_t ( const zimt::grok_type
+               < v2_t , zimt::xel_t < float , nchannels > , LANES >
+                 & _inner ,
+             const std::vector < zimt::xel_t < float , 3 > > & _spread )
+  : inner ( _inner ) ,
+    spread ( _spread )
+  { }
+
+  template < typename in_type , typename out_type >
+  void eval ( const in_type & in ,
+              out_type & out )
+  {
+    out = 0 ;
+    out_type px_k ;
+
+    for ( auto const & contrib : spread )
+    {
+      auto in_k ( in ) ;
+      in_k[0] += contrib[0] ;
+      in_k[1] += contrib[1] ;
+      inner.eval ( in_k , px_k ) ;
+      out += contrib[2] * px_k ;
+    }
+  }
+} ;
+
+// this function sets up a simple box filter to use with the
+// twine_t functor above. The output is the average of the
+// contributing partial values. The given w and h values
+// determine the number of pick-up points in the horizontal
+// and vertical direction - typically, you'd use the same value
+// for both. The deltas are set up so that, over all pick-ups,
+// they produce a uniform sampling.
+
+void make_spread ( int w , int h , float d ,
+                   std::vector < zimt::xel_t < float , 3 > > & trg )
+{
+  float wgt = 1.0 / ( w * h ) ;
+  double x0 = - ( w - 1.0 ) / ( 2.0 * w ) ;
+  double dx = 1.0 / w ;
+  double y0 = - ( h - 1.0 ) / ( 2.0 * h ) ;
+  double dy = 1.0 / h ;
+  trg.clear() ;
+
+  for ( int y = 0 ; y < h ; y++ )
+  {
+    for ( int x = 0 ; x < w ; x++ )
+    {
+      zimt::xel_t < float , 3 >
+        v { float ( d * ( x0 + x * dx ) ) ,
+            float ( d * ( y0 + y * dy ) ) ,
+            wgt } ;
+      trg.push_back ( v ) ;
+    }
+  }
+}
 
 // code to move from 3D ray coordinates to lat/lon. This is the
 // reverse operation to ll_to_ray above and follows the same
@@ -622,7 +712,7 @@ struct sixfold_t
   // but simply copied out from the central parts of each
   // section.
 
-  void store_cubemap ( const std::string & filename )
+  void store_cubemap ( const std::string & filename ) const
   {
     assert ( metrics.discrete90 ) ;
 
@@ -676,7 +766,7 @@ struct sixfold_t
 
   void gen_cubemap ( const std::string & filename ,
                      const std::size_t & width ,
-                     const int degree = 1 ) ;
+                     const int degree = 1 ) const ;
 
   // given a 3D 'ray' coordinate, find the corresponding cube face
   // and the in-face coordinate - note the two references which take
@@ -1707,7 +1797,7 @@ template < int nchannels >
 void sixfold_t < nchannels > :: gen_cubemap
   ( const std::string & filename ,
     const std::size_t & width ,
-    const int degree )
+    const int degree ) const
 {
   // if the IR already has the data handy, we use store_cubemap
 
@@ -2155,6 +2245,10 @@ void latlon_to_ir ( const zimt::view_t < 2 , pix_t<nchannels> > & latlon ,
 
   zimt::linspace_t < float , 2 , 2 , LANES > ls ( start , step ) ;
 
+  // the data are to be stored to the IR image, held in sf.store
+
+  zimt::storer < float , nchannels , 2 , LANES > st ( sf.store ) ;
+
   // the act functor is a chain of three separate functors, which we
   // set up first:
 
@@ -2175,13 +2269,31 @@ void latlon_to_ir ( const zimt::view_t < 2 , pix_t<nchannels> > & latlon ,
 
   auto act = itr + rtl + ltp ;
 
-  // the data are to be stored to the IR image, held in sf.store
+  if ( twine > 1 )
+  {
+    // with twine > 1, we use a 'twine_t' object wrapping the
+    // act functor which we have assembled so far. This has the
+    // effect of picking up several values in the close vicinity
+    // of the given pick-up point and averaging them. This is the
+    // same, mathematically, as oversampling and applying a box
+    // filter to the resulting oversampled signal.
 
-  zimt::storer < float , nchannels , 2 , LANES > st ( sf.store ) ;
+    if ( verbose )
+      std::cout << "applying a twine of " << twine << std::endl ;
 
-  // showtime!
+    std::vector < zimt::xel_t < float , 3 > > twine_v ;
+    make_spread ( twine , twine , sf.px_to_model , twine_v ) ;
 
-  zimt::process ( sf.store.shape , ls , act , st ) ;
+    twine_t < nchannels > twined_act ( act , twine_v ) ;
+
+    zimt::process ( sf.store.shape , ls , twined_act , st ) ;
+  }
+  else
+  {
+    // no twine given, use act as it is
+
+    zimt::process ( sf.store.shape , ls , act , st ) ;
+  }
 }
 
 // next we have a functor converting discrete cubemap coordinates
@@ -2518,7 +2630,7 @@ void cubemap_to_latlon ( std::unique_ptr < ImageInput > & inp ,
 
   // set up ll_to_px_t using bilinear interpolation (argument 1)
   // or argument -1 to use pick-up with OIIO's 'texture' function.
-  // The value is taken from the global 'degree' which is set with
+  // The value is taken from the global 'itp' which is set with
   // the CL parameter of the same name.
   // This is the functor which takes lon/lat coordinates and produces
   // pixel data from the internal representation of the cubemap held
@@ -2526,9 +2638,29 @@ void cubemap_to_latlon ( std::unique_ptr < ImageInput > & inp ,
 
   ll_to_px_t<nchannels> act ( sf , degree , step , batch_options ) ;
 
-  // showtime! call zimt::process.
+  if ( twine > 1 )
+  {
+    // with twine > 1, we use a 'twine_t' object wrapping the
+    // act functor which we have assembled so far. This has the
+    // effect of picking up several values in the close vicinity
+    // of the given pick-up point and averaging them. This is the
+    // same, mathematically, as oversampling and applying a box
+    // filter to the resulting oversampled signal.
 
-  zimt::process ( trg.shape , linspace , act , st ) ;
+    if ( verbose )
+      std::cout << "applying a twine of " << twine << std::endl ;
+
+    std::vector < zimt::xel_t < float , 3 > > twine_v ;
+    make_spread ( twine , twine , sf.px_to_model , twine_v ) ;
+
+    twine_t < nchannels > twined_act ( act , twine_v ) ;
+
+    zimt::process ( trg.shape , linspace , twined_act , st ) ;
+  }
+  else
+  {
+    zimt::process ( trg.shape , linspace , act , st ) ;
+  }
 
   // we don't need the temporary texture any more. If save_ir is
   // set, we save it under the given name.
@@ -2571,47 +2703,6 @@ void cubemap_to_latlon ( std::unique_ptr < ImageInput > & inp ,
               << latlon << std::endl ;
 
   save_array<nchannels> ( latlon , trg , true ) ;
-}
-
-// do the reverse operation. The first variant below uses bilinear
-// interpolation directly on the IR image. This is fast and quite
-// accurate, but if there is a large differnce in scale, it will
-// produce aliasing artifacts. The version using OIIO's anisotropic
-// antialiasing filer is one further down.
-
-template < int nchannels >
-void _latlon_to_cubemap ( const std::string & latlon ,
-                          std::size_t width ,
-                          const std::string & cubemap )
-{
-  typedef zimt::xel_t < float , nchannels > px_t ;
-
-  auto inp = ImageInput::open ( latlon ) ;
-  assert ( inp != nullptr ) ;
-
-  const ImageSpec &spec = inp->spec() ;
-  std::size_t w = spec.width ;
-  std::size_t h = spec.height ;
-  assert ( w == h * 2 ) ;
-
-  zimt::array_t < 2 , px_t > src ( { w , h } ) ;
-  
-  bool success = inp->read_image ( 0 , 0 , 0 , nchannels ,
-                                   TypeDesc::FLOAT , src.data() ) ;
-
-  assert ( success ) ;
-
-  sixfold_t<nchannels> sf ( width ,
-                            support_min ,
-                            tile_width ,
-                            face_fov ) ;
-
-  latlon_to_ir < nchannels > ( src , sf ) ;
-
-  if ( sf.discrete90 )
-    sf.store_cubemap ( cubemap ) ;
-  else
-    sf.gen_cubemap ( cubemap , tile_width , itp ) ;
 }
 
 // convert a lat/lon environment map into a cubemap. The 'width'
@@ -2689,7 +2780,22 @@ void latlon_to_cubemap ( const std::string & latlon ,
     // discrete coordinates of the target location for which the functor
     // is supposed to calculate content.
 
-    zimt::transform ( act , sf.store ) ;
+    if ( twine > 1 )
+    {
+      if ( verbose )
+        std::cout << "applying a twine of " << twine << std::endl ;
+
+      std::vector < zimt::xel_t < float , 3 > > twine_v ;
+      make_spread ( twine , twine , 1 , twine_v ) ;
+
+      twine_t < nchannels > twined_act ( act , twine_v ) ;
+
+      zimt::transform ( twined_act , sf.store ) ;
+    }
+    else
+    {
+      zimt::transform ( act , sf.store ) ;
+    }
   }
 
   // the result of the zimt::transform is slightly more than we need,
@@ -2744,6 +2850,9 @@ int main ( int argc , const char ** argv )
   ap.arg("--itp ITP")
     .help("interpolator: 1 for direct bilinear, -1 for OIIO's anisotropic")
     .metavar("ITP");
+  ap.arg("--twine TWINE")
+    .help("use twine*twine oversampling and box filter - best with itp1")
+    .metavar("ITP");
   ap.arg("--face_fov FOV")
     .help("field of view of the cube faces of a cubemap input (in degrees)")
     .metavar("FOV");
@@ -2775,6 +2884,7 @@ int main ( int argc , const char ** argv )
   save_ir = ap["save_ir"].as_string("");
   extent = ap["extent"].get<int>(0);
   itp = ap["itp"].get<int>(-1);
+  twine = ap["twine"].get<int>(1);
   support_min = ap["support_min"].get<int>(4);
   tile_width = ap["tile_width"].get<int>(64);
   face_fov = ap["face_fov"].get<float>(90.0);
