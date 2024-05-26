@@ -82,11 +82,16 @@ namespace zimt
 
   class UnsuitableTypeForExpandElements { } ;
 
+  // we consider fundamentals element-expandable.
+
   template < typename T >
   struct get_ele_t
   {
     static const size_t size = 1 ;
-    typedef UnsuitableTypeForExpandElements type ;
+    typedef typename std::conditional < std::is_fundamental < T > :: value ,
+                                        T ,
+                                        UnsuitableTypeForExpandElements 
+                                      > :: type type ;
   } ;
 
   template < typename T , std::size_t SZ >
@@ -152,7 +157,7 @@ typename
 std::integral_constant
   < int ,
     zimt::get_ele_t < T > :: size
-  > :: type ;
+  > ;
 
 /// is_element_expandable tests if a type T is known to zimt's
 /// get_ele_t mechanism. If this is so, the type is
@@ -420,6 +425,30 @@ protected:
     if ( p_context )
       trm ( p_context ) ;
   }
+} ;
+
+typedef enum { 
+  MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
+  PERIODIC,   // periodic boundary conditions
+  REFLECT ,   // reflect, so  that f(-1) == f(0) (mirror between bounds)
+  NATURAL,    // natural boundary conditions, f(-x) + f(x) == 2 * f(0)
+  CONSTANT ,  // clamp. used for framing, with explicit prefilter scheme
+  ZEROPAD ,   // used for boundary condition, bracing
+  GUESS ,     // used instead of ZEROPAD to keep margin errors lower
+  INVALID
+} bc_code;
+
+/// bc_name is for diagnostic output of bc codes
+
+const std::string bc_name[] =
+{
+  "MIRROR   " ,
+  "PERIODIC ",
+  "REFLECT  " ,
+  "NATURAL  ",
+  "CONSTANT " ,
+  "ZEROPAD  " ,
+  "GUESS    "
 } ;
 
 } ; // end of namespace zimt

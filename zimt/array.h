@@ -106,9 +106,9 @@ struct view_t
   // is not allowed, only copy construction can initialize a view
   // or array with the same members.
 
-  value_type * const origin ;
-  const index_type strides ;
-  const shape_type shape ;
+  value_type * origin ;
+  index_type strides ;
+  shape_type shape ;
 
   view_t()
   : origin ( nullptr ) ,
@@ -205,7 +205,7 @@ struct view_t
 
   // copy assignment is forbidden.
 
-  view_t & operator= ( const view_t & rhs ) = delete ;
+  // view_t & operator= ( const view_t & rhs ) = delete ;
 
   // get the number of value_type the view refers to.
 
@@ -261,6 +261,20 @@ struct view_t
     return view_t ( origin + offset ( start ) ,
                     strides ,
                     end - start ) ;
+  }
+
+  view_t < D + 1 , ET < value_type > > expandElements() const
+  {
+    xel_t < std::size_t , D + 1 > xshape ;
+    xshape [ 0 ] = EN < value_type > :: value ;
+    for ( std::size_t d = 0 ; d < D ; d++ )
+      xshape [ d + 1 ] = shape [ d ] ;
+    xel_t < std::size_t , D + 1 > xstride ;
+    xstride [ 0 ] = 1 ;
+    for ( std::size_t d = 0 ; d < D ; d++ )
+      xstride [ d + 1 ] = strides [ d ] * xshape [ 0 ] ;
+    auto p_base = ( ET < value_type > * ) origin ;
+    return { p_base , xstride , xshape } ;
   }
 
 private:
@@ -544,58 +558,15 @@ public:
 
   array_t & operator= ( const array_t & rhs ) = delete ;
 
-private:
-
-  void reset ( std::false_type ) // 'ordinary' T
-  {
-    base.reset ( origin ) ;
-  }
-
-  // arrays which hold T needing destruction need a deleter. The data
-  // are held as a plain chunk of memory holding T, and without the
-  // deleter, the chunk of memory is simply released with delete,
-  // which does not invoke the individual T's destructors. So the
-  // deleter must loop over the data and apply the d'tor to every
-  // datum in the array.
-
-  void reset ( std::true_type ) // non-trivially destructible T
-  {
-    typedef std::function < void ( T* ) > deleter_t ;
-
-    deleter_t dtor = [=] ( T * p_data )
-    {
-      for ( std::size_t i = 0 ; i < size() ; i++ )
-      {
-        p_data[i].~T() ;
-      }
-    } ;
-
-    base.reset ( origin , dtor ) ;
-  }
-
-public:
-
   // array allocating fresh memory. The array is now in sole possesion
   // of the memory, and unless it's copied the memory is released when
-  // the array is destructed. If the T which the array holds via it's
-  // shared_ptr 'store' has an explicit destructor, we add code to
-  // destruct all T in the store explicitly.
+  // the array is destructed.
 
   array_t ( const shape_type & _shape )
   : base_t ( new T [ _shape.prod() ] ,
              make_strides ( _shape ) ,
              _shape )
-  {
-    // does T have a non-trivial destructor?
-
-    static const bool test =
-         std::is_destructible < T > :: value
-      && ! std::is_trivially_destructible < T > :: value ;
-
-    // dispatch accordingly. this sets 'base'.
-
-    reset ( std::integral_constant < bool , test >() ) ;
-  }
+  { }
 
   // array's window function also copies the shared_ptr, base.
   // This makes sure that the returned subarray will hold on to the
@@ -755,6 +726,49 @@ array_t < D + 1 , T > get_vector_buffer
   }
   return array_t < D + 1 , T > ( shape ) ;
 }
+
+// template < std::size_t D , typename T >
+// struct ghost_t
+// : public view_flag
+// {
+//   typedef view_t < D , T > body_t ;
+// 
+//   typedef T value_type ;
+//   static const std::size_t dimension = D ;
+//   typedef xel_t < std::size_t , dimension > shape_type ;
+//   typedef xel_t < long , dimension > index_type ;
+// 
+//   value_type * origin ;
+//   index_type strides ;
+//   shape_type shape ;
+// 
+//   ghost_t()
+//   : origin ( nullptr ) ,
+//     strides ( 0 ) ,
+//     shape ( 0 )
+//   { }
+// 
+//   // This c'tor creates a new ghost from the given arguments.
+// 
+//   ghost_t ( value_type * _origin ,
+//             const index_type & _strides ,
+//             const shape_type & _shape )
+//   : origin ( _origin ) ,
+//     strides ( _strides ) ,
+//     shape ( _shape )
+//     { }
+// 
+//   ghost_t ( const body_t & rhs )
+//   : origin ( rhs.origin ) ,
+//     strides ( rhs.strides ) ,
+//     shape ( rhs.shape )
+//     { }
+// 
+//   operator body_t()
+//   {
+//     return body_t ( origin , strides , shape ) ;
+//   }
+// } ;
 
 } ;
 

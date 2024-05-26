@@ -132,6 +132,13 @@ struct vc_simd_type
 
   typedef Vc::SimdArray < _value_type , _vsize > base_t ;
 
+  // we need to alow access to new and delete of the base class
+
+  using base_t::operator new ;
+  using base_t::operator new[] ;
+  using base_t::operator delete ;
+  using base_t::operator delete[] ;
+
   // access the underlying base type
 
   base_t & to_base()
