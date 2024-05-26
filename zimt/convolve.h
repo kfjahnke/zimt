@@ -68,6 +68,12 @@
     symmetrical kernels are used, this makes no difference, but when vpline's
     convolution code is used for other convolutions, this has to be kept in
     mind.
+
+    A function template meant to be called from user code is right at the
+    end of the file. It sets up all the internal structures needed to
+    perform a separable convolution of an array with given filter
+    coefficients, performs the convolution and removes the 'scaffolding'.
+
 */
 
 #ifndef ZIMT_CONVOLVE_H
@@ -383,7 +389,7 @@ protected:
 template < template < typename , size_t > class _vtype ,
            typename _math_ele_type ,
            size_t _vsize >
-struct convolve
+struct convolution_filter
 : public buffer_handling < _vtype , _math_ele_type , _vsize > ,
   public zimt::fir_filter < _vtype < _math_ele_type , _vsize > >
 {
@@ -433,7 +439,7 @@ struct convolve
   // component to use the whole buffer to accept incoming and
   // provide outgoing data.
 
-  convolve ( const fir_filter_specs & specs , size_t size )
+  convolution_filter ( const fir_filter_specs & specs , size_t size )
   : filter_type ( specs ) ,
     buffer ( size ) ,
     buffer_extrapolator ( specs.bc , buffer )
@@ -469,7 +475,7 @@ struct convolve
   
 } ;
 
-/// convolution_filter implements convolution of the input with a fixed-size
+/// convolve implements convolution of the input with a fixed-size
 /// convolution kernel. Note that zimt does *not* follow the DSP convention
 /// of using the kernel's coefficients in reverse order. The standard is to
 /// calculate sum ( ck * u(n-k) ), zimt uses sum ( ck * u(n+k-h) ) where
@@ -508,7 +514,7 @@ template < std::size_t dimension ,
            size_t vsize =
                   zimt::vector_traits < math_ele_type > :: size
          >
-void convolution_filter (
+void convolve (
                  const
                  zimt::view_t
                    < dimension ,
@@ -545,7 +551,7 @@ void convolution_filter (
   for ( int i = 0 ; i < ksize ; i++ )
     kernel[i] = kv[i] ;
   
-  typedef typename zimt::convolve
+  typedef typename zimt::convolution_filter
                             < zimt::simdized_type ,
                               math_ele_type ,
                               vsize
