@@ -2,11 +2,11 @@
 /*                                                                      */
 /*    zimt - abstraction layer for SIMD programming                     */
 /*                                                                      */
-/*            Copyright 2023 by Kay F. Jahnke                           */
+/*            Copyright 2024 by Kay F. Jahnke                           */
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
-/*    https://bitbucket.org/kfj/zimt                                    */
+/*    https://github.com/kfjahnke/zimt                                    */
 /*                                                                      */
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
@@ -425,30 +425,6 @@ protected:
     if ( p_context )
       trm ( p_context ) ;
   }
-} ;
-
-typedef enum { 
-  MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
-  PERIODIC,   // periodic boundary conditions
-  REFLECT ,   // reflect, so  that f(-1) == f(0) (mirror between bounds)
-  NATURAL,    // natural boundary conditions, f(-x) + f(x) == 2 * f(0)
-  CONSTANT ,  // clamp. used for framing, with explicit prefilter scheme
-  ZEROPAD ,   // used for boundary condition, bracing
-  GUESS ,     // used instead of ZEROPAD to keep margin errors lower
-  INVALID
-} bc_code;
-
-/// bc_name is for diagnostic output of bc codes
-
-const std::string bc_name[] =
-{
-  "MIRROR   " ,
-  "PERIODIC ",
-  "REFLECT  " ,
-  "NATURAL  ",
-  "CONSTANT " ,
-  "ZEROPAD  " ,
-  "GUESS    "
 } ;
 
 } ; // end of namespace zimt

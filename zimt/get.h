@@ -700,7 +700,8 @@ struct linspace_t
   typedef zimt::xel_t < T , N > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  // I'd like to use long, but I don't get it vectorized everywhere
+  typedef zimt::xel_t < int , D > crd_t ;
   typedef zimt::simdized_type < crd_t , L > crd_v ;
   typedef typename crd_v::value_type crd_ele_v ;
 
@@ -1053,6 +1054,20 @@ template < typename T ,     // fundamental type
              class G >
 grok_get_t < T , N , D , L > grok_get
   ( G < T , N , D , L > grokkee )
+{
+  return grok_get_t < T , N , D , L > ( grokkee ) ;
+}
+
+// overload which takes grokkee type with different type signature.
+// to use this overload, you'll have to pass template arguments
+// T, N, D and L.
+
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
+           std::size_t L ,  // lane count
+           class G >
+grok_get_t < T , N , D , L > grok_get ( G grokkee )
 {
   return grok_get_t < T , N , D , L > ( grokkee ) ;
 }

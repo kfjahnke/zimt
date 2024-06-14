@@ -104,7 +104,7 @@ typedef std::size_t ic_type ;
 /// implement all 'transform-like' operations. It is  a
 /// generalization of the 'transform' concept, adding choosable
 /// 'get' and 'put' functors generating input for the 'act'
-/// functor  and disposing of it's output. By factoring these
+/// functor and disposing of it's output. By factoring these
 /// two activities out, the code becomes much more flexible,
 /// and by selecting simple appropriate 'get' and 'put' objects,
 /// zimt::transform can easily be implemented as a specialized

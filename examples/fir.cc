@@ -73,6 +73,19 @@ typedef zimt::xel_t < float , 3 > pixel_type;
 
 typedef zimt::array_t < 2 , pixel_type > target_type ;
 
+struct nontriv
+{
+  float * pf ;
+
+  nontriv()
+  : pf ( new float[3] )
+  { }
+
+  ~nontriv()
+  { std::cout << "#" << std::endl ;
+    delete[] pf ; }
+} ;
+
 int main ( int argc , char * argv[] )
 {
   if ( argc < 2 )

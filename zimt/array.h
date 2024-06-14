@@ -102,9 +102,11 @@ struct view_t
   typedef xel_t < std::size_t , dimension > shape_type ;
   typedef xel_t < long , dimension > index_type ;
 
-  // we keep the members const. assignment between views and arrays
-  // is not allowed, only copy construction can initialize a view
-  // or array with the same members.
+  // strides and shape used to be const members, but this has been
+  // relaxed because it made some operations difficult. I think that
+  // this won't reduce performance, and user code can work with const
+  // views instead of being forced to have immutable shape and strides
+  // in the views.
 
   value_type * origin ;
   index_type strides ;
@@ -203,9 +205,10 @@ struct view_t
   : view_t ( rhs.origin , _strides , _shape )
   { }
 
-  // copy assignment is forbidden.
+  // copy assignment used to be forbidden, but with the switch to
+  // mutabel shape and strides copy assignment is now also allowed.
 
-  // view_t & operator= ( const view_t & rhs ) = delete ;
+  view_t & operator= ( const view_t & rhs ) = default ;
 
   // get the number of value_type the view refers to.
 
@@ -256,25 +259,54 @@ struct view_t
   // of the data.
 
   view_t window ( const index_type & start ,
-                  const index_type & end )
+                  const index_type & end ) const
   {
     return view_t ( origin + offset ( start ) ,
                     strides ,
                     end - start ) ;
   }
 
-  view_t < D + 1 , ET < value_type > > expandElements() const
+  // convert a view to xel data to a view to fundamentals. The new
+  // dimension is added as dimension zero unless a different value
+  // is passed.
+
+  view_t < D + 1 , ET < value_type > >
+    expand_elements ( std::size_t axis = 0 ) const
   {
     xel_t < std::size_t , D + 1 > xshape ;
-    xshape [ 0 ] = EN < value_type > :: value ;
-    for ( std::size_t d = 0 ; d < D ; d++ )
-      xshape [ d + 1 ] = shape [ d ] ;
-    xel_t < std::size_t , D + 1 > xstride ;
-    xstride [ 0 ] = 1 ;
-    for ( std::size_t d = 0 ; d < D ; d++ )
-      xstride [ d + 1 ] = strides [ d ] * xshape [ 0 ] ;
-    auto p_base = ( ET < value_type > * ) origin ;
-    return { p_base , xstride , xshape } ;
+    xel_t < std::size_t , D + 1 > xstrides ;
+
+    assert ( axis < D ) ;
+    std::size_t nchannels = EN < value_type > :: value ;
+    typedef ET < value_type > ele_t ;
+
+    // process axes below the desired new axis, raising the stride
+
+    for ( std::size_t d = 0 ; d < axis ; d++ )
+    {
+      xshape [ d ] = shape [ d ] ;
+      xstrides [ d ] = strides [ d ] * nchannels ;
+    }
+
+    // insert the new axis. It's extent is the number of channels
+    // of value_type and it's stride is one.
+
+    xshape [ axis ] = nchannels ;
+    xstrides [ axis ] = 1 ;
+
+    // add the higer axes with increased strides
+
+    for ( std::size_t d = axis + 1 ; d <= D ; d++ )
+    {
+      xshape [ d ] = shape [ d - 1 ] ;
+      xstrides [ d ] = strides [ d - 1 ] * nchannels ;
+    }
+
+    ele_t * p_base = ( ele_t * ) origin ;
+    view_t < D + 1 , ele_t > result { p_base , xstrides , xshape } ;
+
+    assert ( result.size() == nchannels * size() ) ;
+    return result ;
   }
 
 private:
@@ -554,19 +586,20 @@ public:
     base_t ( rhs.origin , _strides , _shape )
   { }
 
-  // copy assignment is forbidden.
-
-  array_t & operator= ( const array_t & rhs ) = delete ;
-
   // array allocating fresh memory. The array is now in sole possesion
   // of the memory, and unless it's copied the memory is released when
-  // the array is destructed.
+  // the array is destructed. this is only allowed for trivially
+  // destructible T.
 
   array_t ( const shape_type & _shape )
-  : base_t ( new T [ _shape.prod() ] ,
+  : base_t ( nullptr ,
              make_strides ( _shape ) ,
-             _shape )
-  { }
+             _shape ) ,
+    base ( new T [ _shape.prod() ] )
+  {
+    static_assert ( std::is_trivially_destructible < T > :: value ) ;
+    origin = base.get() ;
+  }
 
   // array's window function also copies the shared_ptr, base.
   // This makes sure that the returned subarray will hold on to the
@@ -726,49 +759,6 @@ array_t < D + 1 , T > get_vector_buffer
   }
   return array_t < D + 1 , T > ( shape ) ;
 }
-
-// template < std::size_t D , typename T >
-// struct ghost_t
-// : public view_flag
-// {
-//   typedef view_t < D , T > body_t ;
-// 
-//   typedef T value_type ;
-//   static const std::size_t dimension = D ;
-//   typedef xel_t < std::size_t , dimension > shape_type ;
-//   typedef xel_t < long , dimension > index_type ;
-// 
-//   value_type * origin ;
-//   index_type strides ;
-//   shape_type shape ;
-// 
-//   ghost_t()
-//   : origin ( nullptr ) ,
-//     strides ( 0 ) ,
-//     shape ( 0 )
-//   { }
-// 
-//   // This c'tor creates a new ghost from the given arguments.
-// 
-//   ghost_t ( value_type * _origin ,
-//             const index_type & _strides ,
-//             const shape_type & _shape )
-//   : origin ( _origin ) ,
-//     strides ( _strides ) ,
-//     shape ( _shape )
-//     { }
-// 
-//   ghost_t ( const body_t & rhs )
-//   : origin ( rhs.origin ) ,
-//     strides ( rhs.strides ) ,
-//     shape ( rhs.shape )
-//     { }
-// 
-//   operator body_t()
-//   {
-//     return body_t ( origin , strides , shape ) ;
-//   }
-// } ;
 
 } ;
 

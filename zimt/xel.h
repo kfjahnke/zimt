@@ -624,8 +624,22 @@ void scatter ( ET < value_type > * p_trg ,
   }
 }
 
-
 } ; // end of struct xel_t
+
+template < typename T , std::size_t D >
+T squared_norm ( const zimt::xel_t < T , D > & v )
+{
+  T sqn = v[0] * v[0] ;
+  for ( std::size_t i = 1 ; i < D ; i++ )
+    sqn += v[i] * v[i] ;
+  return sqn ;
+}
+
+template < typename T , std::size_t D >
+T norm ( const zimt::xel_t < T , D > & v )
+{
+  return sqrt ( squared_norm ( v ) ) ;
+}
 
 } ; // end of namespace zimt
 

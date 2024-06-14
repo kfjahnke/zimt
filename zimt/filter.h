@@ -88,6 +88,33 @@
 
 namespace zimt
 {
+
+// enums for boundary conditions and their respective names as strings
+
+typedef enum { 
+  MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
+  PERIODIC,   // periodic boundary conditions
+  REFLECT ,   // reflect, so  that f(-1) == f(0) (mirror between bounds)
+  NATURAL,    // natural boundary conditions, f(-x) + f(x) == 2 * f(0)
+  CONSTANT ,  // clamp. used for framing, with explicit prefilter scheme
+  ZEROPAD ,   // used for boundary condition, bracing
+  GUESS ,     // used instead of ZEROPAD to keep margin errors lower
+  INVALID
+} bc_code;
+
+/// bc_name is for diagnostic output of bc codes
+
+const std::string bc_name[] =
+{
+  "MIRROR   " ,
+  "PERIODIC ",
+  "REFLECT  " ,
+  "NATURAL  ",
+  "CONSTANT " ,
+  "ZEROPAD  " ,
+  "GUESS    "
+} ;
+
 /// class 'bundle' holds all information needed to access a set of
 /// vsize 1D subarrays of an nD array. This is the data structure
 /// we use to tell the buffering and unbuffering code which data
@@ -1286,8 +1313,8 @@ struct separable_filter
                       & handler_args ,
                     int njobs ) const
   {
-    auto source = input.expandElements() ;
-    auto target = output.expandElements() ;
+    auto source = input.expand_elements() ;
+    auto target = output.expand_elements() ;
 
     // with the element-expanded data at hand, we can now delegate to
     // the routine below, which deals with single-channel data
@@ -1410,11 +1437,11 @@ struct separable_filter
 
     std::vector<e_input_array_type> source ;
     for ( auto & e : input )
-      source.push_back ( e.expandElements ( 0 ) ) ;
+      source.push_back ( e.expand_elements ( 0 ) ) ;
     
     std::vector<e_output_array_type> target ;
     for ( auto & e : output )
-      target.push_back ( e.expandElements ( 0 ) ) ;
+      target.push_back ( e.expand_elements ( 0 ) ) ;
 
     // with the element-expanded data at hand, we can now delegate to
     // the routine below, which deals with single-channel data

@@ -80,8 +80,8 @@
 #define ZIMT_CONVOLVE_H
 
 #include "common.h"
-#include "extrapolate.h"
 #include "filter.h"
+#include "extrapolate.h"
 
 namespace zimt {
 

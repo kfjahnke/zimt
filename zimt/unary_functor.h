@@ -693,7 +693,7 @@ public:
     // (which is known in this contructor because the argument
     // is typed so), and then they proceed to delegate the
     // call to the grokkee. Replication and termination use
-    // the same pattern. Once the lambdas are store in the
+    // the same pattern. Once the lambdas are stored in the
     // std::functions _e_ev, _c_ev etc. the 'knowledge' of
     // how to delegate is removed from view: the grokkee's type
     // is no longer visible or accessible, hence the term 'type
