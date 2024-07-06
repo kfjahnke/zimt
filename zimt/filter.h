@@ -89,31 +89,31 @@
 namespace zimt
 {
 
-// enums for boundary conditions and their respective names as strings
-
-typedef enum { 
-  MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
-  PERIODIC,   // periodic boundary conditions
-  REFLECT ,   // reflect, so  that f(-1) == f(0) (mirror between bounds)
-  NATURAL,    // natural boundary conditions, f(-x) + f(x) == 2 * f(0)
-  CONSTANT ,  // clamp. used for framing, with explicit prefilter scheme
-  ZEROPAD ,   // used for boundary condition, bracing
-  GUESS ,     // used instead of ZEROPAD to keep margin errors lower
-  INVALID
-} bc_code;
-
-/// bc_name is for diagnostic output of bc codes
-
-const std::string bc_name[] =
-{
-  "MIRROR   " ,
-  "PERIODIC ",
-  "REFLECT  " ,
-  "NATURAL  ",
-  "CONSTANT " ,
-  "ZEROPAD  " ,
-  "GUESS    "
-} ;
+// // enums for boundary conditions and their respective names as strings
+// 
+// typedef enum { 
+//   MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
+//   PERIODIC,   // periodic boundary conditions
+//   REFLECT ,   // reflect, so  that f(-1) == f(0) (mirror between bounds)
+//   NATURAL,    // natural boundary conditions, f(-x) + f(x) == 2 * f(0)
+//   CONSTANT ,  // clamp. used for framing, with explicit prefilter scheme
+//   ZEROPAD ,   // used for boundary condition, bracing
+//   GUESS ,     // used instead of ZEROPAD to keep margin errors lower
+//   INVALID
+// } bc_code;
+// 
+// /// bc_name is for diagnostic output of bc codes
+// 
+// const std::string bc_name[] =
+// {
+//   "MIRROR   " ,
+//   "PERIODIC ",
+//   "REFLECT  " ,
+//   "NATURAL  ",
+//   "CONSTANT " ,
+//   "ZEROPAD  " ,
+//   "GUESS    "
+// } ;
 
 /// class 'bundle' holds all information needed to access a set of
 /// vsize 1D subarrays of an nD array. This is the data structure

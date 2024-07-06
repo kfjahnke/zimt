@@ -135,7 +135,7 @@ struct bill_t
   // For N-dimensional processing, if only one value is given, it is
   // take for all dimensions. Otherwise, there must be as many limit
   // values as there are dimensions. Empty vectors signify a lower
-  // limit of zero - or of the 'notional' shape's extens, respectively.
+  // limit of zero - or of the 'notional' shape's extents, respectively.
 
   std::vector < long > lower_limit ;
   std::vector < long > upper_limit ;

@@ -65,6 +65,30 @@
 
 namespace zimt
 {
+  typedef enum { 
+    MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
+    PERIODIC,   // periodic boundary conditions
+    REFLECT ,   // reflect, so  that f(-1) == f(0) (mirror between bounds)
+    NATURAL,    // natural boundary conditions, f(-x) + f(x) == 2 * f(0)
+    CONSTANT ,  // clamp. used for framing, with explicit prefilter scheme
+    ZEROPAD ,   // used for boundary condition, bracing
+    GUESS ,     // used instead of ZEROPAD to keep margin errors lower
+    INVALID
+  } bc_code;
+
+  /// bc_name is for diagnostic output of bc codes
+
+  const std::string bc_name[] =
+  {
+    "MIRROR   " ,
+    "PERIODIC ",
+    "REFLECT  " ,
+    "NATURAL  ",
+    "CONSTANT " ,
+    "ZEROPAD  " ,
+    "GUESS    "
+  } ;
+
   // we set up a traits class which we'll use to codify that SIMDized
   // types and xel types are integral if their members are. This is
   // used to implement the INTEGRAL_ONLY type constraint in operator

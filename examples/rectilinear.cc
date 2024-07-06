@@ -271,6 +271,123 @@ struct lookup_t
   }
 } ;
 
+// idea: since the OIIO lookup employs a scalable filter, we can
+// use two lookups with different scale by simply scaling the
+// derivatives. Here, we scale the first lookup with 'laplace1'
+// and the second with laplace1 * laplace2. Then we form the
+// difference. If e.g. laplace1 is 1.0 and laplace2 is 2.0,
+// we get a value which should be close to the value we'd
+// get from a laplacian pyramid at the same level. This should
+// make it quite easy to write pyramid-based code (like B&A image
+// splining). Note that the input must have appropriate mip levels
+// (here we set automip=1 in the texture system options!). This
+// functor can be used instead of 'lookup_t' above and will yield
+// the difference between the lookups at the two given levels.
+// The code falls back to unmodifed lookup if no 'laplace'
+// parameters are passed.
+
+struct laplace_t
+: public zimt::unary_functor < v3_t , v3_t , 16 >
+{
+  TextureSystem * ts ;
+  TextureOptBatch & batch_options ;
+  TextureSystem::TextureHandle * th ;
+  const zimt::xel_t < v3_t , 2 > step ;
+
+  const float laplace1 ;
+  const float laplace2 ;
+
+  lookup_t ( TextureSystem * _ts ,
+             TextureOptBatch & _batch_options ,
+             TextureSystem::TextureHandle * _th ,
+             const std::array < v3_t , 2 > & _step ,
+             const float & _laplace1 = 1.0f ,
+             const float & _laplace2 = 1.0f )
+  : ts ( _ts ) ,
+    batch_options ( _batch_options ) ,
+    th ( _th ) ,
+    step ( _step ) ,
+    laplace1 ( _laplace1 ) ,
+    laplace2 ( _laplace2 )
+   {
+     ts->attribute ( "options" ,  "automip=1" ) ;
+   }
+
+  template < typename I , typename O >
+  void eval ( const I & _crd , O & px ) const
+  {
+    in_v crd = _crd / norm ( _crd ) ;
+    
+    in_v ds = _crd + step[0] ;
+    ds /= norm ( ds ) ;
+    ds -= crd ;
+    
+    in_v dt = _crd + step[1] ;
+    dt /= norm ( dt ) ;
+    dt -= crd ;
+    
+    if ( laplace1 != 1.0f )
+    {
+      ds *= laplace1 ;
+      dt *= laplace1 ;
+    }
+
+#if defined USE_VC or defined USE_STDSIMD
+
+    float scratch [ 4 * 3 * 16 ] ;
+
+    crd.store ( scratch ) ;
+    ds.store ( scratch + 3 * 16 ) ;
+    dt.store ( scratch + 6 * 16 ) ;
+
+    ts->environment ( th , nullptr, batch_options ,
+                      Tex::RunMaskOn ,
+                      scratch , scratch + 3 * 16 , scratch + 6 * 16 ,
+                      3 , scratch + 9 * 16 ) ;
+
+    px.load ( scratch + 9 * 16 ) ;
+
+    if ( laplace2 != 1.0f )
+    {
+      ds *= laplace2 ;
+      dt *= laplace2 ;
+      ds.store ( scratch + 3 * 16 ) ;
+      dt.store ( scratch + 6 * 16 ) ;
+
+      ts->environment ( th , nullptr, batch_options ,
+                        Tex::RunMaskOn ,
+                        scratch , scratch + 3 * 16 , scratch + 6 * 16 ,
+                        3 , scratch + 9 * 16 ) ;
+      O complement ;
+      complement.load ( scratch + 9 * 16 ) ;
+      px -= complement ;
+      px += .5f ; // just to avoid negative output
+    }
+#else
+
+    ts->environment ( th , nullptr, batch_options ,
+                      Tex::RunMaskOn ,
+                      crd[0].data() , ds[0].data() , dt[0].data() ,
+                      3 , px[0].data() ) ;
+
+    if ( laplace2 != 1.0f )
+    {
+      ds *= laplace2 ;
+      dt *= laplace2 ;
+      O complement ;
+
+      ts->environment ( th , nullptr, batch_options ,
+                        Tex::RunMaskOn ,
+                        crd[0].data() , ds[0].data() , dt[0].data() ,
+                        3 , complement[0].data() ) ;
+
+      px -= complement ;
+      px += .5f ; // just to avoid negative output
+    }
+#endif
+  }
+} ;
+
 // we'll use some Imath code in the next section, so we need to be able
 // to move from zimt's 'xel' data to Imath's Vec. This requires merely
 // a cast - the layout is the same.

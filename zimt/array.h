@@ -86,6 +86,104 @@
 
 namespace zimt
 {
+// coordinate iterators. For now, we don't implement 'proper'
+// c++ standard iterators, but just two stripped-down ones.
+// zimt views are suitable for random access iteration, but it
+// would require extra coding effort to provide the usual
+// begin/end semantics - I may add this later.
+
+// stripped-down version of vigra::MultiCoordinateIterator which only
+// produces the nth nD index into an array of given shape. This class
+// is used in wielding.h. use of the modulo and division make this
+// quite slow, so it's best not used for iterations over arrays.
+// in wielding.h it's only used to produce the start address for
+// each line, so it's not time-critical there.
+// Note that if the data are contiguous in memory, it can be much
+// more efficient to iterate over the data directly - or over a 1D
+// view of the data.
+// Why do we need this iterator? For multithreading. There, the worker
+// threads obtain 'joblet numbers' from an atomic and decode these
+// numbers to segments of data which need to be processed. And the
+// decoding is where this iterator is used.
+
+template  < std::size_t D >
+struct mci_t
+: public xel_t < long , D >
+{
+  static const std::size_t dimension = D ;
+
+  typedef xel_t < long , D > index_type ;
+  const index_type & shape ;
+
+  template < typename T >
+  mci_t ( xel_t < T , D >  _shape )
+  : index_type ( _shape ) ,
+    shape ( *this )
+  { }
+
+  // accept any argument as long as can be converted to index_type
+  // TODO: this is very permissive - might be better to restrict to
+  // fixed-size containers of some integral type
+
+  template < typename T >
+  mci_t ( T _shape )
+  : index_type ( _shape ) ,
+    shape ( *this )
+  { }
+
+  template < typename T >
+  mci_t ( const std::initializer_list < T > & rhs )
+  : index_type ( rhs ) ,
+    shape ( *this )
+  { }
+
+  index_type operator[] ( long i )
+  {
+    index_type result ;
+
+    for ( std::size_t d = 0 ; d < dimension ; d++ )
+    {
+      result [ d ] = i % shape [ d ] ;
+      i /= shape [ d ] ;
+    }
+    return result ;
+  }
+} ;
+
+// similar to mci_t, but this class is for walking through a sequence
+// of nD coordinates. It's not for random access. For now, forward
+// only. Here there are no division or modulo operations.
+
+template  < std::size_t D >
+struct mcs_t
+: public mci_t < D >
+{
+  typedef mci_t < D > base_t ;
+  using base_t::base_t ;
+  using base_t::dimension ;
+  using typename base_t::index_type ;
+  using base_t::shape ;
+
+  index_type current = 0L ;
+
+  // operator() yields the current value and updates 'current'.
+
+  index_type operator() ()
+  {
+    // a bit verbose, let the optimizer figure it out
+
+    auto result = current ;
+    for ( std::size_t d = 0 ; d < dimension ; d++ )
+    {
+      if ( ++ current [ d ] == shape [ d ] )
+        current [ d ] = 0 ;
+      else
+        break ;
+    }
+    return result ;
+  }
+} ;
+
 class view_flag { } ;
 
 // view_t is a view to an array. Like vigra, zimt uses view_t
@@ -497,6 +595,49 @@ public:
     _set_data ( rhs , std::integral_constant < bool , is_1d >() ) ;
   }
 
+  template < typename F >
+  void traverse ( const F & f )
+  {
+    mcs_t < D > mcs ( shape ) ;
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      auto crd = mcs() ;
+      (*this) [ crd ] = f ( (*this) [ crd ] ) ;
+    }
+  }
+
+  template < typename F >
+  void combine ( const F & f ,
+                 const view_t & lhs ,
+                 const view_t & rhs )
+  {
+    mcs_t < D > mcs ( shape ) ;
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      auto crd = mcs() ;
+      (*this) [ crd ] = f ( lhs [ crd ] , rhs [ crd ] ) ;
+    }
+  }
+
+
+  template < typename F >
+  void opeq ( const F & f , const view_t & rhs )
+  {
+    mcs_t < D > mcs ( shape ) ;
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      auto crd = mcs() ;
+      (*this) [ crd ] = f ( (*this) [ crd ] , rhs [ crd ] ) ;
+    }
+  }
+
+  view_t subarray ( const index_type & start ,
+                    const index_type & end )
+  {
+    return view_t ( & ( (*this) [ start ] ) ,
+                    strides ,
+                    end - start ) ;
+  }
 } ;
 
 // array_t 'holds' memory holding the array's data. This done via a
@@ -626,104 +767,6 @@ public:
     base_t const & v ( *this ) ;
     auto slc = v.slice ( d , i ) ;
     return slice_t ( base , slc ) ;
-  }
-} ;
-
-// coordinate iterators. For now, we don't implement 'proper'
-// c++ standard iterators, but just two stripped-down ones.
-// zimt views are suitable for random access iteration, but it
-// would require extra coding effort to provide the usual
-// begin/end semantics - I may add this later.
-
-// stripped-down version of vigra::MultiCoordinateIterator which only
-// produces the nth nD index into an array of given shape. This class
-// is used in wielding.h. use of the modulo and division make this
-// quite slow, so it's best not used for iterations over arrays.
-// in wielding.h it's only used to produce the start address for
-// each line, so it's not time-critical there.
-// Note that if the data are contiguous in memory, it can be much
-// more efficient to iterate over the data directly - or over a 1D
-// view of the data.
-// Why do we need this iterator? For multithreading. There, the worker
-// threads obtain 'joblet numbers' from an atomic and decode these
-// numbers to segments of data which need to be processed. And the
-// decoding is where this iterator is used.
-
-template  < std::size_t D >
-struct mci_t
-: public xel_t < long , D >
-{
-  static const std::size_t dimension = D ;
-
-  typedef xel_t < long , D > index_type ;
-  const index_type & shape ;
-
-  template < typename T >
-  mci_t ( xel_t < T , D >  _shape )
-  : index_type ( _shape ) ,
-    shape ( *this )
-  { }
-
-  // accept any argument as long as can be converted to index_type
-  // TODO: this is very permissive - might be better to restrict to
-  // fixed-size containers of some integral type
-
-  template < typename T >
-  mci_t ( T _shape )
-  : index_type ( _shape ) ,
-    shape ( *this )
-  { }
-
-  template < typename T >
-  mci_t ( const std::initializer_list < T > & rhs )
-  : index_type ( rhs ) ,
-    shape ( *this )
-  { }
-
-  index_type operator[] ( long i )
-  {
-    index_type result ;
-
-    for ( std::size_t d = 0 ; d < dimension ; d++ )
-    {
-      result [ d ] = i % shape [ d ] ;
-      i /= shape [ d ] ;
-    }
-    return result ;
-  }
-} ;
-
-// similar to mci_t, but this class is for walking through a sequence
-// of nD coordinates. It's not for random access. For now, forward
-// only. Here there are no division or modulo operations.
-
-template  < std::size_t D >
-struct mcs_t
-: public mci_t < D >
-{
-  typedef mci_t < D > base_t ;
-  using base_t::base_t ;
-  using base_t::dimension ;
-  using typename base_t::index_type ;
-  using base_t::shape ;
-
-  index_type current = 0L ;
-
-  // operator() yields the current value and updates 'current'.
-
-  index_type operator() ()
-  {
-    // a bit verbose, let the optimizer figure it out
-
-    auto result = current ;
-    for ( std::size_t d = 0 ; d < dimension ; d++ )
-    {
-      if ( ++ current [ d ] == shape [ d ] )
-        current [ d ] = 0 ;
-      else
-        break ;
-    }
-    return result ;
   }
 } ;
 
