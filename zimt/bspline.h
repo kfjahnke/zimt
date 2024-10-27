@@ -40,6 +40,9 @@
 
     \brief defines class bspline
 
+  This code is a port from my library vspline, using zimt data types
+  instead of vspline and vigra types.
+
   class bspline is an object to contain a b-spline's coefficients and some
   metadata in one handy package. It also provides easy access to b-spline
   prefiltering. The idea is that user code establishes a bspline object

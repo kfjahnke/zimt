@@ -192,7 +192,7 @@ struct tile_t
   // a tile coordinate and an in-tile coordinate (this can be
   // done efficiently with mask and shift operations due to the
   // power-of-two-based extent), and the tile coordinate can be
-  // translated into an tile index from the pool base address.
+  // translated into a tile index from the pool base address.
   // Using the pool's shape and strides (stride one in dimension
   // zero can be prescribed), the combination of the tile's index
   // from the pool base address and the in-tile coordinate yields
@@ -212,12 +212,6 @@ struct tile_t
   // processing (without the exception) is fast, though, and if
   // especially detrimental access patterns (like, truly random
   // access) are avoided, exceptions should be relatively rare.
-
-  // void allocate()
-  // {
-  //   assert ( p_data == nullptr ) ;
-  //   p_data = new storage_t ( shape ) ;
-  // }
 
   // tile_t's c'tor only sets the shape; allocating storage or
   // access to files is done later with specific functions as
@@ -285,7 +279,7 @@ struct tile_t
 // there, each value is accessed precisely once, it's a
 // plain traversal of the data. With the multithreaded access,
 // the precise sequence in which data are processed and the
-// concrete thread which processes them is knot known and
+// concrete thread which processes them is not known and
 // 'sorts itself out', but it's guaranteed that no datum is
 // accessed more than once, so there doesn't have to be
 // a protection against conflicting data access by several
@@ -403,7 +397,7 @@ private:
   // shape may be only partially filled with data. We assume
   // that this will not produce a significant amount of 'dead'
   // memory. Of course this assumption is false if the tile
-  // size is large compared to the notionaly shape, and the
+  // size is large compared to the notional shape, and the
   // waste gets worse with higher dimensionality of the construct.
 
   static shape_type get_store_shape
@@ -436,8 +430,6 @@ private:
       {
         store_tile ( tether.p_tile , tile_index ) ;
       }
-      // delete tether.p_tile->p_data ;
-      // delete tether.p_tile ;
       deallocate_tile ( tether.p_tile ) ;
       tether.p_tile = nullptr ;
     }
@@ -548,7 +540,7 @@ private:
 
 protected:
 
-  // moving the data drom the external representation - e.g.
+  // moving the data from the external representation - e.g.
   // a file - and back to it, are coded as pure virtual member
   // functions in this (base) class:
 
@@ -709,8 +701,6 @@ public:
       // allocate it's memory and, optionally, read data from
       // a file.
 
-      // tether.p_tile = new tile_type ( tile_shape ) ;
-      // tether.p_tile->allocate() ;
       tether.p_tile = allocate_tile() ;
 
       if ( read_from_disk )
