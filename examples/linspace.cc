@@ -72,12 +72,51 @@
 
 #include "../zimt/wielding.h"
 
+// To test the dispatch mechanism, we provide an implementation of
+// the SIMD-ISA-specific function 'dummy'. The implementations live
+// in the SIMD-ISA-specific nested namespaces (zimt::ZIMT_SIMD_ISA)
+// - here we return a value which indicates the SIMD ISA which is
+// used when the program executes. With MULTI_SIMD_ISA #defined,
+// we return the current highway target architecture, without it,
+// we return a negative value derived from the zimt backend, so
+// the value will depend on whether the code is compiled with
+// -DUSE_VC, -DUSE_STDSIMD etc., in which case there is no
+// dispatch to several SIMD ISAs but just a single SIMD ISA fixed
+// at compile time.
+
+int zimt::ZIMT_SIMD_ISA::_dispatch::dummy ( float z ) const
+{
+  std::cout << "hello dummy" << std::endl ;
+#ifdef MULTI_SIMD_ISA
+  return HWY_TARGET ;
+#else
+  auto be = zimt::ZIMT_SIMD_ISA::simdized_type<float,16>::backend ;
+  return -1 * int ( be ) ;
+#endif
+}
+
 // this macro puts us into a nested namespace inside namespace 'project'.
 // For single-SIMD-ISA builds, this is conventionally project::zsimd,
 // and for multi-SIMD-ISA builds it is project::HWY_NAMESPACE. The macro
 // is defined in common.h
 
 BEGIN_ZIMT_SIMD_NAMESPACE(project)
+
+// Before we start out with the payload code, we define the SIMD-ISA-
+// specific _get_dispatch variant. This will call the nested SIMD
+// namespace's get_dispatch, returning a pointer to zimt::dispatch,
+// the base class of all dispatchers. With this pointer, we can
+// invoke SIMD_ISA_specific member functions of class dispatcher:
+// in the base class, they are pure virtual, the SIMD-ISA-specific
+// derived class has concrete definitions which are ISA-specific.
+// So if we want to invoke the ISA-specific code, we go via the
+// pointer we receive here - see driver.cc for an example of using
+// this dispatch.
+
+static ZIMT_ATTR const zimt::dispatch* const _get_dispatch()
+{
+  return zimt::ZIMT_SIMD_ISA::get_dispatch() ;
+}
 
 // we use a namespace alias 'zimt' for the corresponding nested
 // namespace in namespace zimt. since the nested namespace in
@@ -183,15 +222,16 @@ static ZIMT_ATTR int _payload()
 
 END_ZIMT_SIMD_NAMESPACE
 
-#if HWY_ONCE
+#if ZIMT_ONCE
 
 namespace project {
 
 #ifdef MULTI_SIMD_ISA
   
 HWY_EXPORT(_payload);
+HWY_EXPORT(_get_dispatch);
 
-// Callpayload is defined in namespace project, but it might be in
+// payload is defined in namespace project, but it might be in
 // another namespace as well.
 
 int payload ( int argc , char * argv[] )
@@ -199,11 +239,21 @@ int payload ( int argc , char * argv[] )
   return HWY_DYNAMIC_DISPATCH(_payload)() ;
 }
 
+const zimt::dispatch * const get_dispatch()
+{
+  return HWY_DYNAMIC_DISPATCH(_get_dispatch)() ;
+}
+
 #else
 
 int payload ( int argc , char * argv[] )
 {
   return zsimd::_payload() ;
+}
+
+const zimt::dispatch * const get_dispatch()
+{
+  return zsimd::_get_dispatch() ;
 }
 
 #endif

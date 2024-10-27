@@ -2,11 +2,11 @@
 /*                                                                      */
 /*    zimt - abstraction layer for SIMD programming                     */
 /*                                                                      */
-/*            Copyright 2023 by Kay F. Jahnke                           */
+/*            Copyright 2024 by Kay F. Jahnke                           */
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
-/*    https://github.com/kfjahnke/zimt                                  */
+/*    https://github.com/kfjahnke/zimt                                    */
 /*                                                                      */
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
@@ -36,47 +36,23 @@
 /*                                                                      */
 /************************************************************************/
 
-// To handle code using several SIMD ISAs in one binary (like with
-// highway's foreach_target mechanism) I prefer to split the examples
-// in two: this TU, the driver, is compiled without any ISA-specific
-// flags and contains 'main' which in turn calls a plain old function
-// in the 'payload' TU which does the dispatching. The payload TU can
-// be compiled in different ways - be it with highway's foreach_target,
-// or with a single ISA-specific set of compiler flags.
+/*! \file interface.h
 
-#include "../zimt/common.h"
-#include <iostream>
+  This header demonstrates how a project can register functions with
+  zimt's dispach mechanism. To register a function "int dummy(float z)"
+  we invoke ZIMT_REGISTER with the return type, the function name and
+  the arguments - ZIMT_REGISTER is a variadic macro, so the argument
+  list can be arbitrarily long. ZIMT_REGISTER is defined twice: once
+  in struct zimt::dispatch in common.h, where it defines a pure virtual
+  member function, and once in the concrete _dispatch object in vector.h,
+  where the definition of the function is declared. The actual definition
+  is in yet another place - it has to be provided by the user, and an
+  example for such a definition is in linspace.cc, where the 'dummy'
+  function is set up for dispatching.
+  interface.h is #included directy into the respective class definitions.
+  The declaration makes sure that the definition has matching arguments.
+*/
 
-// in namespace 'project' (set up in the payload TU, e.g. linspace.cc)
-// we have two functions which we may call from here. The first one
-// yields a dispatch pointer, via which we can invoke member functions
-// of the dispatcher, which are introduced with ZIMT_REGISTER in
-// interface.h - currently only a dummy function to test the mechanism.
-// The second is the actual payload code, which 'does something'.
+// register int dummy ( float z ) for dispatch:
 
-namespace project
-{
-  const zimt::dispatch * const get_dispatch() ;
-  int payload ( int argc , char * argv[] ) ;
-}
-
-int main ( int argc , char * argv[] )
-{
-  // Here we use zimt's dispatch mechanism: first, we get a pointer
-  // to the dispatcher, then we invoke a member function of the
-  // dispatcher - in this case, just the dummy function we've set
-  // up to test the mechanism. What's the point? We can call
-  // a SIMD-ISA-specific bit of code without having to concern
-  // ourselves with figuring out which SIMD ISA to use on the current
-  // CPU: this happens via highway's dispatch mechanism, or is fixed
-  // at compile time, but in any case we receive a dispatcher pointer
-  // routing to the concrete variant.
-
-  auto dp = project::get_dispatch() ;
-  std::cout << "dp = " << dp << std::endl ;
-  int trg = dp->dummy ( 5.0f ) ;
-  std::cout << "get_dispatch returned " << trg << std::endl ;
-
-  int success = project::payload ( argc , argv ) ;
-  std::cout << "payload returned " << success << std::endl ;
-}
+ZIMT_REGISTER(int, dummy, float z)
