@@ -57,8 +57,9 @@
 
 #include "gen_simd_type.h"
 
-namespace simd
+namespace zimt
 {
+using ZIMT_SIMD_ISA::gen_simd_type ;
 
 template < typename _value_type ,
            std::size_t _vsize >
@@ -346,6 +347,7 @@ struct vc_simd_type
   friend std::ostream & operator<< ( std::ostream & osr ,
                                      vc_simd_type it )
   {
+    osr << "*******" << std::endl ;
     osr << it.to_base() ;
     return osr ;
   }
@@ -852,9 +854,9 @@ struct allocator_traits < vc_simd_type < T , N > >
 namespace std
 {
   template < typename T , std::size_t N >
-  struct allocator_traits < simd::vc_simd_type < T , N > >
+  struct allocator_traits < zimt::vc_simd_type < T , N > >
   {
-    typedef Vc::Allocator < simd::vc_simd_type < T , N > >
+    typedef Vc::Allocator < zimt::vc_simd_type < T , N > >
       allocator_type ;
   } ;
 } ;
@@ -864,7 +866,7 @@ namespace zimt
 {
 
   template < typename T , size_t N >
-  struct is_integral < simd::vc_simd_type < T , N > >
+  struct is_integral < zimt::vc_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
 

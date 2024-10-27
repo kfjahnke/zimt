@@ -36,61 +36,23 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file simd_tag.h
+// To handle code using several SIMD ISAs in one binary (like with
+// highway's foreach_target mechanism) I prefer to split the examples
+// in two: this TU, the driver, is compiled without any ISA-specific
+// flags and contains 'main' which in turn calls a plain old function
+// in the 'payload' TU which does the dispatching. The payload TU can
+// be compiled in different ways - be it with highway's foreach_target,
+// or with a single ISA-specific set of compiler flags.
 
-    \brief tag inherited by all SIMD data types
+#include <iostream>
 
-*/
-
-// Note: initially I used a separate namespace 'simd', but now I've
-// decided to keep everything in namespace zimt, especially since the
-// use of highway's foreach_target mechanism introduces several nested
-// namespaces which further complicate matters, so now I stick with
-// zimt and the nested HWY_NAMESPACE namespaces for SIMD-ISA-specific
-// code, which correspond with highway's namespace scheme.
-
-#ifndef SIMD_TAG_H
-#define SIMD_TAG_H
-
-namespace zimt
+namespace project
 {
-  // to mark all variations of SIMD data types, we'll derive them
-  // from simd_tag, and therefore also from simd_flag.
+  int payload ( int argc , char * argv[] ) ;
+}
 
-  class simd_flag { } ;
-
-  // So far, we have four backends. Note that the use of highway's
-  // foreach_target mechanism works only with the GOADING and HWY
-  // backends and requires #defining MULTI_SIMD_ISA. Without this
-  // definition, the zimt code will assume a specific target SIMD
-  // ISA which depends on compiler flags at compile time, and in
-  // this mode of compilation, the other two backends can be used
-  // as well. The problem with the latter two backends is that I
-  // haven't found a way to re-compile them using the foreach_target
-  // mechanism - their code seems to be written so as to assume a
-  // single SIMD ISA and I didn't mange to even patch is so as to
-  // fit in with a multiple-reinclusion scheme.
-
-  enum backend_e { GOADING , VC , HWY , STDSIMD } ;
-
-  // For diagnostic output:
-
-  const std::string backend_name[] { "GOADING" ,
-                                     "Vc" ,
-                                     "highway" ,
-                                     "std::simd" } ;
-
-  // now we can code the tag:
-
-  template < typename T , std::size_t N , backend_e B >
-  struct simd_tag
-  : public simd_flag
-  {
-    typedef T value_type ;
-    static const std::size_t vsize = N ;
-    static const backend_e backend = B ;
-  } ;
-
-} ;
-
-#endif
+int main ( int argc , char * argv[] )
+{
+  int success = project::payload ( argc , argv ) ;
+  std::cout << "payload returned " << success << std::endl ;
+}

@@ -42,6 +42,13 @@
     \brief arithmetic container type
 */
 
+// zimt::xel_t is a 'classic' header - it doesn't have any code which
+// varies with the SIMD ISA. So we use a normal sentinel construct.
+// If code managed by foreach_target.h uses xel_t, that's no problem:
+// the first inclusion establishes xel_t and it's capabilities,
+// subsequent incarnations use the established definitions whose
+// repeated definition is prevented by the sentinel.
+
 #ifndef ZIMT_XEL_T_H
 #define ZIMT_XEL_T_H
 
@@ -60,15 +67,20 @@
 
 namespace zimt
 {
-// all xel data are deemed integral if their value_type is.
-  
-template < typename T , size_t N >
-struct is_integral < xel_t < T , N > >
-: public is_integral < T >
-{ } ;
-
 template < typename T , std::size_t N >
 struct xel_t ;
+
+// all xel data are deemed integral if their value_type is.
+
+// template < typename T >
+// struct is_integral
+// : public std::is_integral < T >
+// { } ;
+
+template < typename T , size_t N >
+struct is_integral < xel_t < T , N > >
+: public std::is_integral < T >
+{ } ;
 
 // 'form' is a traits class used to abstract from the concrete
 // 'atomic' type held by a xel_t construct, to help with the
@@ -417,8 +429,8 @@ bool none_of ( bool condition )
 }
 
 // next we have code which will only be present for xel_t of some
-// SIMD data type, like zimt::simd_type or zimt::vc_simd_type.
-// For such types, value_type will inherit from simd_flag, so we
+// SIMD data type, like hwy_simd_type or gen_simd_type. For such
+// types, value_type will inherit from simd_flag, so we
 // can use enable_if to produce the code if appropriate.
 
 template < typename = std::enable_if
@@ -642,32 +654,6 @@ T norm ( const zimt::xel_t < T , D > & v )
 }
 
 } ; // end of namespace zimt
-
-#undef XEL
-
-// when Vc or highway are available, we have specialized
-// de/interleaving code which we can route to now that we have
-// the complete type definition for zimt::xel_t
-
-#define XEL zimt::xel_t
-
-#ifdef USE_VC
-#include "simd/vc_interleave.h"
-namespace zimt
-{
-  using simd::interleave ;
-  using simd::deinterleave ;
-} ;
-#endif
-
-#ifdef USE_HWY
-#include "simd/hwy_interleave.h"
-namespace zimt
-{
-  using simd::interleave ;
-  using simd::deinterleave ;
-} ;
-#endif
 
 #undef XEL
 

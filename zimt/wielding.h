@@ -86,8 +86,6 @@
     the zimt namespace, e.g. for multi-ISA constructs.
 */
 
-#ifndef ZIMT_WIELDING_H
-
 #include <atomic>
 #include <algorithm>
 #include "array.h"
@@ -96,8 +94,17 @@
 #include "get.h"
 #include "put.h"
 
-namespace zimt
-{
+// #ifndef ZIMT_WIELDING_H
+
+#if defined(ZIMT_WIELDING_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_WIELDING_H
+    #undef ZIMT_WIELDING_H
+  #else
+    #define ZIMT_WIELDING_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
 typedef std::size_t ic_type ;
 
 /// 'process' is the central function in zimt and used to
@@ -146,11 +153,11 @@ template < std::size_t D ,
            class get_t ,
            class gact_t ,
            class put_t >
-void process ( const zimt::xel_t < std::size_t , D > & shape ,
+void process ( const xel_t < std::size_t , D > & shape ,
                const get_t & _get ,
                const gact_t & gact ,
                const put_t & _put ,
-               const zimt::bill_t & bill = zimt::bill_t() )
+               const bill_t & bill = bill_t() )
 {
   typedef vs_adapter < gact_t > act_t ;
 
@@ -182,7 +189,7 @@ void process ( const zimt::xel_t < std::size_t , D > & shape ,
   const auto & axis ( bill.axis ) ; // short notation
   const auto & segment_size ( bill.segment_size ) ; // ditto
 
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef xel_t < long , D > crd_t ;
 
   // set up the lower and upper limit of the operation. This is used
   // if only a window of the 'notional' shape is to be processed. The
@@ -456,7 +463,6 @@ void process ( const zimt::xel_t < std::size_t , D > & shape ,
   zimt::multithread ( worker , bill.njobs ) ;
 }
 
-} ; // namespace wielding
+END_ZIMT_SIMD_NAMESPACE
 
-#define ZIMT_WIELDING_H
-#endif
+#endif // sentinel

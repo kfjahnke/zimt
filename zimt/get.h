@@ -52,10 +52,17 @@
     namely the two init and two increase overloads.
 */
 
-#ifndef ZIMT_GET_H
+// #ifndef ZIMT_GET_H
 
-namespace zimt
-{
+#if defined(ZIMT_GET_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_GET_H
+    #undef ZIMT_GET_H
+  #else
+    #define ZIMT_GET_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
 // Here we have a collection of get_t objects to cover a set of
 // common data acquisition strategies, and to serve as templates
 // for your own creations. Note how all of these classes use the
@@ -70,11 +77,11 @@ namespace zimt
 template < typename T ,    // elementary/fundamental type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct get_crd
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
@@ -180,14 +187,14 @@ struct get_crd
 template < typename T ,
            std::size_t N ,
            std::size_t D ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct loader
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
+  typedef simdized_type < long , L > crd_v ;
 
   const std::size_t d ;
   const zimt::view_t < D , value_t > src ;
@@ -276,7 +283,7 @@ struct loader
 template < typename T ,
            std::size_t N ,
            std::size_t D ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct unstrided_loader
 : public loader < T , N , D , L >
 {
@@ -357,11 +364,11 @@ struct unstrided_loader
 template < typename T ,
            std::size_t N ,
            std::size_t D ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct vloader
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
 
   // type of coordinate passed by the caller (zimt::process)
 
@@ -464,14 +471,14 @@ struct vloader
 template < typename T ,
            std::size_t N ,
            std::size_t D ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct permute
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , N > crd_t ;
-  typedef zimt::simdized_type < long , L > crd_v ;
+  typedef simdized_type < long , L > crd_v ;
 
   const std::size_t d ;
   const std::array < zimt::view_t < 1 , T > , N > src ;
@@ -583,7 +590,7 @@ template < typename T ,     // fundamental type
 struct join_t
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   // const std::size_t d ; // processing axis - 0 or 1 for a 2D array
@@ -698,11 +705,11 @@ template < typename T ,     // fundamental type
 struct linspace_t
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
   // I'd like to use long, but I don't get it vectorized everywhere
   typedef zimt::xel_t < int , D > crd_t ;
-  typedef zimt::simdized_type < crd_t , L > crd_v ;
+  typedef simdized_type < crd_t , L > crd_v ;
   typedef typename crd_v::value_type crd_ele_v ;
 
   const std::size_t d ;
@@ -805,10 +812,10 @@ template < typename T ,     // fundamental type
 struct gridspace_t
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
   typedef zimt::xel_t < long , D > crd_t ;
-  typedef zimt::simdized_type < crd_t , L > crd_v ;
+  typedef simdized_type < crd_t , L > crd_v ;
   typedef typename crd_v::value_type crd_ele_v ;
 
   const std::size_t d ;
@@ -943,7 +950,7 @@ class grok_get_t
   // we need some of the grokkee's types
 
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   // grok_get_t holds four std::functions:
@@ -1072,7 +1079,6 @@ grok_get_t < T , N , D , L > grok_get ( G grokkee )
   return grok_get_t < T , N , D , L > ( grokkee ) ;
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#define ZIMT_GET_H
-#endif
+#endif // sentinel

@@ -41,8 +41,25 @@
     \brief de/interleaving with highway
 */
 
-namespace simd
-{
+#if defined(HWY_INTERLEAVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef HWY_INTERLEAVE_H
+    #undef HWY_INTERLEAVE_H
+  #else
+    #define HWY_INTERLEAVE_H
+  #endif
+  
+// namespace simd
+// {
+
+// HWY_BEFORE_NAMESPACE();
+// 
+// namespace zimt {
+// 
+// namespace HWY_NAMESPACE {  // required: unique per target
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
+namespace hn = hwy::HWY_NAMESPACE ;
 
 // for the time being, highway can interleave 2, 3, and 4-channel
 // data. We route the code with overloads, because there is no
@@ -156,3 +173,9 @@ void deinterleave ( const XEL < T , 4 > * const & src ,
 }
 
 } ;
+
+} ;
+
+HWY_AFTER_NAMESPACE();
+
+#endif // sentinel

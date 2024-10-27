@@ -50,19 +50,13 @@
 #ifndef ZIMT_STD_SIMD_TYPE_H
 #define ZIMT_STD_SIMD_TYPE_H
 
-#ifndef ZIMT_VECTOR_NBYTES
-
-#define ZIMT_VECTOR_NBYTES 64
-
-#endif
-
 #include <iostream>
 #include <experimental/simd>
 
 #include "simd_tag.h"
 #include "../common.h"
 
-namespace simd
+namespace zimt
 {
 /// class template std_simd_type provides a fixed-size SIMD type.
 /// This implementation of zimt::std_simd_type uses std::simd as
@@ -90,9 +84,9 @@ struct std_simd_type
           < _value_type ,
             std::experimental::simd_abi::fixed_size < _vsize >
           > ,
-  public simd::simd_tag < _value_type , _vsize , simd::STDSIMD >
+  public zimt::simd_tag < _value_type , _vsize , zimt::STDSIMD >
 {
-  typedef simd::simd_tag < _value_type , _vsize , simd::STDSIMD > tag_t ;
+  typedef zimt::simd_tag < _value_type , _vsize , zimt::STDSIMD > tag_t ;
   using typename tag_t::value_type ;
   // using tag_t::vsize ; // works with clang++, but not with g++, hence:
   static const std::size_t vsize = _vsize ;
@@ -263,7 +257,7 @@ struct std_simd_type
   // the std_simd_type. Some of these operations have corresponding
   // c'tors which use the member function to initialize to_base().
 
-  // load delegates to std::simd::copy_from. TODO: consider
+  // load delegates to std::zimt::copy_from. TODO: consider
   // overalignment
 
   void load ( const value_type * const p_src )
@@ -788,13 +782,15 @@ std_simd_type & broadcast ( bin_f f , const std_simd_type & rhs )
 
 } ;
 
+  template < typename T , std::size_t N >
+  using gen_simd_type = std_simd_type < T , N > ;
 } ;
 
 namespace zimt
 {
 
   template < typename T , size_t N >
-  struct is_integral < simd::std_simd_type < T , N > >
+  struct is_integral < zimt::std_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
 

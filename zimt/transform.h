@@ -89,16 +89,23 @@
     more about this topic.
 */
 
-#ifndef ZIMT_TRANSFORM_H
-#define ZIMT_TRANSFORM_H
+// #ifndef ZIMT_TRANSFORM_H
+// #define ZIMT_TRANSFORM_H
 
 // The bulk of the implementation of zimt's two 'transform' functions
 // is now in wielding.h:
 
 #include "wielding.h"
 
-namespace zimt
-{
+#if defined(ZIMT_TRANSFORM_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_TRANSFORM_H
+    #undef ZIMT_TRANSFORM_H
+  #else
+    #define ZIMT_TRANSFORM_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE
+
 template < typename view_type ,
            typename = std::enable_if
              < std::is_base_of < view_flag , view_type > :: value > >
@@ -405,6 +412,6 @@ void apply ( const unary_functor_type & ev ,
   transform ( ev , output , output , bill ) ;
 }
 
-} ; // end of namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#endif // ZIMT_TRANSFORM_H
+#endif // sentinel

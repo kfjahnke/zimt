@@ -37,26 +37,76 @@
 /************************************************************************/
 
 // example code producing arrays holding linear gradients, just like
-// what you get from NumPy's 'linspace'. This example directly uses
-// the code in minz.h which makes it quite verbose, because this
-// code needs more arguments than zimt::transform and relatives.
+// what you get from NumPy's 'linspace'. this example is elaborated
+// to function either with highway's foreach_target mechanism, using
+// internal dispatch to the best SIMD ISA on the CPU it's run on, or,
+// alternatively, using a single fixed-SIMD-ISA where the ISA is
+// determined at compile time by passing specific compiler flags.
+// The 'payload' code expects to be called from a 'driver' program
+// like driver.cc - this has to be linked in.
 
-#include <zimt/zimt.h>
+// if the code is compiled to use the Vc or std::simd back-ends, we
+// can't (yet) use highway's foreach_target mechanism, so we #undef
+// MULTI_SIMD_ISA, which is zimt's way of activating that mechanism.
 
-int main ( int argc , char * argv[] )
+#if defined MULTI_SIMD_ISA && ( defined USE_VC || defined USE_STDSIMD )
+#warning "un-defining MULTI_SIMD_ISA due to use of Vc or std::simd"
+#undef MULTI_SIMD_ISA
+#endif
+
+#ifdef MULTI_SIMD_ISA
+
+// if we're using MULTI_SIMD_ISA, we have to define HWY_TARGET_INCLUDE
+// to tell the foreach_target mechanism which file should be repeatedly
+// re-included and re-copmpiled with SIMD-ISA-specific flags
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "linspace.cc"  // this file
+
+#include <hwy/foreach_target.h>  // must come before highway.h
+#include <hwy/highway.h>
+
+#endif
+
+// now we #include the zimt headers we need:
+
+#include "../zimt/wielding.h"
+
+// this macro puts us into a nested namespace inside namespace 'project'.
+// For single-SIMD-ISA builds, this is conventionally project::zsimd,
+// and for multi-SIMD-ISA builds it is project::HWY_NAMESPACE. The macro
+// is defined in common.h
+
+BEGIN_ZIMT_SIMD_NAMESPACE(project)
+
+// we use a namespace alias 'zimt' for the corresponding nested
+// namespace in namespace zimt. since the nested namespace in
+// namespace zimt has a using declaration for 'plain' namespace
+// zimt, we can use a zimt:: qualifier for all symbols from
+// 'plain' zimt as well as all symbolds from zimt::ZIMT_SIMD_ISA.
+
+namespace zimt = zimt::ZIMT_SIMD_ISA ;
+
+static ZIMT_ATTR int _payload()
 {
+#ifdef USE_HWY
+  std::cout << "paylod: target = " << hwy::TargetName ( HWY_TARGET )
+            << std::endl ;
+#endif
+
   zimt::bill_t bill ;
+  static const std::size_t VSZ = 16 ;
 
   // let's start with a simple 1D linspace.
 
   {
-    typedef zimt::xel_t < float , 1 > delta_t ;
+    typedef  zimt::xel_t < float , 1 > delta_t ;
     delta_t start { .5 } ;
     delta_t step { .1 } ;
-    zimt::linspace_t < float , 1 , 1 , 4 > l ( start , step , bill ) ;
-    typedef zimt::pass_through < float , 1 , 4 > act_t ;
+    zimt::linspace_t < float , 1 , 1 , VSZ > l ( start , step , bill ) ;
+    typedef  zimt::echo < float , 1 , VSZ > act_t ;
     zimt::array_t < 1 , delta_t > a ( 7 ) ;
-    zimt::storer < float , 1 , 1 , 4 > p ( a , bill ) ;
+    zimt::storer < float , 1 , 1 , VSZ > p ( a , bill ) ;
 
     zimt::process ( a.shape , l , act_t() ,  p , bill ) ;
 
@@ -70,13 +120,13 @@ int main ( int argc , char * argv[] )
   // now we'll go 2D
 
   {
-    typedef zimt::xel_t < float , 2 > delta_t ;
+    typedef  zimt::xel_t < float , 2 > delta_t ;
     delta_t start { .5 , 0.7 } ;
     delta_t step { .1 , .2 } ;
-    zimt::linspace_t < float , 2 , 2 , 4 > l ( start , step , bill ) ;
-    typedef zimt::pass_through < float , 2 , 4 > act_t ;
+    zimt::linspace_t < float , 2 , 2 , VSZ > l ( start , step , bill ) ;
+    typedef  zimt::pass_through < float , 2 , VSZ > act_t ;
     zimt::array_t < 2 , delta_t > a ( { 7 , 5 } ) ;
-    zimt::storer < float , 2 , 2 , 4 > p ( a , bill ) ;
+    zimt::storer < float , 2 , 2 , VSZ > p ( a , bill ) ;
 
     zimt::process ( a.shape , l , act_t() ,  p , bill ) ;
 
@@ -94,13 +144,13 @@ int main ( int argc , char * argv[] )
   // just to show off, 3D
 
   {
-    typedef zimt::xel_t < float , 3 > delta_t ;
+   typedef  zimt::xel_t < float , 3 > delta_t ;
     delta_t start { .5 , 0.7 , -.9 } ;
     delta_t step { .1 , .2 , -.4 } ;
-    zimt::linspace_t < float , 3 , 3 , 4 > l ( start , step , bill ) ;
-    typedef zimt::pass_through < float , 3 , 4 > act_t ;
+    zimt::linspace_t < float , 3 , 3 , VSZ > l ( start , step , bill ) ;
+    typedef  zimt::pass_through < float , 3 , VSZ > act_t ;
     zimt::array_t < 3 , delta_t > a ( { 2 , 3 , 4 } ) ;
-    zimt::storer < float , 3 , 3 , 4 > p ( a , bill ) ;
+    zimt::storer < float , 3 , 3 , VSZ > p ( a , bill ) ;
 
     std::cout << "********** 3D:" << std::endl << std::endl ;
 
@@ -128,6 +178,37 @@ int main ( int argc , char * argv[] )
       std::cout << std::endl ;
     }
   }
-
-
+  return 0 ;
 }
+
+END_ZIMT_SIMD_NAMESPACE
+
+#if HWY_ONCE
+
+namespace project {
+
+#ifdef MULTI_SIMD_ISA
+  
+HWY_EXPORT(_payload);
+
+// Callpayload is defined in namespace project, but it might be in
+// another namespace as well.
+
+int payload ( int argc , char * argv[] )
+{
+  return HWY_DYNAMIC_DISPATCH(_payload)() ;
+}
+
+#else
+
+int payload ( int argc , char * argv[] )
+{
+  return zsimd::_payload() ;
+}
+
+#endif
+
+}  // namespace project
+
+#endif  // HWY_ONCE
+
