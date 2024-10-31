@@ -1,14 +1,14 @@
 # The Multi-SIMD-ISA Dilemma
 
-For many years - even dacades - CPUs have been supplied with SIMD units. What started out as the MMX instruction set in what now feels like the Dark Ages has involved into highly sophisticated and capable SIMD units like AVX2, which are now available on most i86 CPUs still in use. But the 'better' SIMD ISAs - specifically AVX and better on i86 - are rarely fully exploited, as can be seen by scanning machine code for assembly instructions which are typical for these more advanced SIMD ISAs. This observation is puzzling at first - if the more evolved SIMD units are better than their predecessors, one would expect that they are widely adopted! The answer is simple: inertia, ignorance and tricky access.
+For many years - even decades - CPUs have been supplied with SIMD units. What started out as the MMX instruction set in what now feels like the Dark Ages has involved into highly sophisticated and capable SIMD units like AVX2, which are now available on most x86 CPUs still in use. But the 'better' SIMD ISAs - specifically AVX and better on x86 - are rarely fully exploited, as can be seen by scanning machine code for assembly instructions which are typical for these more advanced SIMD ISAs. This observation is puzzling at first - if the more evolved SIMD units are better than their predecessors, one would expect that they are widely adopted! The answer is simple: inertia, ignorance and tricky access.
 
 ## ... but it works!
 
-Let's say you have a program which is computationally expensive - something like an image processor. With every new CPU, you will notice performance gains, and you suspect that these gains are due to the new CPU's better architecture. This is, in part, true - but if your software is still the same, chances are that it will only exploit the CPU's features which were available at the program's inception, or use features which represent some 'lowest common denominator' shared by all CPUs not deemed totally obsolete. So what you do is in fact 'strangle' the beautiful new CPU and force it to execute machine code from a few generations back, leaving it's shiny new advanced SIMD units unused. The code will work, and due to overall improvements in CPU speed and architecture it will run faster, but you're not reaping all the benefits you might - if you could exploit the new SIMD ISA. The program is still faster than on the previous box: 'it works'. You get a bit and are content, but this is much less than it has to offer.
+Let's say you have a program which is computationally expensive - something like an image processor. With every new CPU, you will notice performance gains, and you suspect that these gains are due to the new CPU's better architecture. This is, in part, true - but if your software is still the same, chances are that it will only exploit the CPU's features which were available at the program's inception, or use features which represent some 'lowest common denominator' shared by all CPUs not deemed totally obsolete. So what you do is in fact 'strangle' the beautiful new CPU and force it to execute machine code from a few generations back, leaving it's shiny new advanced SIMD units unused. The code will work, and due to overall improvements in CPU speed and architecture it will run faster, but you're not reaping all the benefits you might - if you could exploit the new SIMD ISA. The program is still faster than on the previous box: 'it works'. You get small improvements and are content, but this is much less than it has to offer.
 
 ## Let's Try the New ISA
 
-To use a new SIMD ISA, you have to *tell your compiler* - By default, the compiler will pick the lowest-common-denominator SIMD ISA deemed the acceptable minimum, which only fails to run on *very* old CPUs. On i86, this is usually some level of SSE. If you want anything beyond that, you need specific compiler flags, like -mavx2 on gnu and clang compilers. The resulting binary may now contain instructions sepcific to the chosen SIMD ISA. If your machine actually has the specific SIMD unit, the code will run and should be faster - provided you have optimization on which allows *autovectorization* (usually -O2 does the trick) and there are inner loops which can be autovectorized. But what if the CPU doesn't support the new SIMD ISA? Then your program will terminate with an *Illegal Instruction* error. Obviously, you can't ship code like this without safeguards, so let's think of ways how to deal with this issue.
+To use a new SIMD ISA, you have to *tell your compiler* - By default, the compiler will pick the lowest-common-denominator SIMD ISA deemed the acceptable minimum, which only fails to run on *very* old CPUs. On x86, this is usually some level of SSE. If you want anything beyond that, you need specific compiler flags, like -mavx2 on gnu and clang compilers. The resulting binary may now contain instructions specific to the chosen SIMD ISA. If your machine actually has the specific SIMD unit, the code will run and should be faster - provided you have optimization on which allows *autovectorization* (usually -O2 does the trick) and there are inner loops which can be autovectorized. But what if the CPU doesn't support the new SIMD ISA? Then your program will terminate with an *Illegal Instruction* error. Obviously, you can't ship code like this without safeguards, so let's think of ways how to deal with this issue.
 
 ## Dealing with several SIMD ISAs
 
@@ -16,13 +16,13 @@ The first - and simplest - approach is to compile several 'incarnations' of your
 
 So instead you might look for a way to create a 'monolithical' binary which contains all the variants and dispatches internally. It turns out that this is suprisingly difficult. I devised a scheme to achieve this, compiling ISA-specific code into ISA-specific TUs and dispached via the VFT of a pure virtual base class, overriding the virtual member functions in the ISA-specific implementations in each ISA-specific TU. This works and is a reasonably general approach, but it's also cumbersome and requires a fair amount of compiler and build system artistry.
 
-What I really wanted was a method to achieve the dispatch witout massive intrusion into my coding, and without having to 'manually' decide which SIMD ISAs to address and how to 'tell the compiler' about it. As it turns out, there is a ready-made solution which does just that - it's part of the highway library!
+What I really wanted was a method to achieve the dispatch without massive intrusion into my coding, and without having to 'manually' decide which SIMD ISAs to address and how to 'tell the compiler' about it. As it turns out, there is a ready-made solution which does just that - it's part of the highway library!
 
 ## How Does highway Do It?
 
 highway's internal dispatching code is much more sophisticated than one might see at a brief glance. There are several components which work hand in hand, and each of them saves a lot of work. This puts it beyond most SIMD library approaches, which simply offer to create a specific bit of binary for a given target ISA.´
 
-The first step is CPU detection. While the CPU family (like i86, ARM, RISCV) is detected and fixed at compile time, highway can figure out *at runtime* which specific SIMD ISA is available! This is the foundation of successful dispatch, and highway does it reliably.
+The first step is CPU detection. While the CPU family (like x86, ARM, RISC-V) is detected and fixed at compile time, highway can figure out *at runtime* which specific SIMD ISA is available! This is the foundation of successful dispatch, and highway does it reliably.
 
 The second step is the capability to make the compiler emit machine code for any given ISA. While the previously described approach works 'from the outside' by using specific compiler flags, this can also be achieved 'from the inside' by using - typically compiler-specific - code which is made up of instructions outside the normal C++ standard and passed as, e.g., pragmas. This obviously requires first detecting which compiler is currently being used and then intimate knowledge of what the given compiler 'understands'. highway does both.
 
@@ -34,11 +34,11 @@ I've already hinted at the way how highway provides access to the ISA-specific c
 
 If we want to have several variants of a body code, we can enclose these variants each into a separate scope. Then we can use the same set symbols in each of those scopes, and we can introduce a selector to address the symbol set in a specific scope. We use indirection. One way of setting up a scope is a namespace: it's simply a scope with a name. Another way is using classes. Class members share the same scope, and they are distinct from members with the same name in a different scope.
 
-highway uses namespaces. To be more specific, it uses nested namespaces: The specific versions 'live' in namespaces 'one level down'. ISA-specific code 'lives' in hwy::SSE2, hwy::AVX2 etc.
+highway uses namespaces. To be more specific, it uses nested namespaces: The specific versions 'live' in namespaces 'one level down'. ISA-specific code 'lives' in hwy::N_SSE2, hwy::N_AVX2 etc.
 
-You can interface with these specific nested namespaces if you must - by qualifying access with the nested namespace's name - but what's much more attractive is to *write code which does not use these nested namespace explicitly*. highway's foreach_target mechanism - which we'll come to shortly - provides 'client code' with a macro: HWY_NAMEPSACE. The value of this macro is set to one of the SIMD architectures available *on the CPU running the code*, e.g. AVX2. Instead of qualifying your code to access symbols in e.g. hwy::AVX2, you code access to hwy::HWY_NAMESPACE, and your code becomes *generalized* to call into any given variant, while you can *delegate* which one is picked to a *dispatch* mechanism, which highway also provides.
+You can interface with these specific nested namespaces if you must - by qualifying access with the nested namespace's name - but what's much more attractive is to *write code which does not use these nested namespace explicitly*. highway's foreach_target mechanism - which we'll come to shortly - provides 'client code' with a macro: HWY_NAMESPACE. The value of this macro is set to one of the SIMD architectures available *on the CPU running the code*, e.g. AVX2. Instead of qualifying your code to access symbols in e.g. hwy::AVX2, you code access to hwy::HWY_NAMESPACE, and your code becomes *generalized* to call into any given variant, while you can *delegate* which one is picked to a *dispatch* mechanism, which highway also provides.
 
-Dispatch is, again, coded with macros: HWY_EXPORT and HWY_DYNAMIC_DISPATCH. You write functions which are 'fed' to highway's foreach_target mechanism, HWY_EXPORT 'picks up' all variants highway deems suitable for the client CPU architecture (i86, ARM, RISC...) and holds them under a common handle, and HWY_DYNAMIC_DISPATCH picks the variant which highway deems most suitable at the time when the dispatch is invoked at run-time. All it takes to use the mechanism is placing the 'workhorse' code into a bit of 'scaffolding' code which submits it to highways dispatching mechanism.
+Dispatch is, again, coded with macros: HWY_EXPORT and HWY_DYNAMIC_DISPATCH. You write functions which are 'fed' to highway's foreach_target mechanism, HWY_EXPORT 'picks up' all variants highway deems suitable for the client CPU architecture (x86, ARM, RISC...) and holds them under a common handle, and HWY_DYNAMIC_DISPATCH picks the variant which highway deems most suitable at the time when the dispatch is invoked at run-time. All it takes to use the mechanism is placing the 'workhorse' code into a bit of 'scaffolding' code which submits it to highways dispatching mechanism.
 
 ## Getting our hands dirty
 
@@ -56,7 +56,7 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
 
     int main ( int argc , char * argv[] )
     {
-      // lat's call the payload function
+      // let's call the payload function
       
       payload() ;
     }
@@ -70,9 +70,9 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
     #include <iostream>
 
     // we start out with a bit of 'scaffolding' code to use highway's 
-    // oreach_target mechanism
+    // foreach_target mechanism
 
-    // 'clear' HWY_TARGET_INCLUDE if is it's set already
+    // 'clear' HWY_TARGET_INCLUDE if if it's set already
 
     #undef HWY_TARGET_INCLUDE
 
@@ -93,7 +93,7 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
     // that's it for scaffolding. The foreach_target mechanism works by
     // repeatedly #including HWY_TARGET_INCLUDE, each time using different
     // compiler settings, specific to each supported SIMD ISA. It sets the
-    // macro 'HWY_NAMEPSACE', so we now switch to the SIMD-ISA-specific
+    // macro 'HWY_NAMESPACE', so we now switch to the SIMD-ISA-specific
     // code by continuing in it's own specific nested namespace:
 
     namespace project
@@ -156,7 +156,7 @@ By convention, the compiler will emit a binary named a.out, let's call it
 
 On my system I get this output:
 
-    paylod: target = AVX2
+    payload: target = AVX2
 
 If you were to run a.out on another system, you might get different output, depending on the CPU's best supported SIMD ISA.
 
@@ -213,9 +213,9 @@ What we have, so far, is a way to provide our program with free functions in the
     #include "project.h"
 
     // we start out with a bit of 'scaffolding' code to use highway's 
-    // oreach_target mechanism
+    // foreach_target mechanism
 
-    // 'clear' HWY_TARGET_INCLUDE is it's set already
+    // 'clear' HWY_TARGET_INCLUDE if it's set already
 
     #undef HWY_TARGET_INCLUDE
 
@@ -236,7 +236,7 @@ What we have, so far, is a way to provide our program with free functions in the
     // that's it for scaffolding. The foreach_target mechanism works by
     // repeatedly #including HWY_TARGET_INCLUDE, each time using different
     // compiler settings, specific to each supported SIMD ISA. It sets the
-    // macro 'HWY_NAMEPSACE', so we now switch to the SIMD-ISA-specific
+    // macro 'HWY_NAMESPACE', so we now switch to the SIMD-ISA-specific
     // code by continuing in it's own specific nested namespace:
 
     namespace project
@@ -375,5 +375,5 @@ We now have all the scaffolding we need even for a larger project. If we want to
 
 ## Widening the scope
 
-Can we do more useful stuff with the framework we've set up? One thing which springs to mind is to provide more derived 'dispatch' classes from other sources and code to 'slot them in' as alternatives to the ones we have available so far. This is left to the user: it's a simple matter of writing a new version of get_dispatch and implementing the derived dispatch classes. One good use case is setting up the derived dispatch classes in separate TUs which are compiled with different compiler flags or use different back-end libraries. The main program can then dispatch to a whole range of code variants - among them, if desired, the set of variants we've introduced here by exploiting highway's foreach_target mechanism. The dispatch mechanism we have now is a generalization - we can use it quite independently of highway, but then we have to do a lot of work ourselves, rather than exploiting highway's powerful features which make our lives easy. Still, it's comforting to know that one might be able to 'break free' from highway if that should be necessary - libraries come and go or change license, so an exit strategy is a good idea. As you see from the code we've evolved here, using highway makes the entire affair straightforward and concise - and if you want to see the amount of work needed to provide CPU detection and SIMD-ISA-specific code in a monolithic binary you can have a look at lux, where - as of this writing - the job is handled for several i86 SIMD ISAs by using separate TUs and a lot of cmake scaffolding.
+Can we do more useful stuff with the framework we've set up? One thing which springs to mind is to provide more derived 'dispatch' classes from other sources and code to 'slot them in' as alternatives to the ones we have available so far. This is left to the user: it's a simple matter of writing a new version of get_dispatch and implementing the derived dispatch classes. One good use case is setting up the derived dispatch classes in separate TUs which are compiled with different compiler flags or use different back-end libraries. The main program can then dispatch to a whole range of code variants - among them, if desired, the set of variants we've introduced here by exploiting highway's foreach_target mechanism. The dispatch mechanism we have now is a generalization - we can use it quite independently of highway, but then we have to do a lot of work ourselves, rather than exploiting highway's powerful features which make our lives easy. Still, it's comforting to know that one might be able to 'break free' from highway if that should be necessary - libraries come and go or change license, so an exit strategy is a good idea. As you see from the code we've evolved here, using highway makes the entire affair straightforward and concise - and if you want to see the amount of work needed to provide CPU detection and SIMD-ISA-specific code in a monolithic binary you can have a look at lux, where - as of this writing - the job is handled for several x86 SIMD ISAs by using separate TUs and a lot of cmake scaffolding.
 
