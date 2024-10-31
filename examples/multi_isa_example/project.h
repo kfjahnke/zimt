@@ -11,16 +11,12 @@ namespace project
 
   struct dispatch_base
   {
-    // we define the macro 'SIMD_REGISTER' to generate pure virtual
-    // meber function declarations. The invocations of this macro are
-    // taken from 'interface.h'.
+    // we declare 'payload' as a *pure virtual member function'. That looks
+    // scary, but it makes it impossible to invoke the 'payload' member
+    // of struct dispatch itself - only derived classes with an actual
+    // implementation can be used to invoke their specific implementation.
 
-    #define SIMD_REGISTER(RET,NAME,...) \
-      virtual RET NAME ( __VA_ARGS__ ) const = 0 ;
-
-    #include "interface.h"
-
-    #undef SIMD_REGISTER
+    virtual void payload() const = 0 ;
   } ;
 
   // We have one free function: get_dispatch will yield a dispatch base

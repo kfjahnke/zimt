@@ -51,40 +51,19 @@ namespace project
     {
       // here, we provide an override of the pure virtual member
       // function in the base class with a concrete implementation.
-      // We don't provide the implementation now, but only it's
-      // declaration - the implementation will be elsewhere.
-      // Let's start out with a definition of SIMD_REGISTER:
 
-      #define SIMD_REGISTER(RET,NAME,...) RET NAME ( __VA_ARGS__ ) const ;
-
-      // now we use the macro invocations in 'interface.h' to generate
-      // the declarations.
-
-      #include "interface.h"
-
-      #undef SIMD_REGISTER
+      void payload() const
+      {
+        // let's do something ISA-specific
+      
+        std::cout << "payload: target = "
+                  << hwy::TargetName ( HWY_TARGET )
+                  << std::endl ;
+      }
     } ;
 
-    // we now provide a separate definition of dispatch::payload.
-    // We might do this elsewhere - for this example, we provide it
-    // here, where we're already all set up in the nested name space.
-    // Since there is already a declaration of the member function,
-    // we have to provide a definition which matches the declaration
-    // precisely, so the compiler will prevent us from typos etc.
-    // Note how we added 'const' sufficess - they tell the compiler
-    // that the call won't affect the object through which it's called.
-
-    void dispatch::payload() const
-    {
-      // let's do something ISA-specific
-    
-      std::cout << "payload: target = "
-                << hwy::TargetName ( HWY_TARGET )
-                << std::endl ;
-    }
-
     // We still use highway's dispatch mechanism - but now we don't
-    // HWY_EXPORT thr payload function any more - we'll access it via
+    // HWY_EXPORT the payload function any more - we'll access it via
     // the dispatch class. The only function we submit to HWY_EXPORT
     // for now is the _get_disptach function. This function returns
     // a pointer to an object of class project::dispatch_base - the
