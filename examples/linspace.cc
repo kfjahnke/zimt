@@ -71,6 +71,8 @@ struct dispatch_base
 
 #endif
 
+#ifdef MULTI_SIMD_ISA
+
 // if we're using MULTI_SIMD_ISA, we have to define HWY_TARGET_INCLUDE
 // to tell the foreach_target mechanism which file should be repeatedly
 // re-included and re-copmpiled with SIMD-ISA-specific flags
@@ -80,6 +82,8 @@ struct dispatch_base
 
 #include <hwy/foreach_target.h>  // must come before highway.h
 #include <hwy/highway.h>
+
+#endif
 
 // now we #include the zimt headers we need:
 
