@@ -105,8 +105,12 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
         // keep the code general.
         // Let's, finally, write the 'workhorse code' - we'll prefix it's
         // name with an underscore - as befits a symbol with internal use.
+        // Code which is meant to use highway's SIMD capabilities has to
+        // be prefixed with HWY_ATTR or have the code between
+        // `HWY_BEFORE_NAMESPACE()` and `HWY_AFTER_NAMESPACE()`. Here
+        // we add HWY_ATTR.
         
-        void _payload()
+        HWY_ATTR void _payload()
         {
           // let's do something ISA-specific, using more utility macros.
           // Here we obtain the specific SIMD ISA's name in printable form
@@ -258,8 +262,9 @@ What we have, so far, is a way to provide our program with free functions in the
           // function in the base class with a concrete implementation.
           // We use the same 'payload' body, but now it's a member
           // function of class dispatch and not a free function as before.
+          // Again we prefix the function declaration with HWY_ATTR.
 
-          virtual void payload()
+          HWY_ATTR virtual void payload()
           {
             // let's do something ISA-specific
           

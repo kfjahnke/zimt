@@ -59,17 +59,24 @@
 
 */
 
-#ifndef ZIMT_RECURSIVE_H
-#define ZIMT_RECURSIVE_H
+// #ifndef ZIMT_RECURSIVE_H
+// #define ZIMT_RECURSIVE_H
 
 #include <limits>
 #include "common.h"
 #include "filter.h"
 
-namespace zimt {
+#if defined(ZIMT_CONVOLVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_CONVOLVE_H
+    #undef ZIMT_CONVOLVE_H
+  #else
+    #define ZIMT_CONVOLVE_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 using namespace std ;
-using namespace zimt ;
+// using namespace zimt ;
 
 /// overall_gain is a helper routine:
 /// Simply executing the filtering code by itself will attenuate the signal. Here
@@ -1085,6 +1092,6 @@ void forward_backward_recursive_filter (
   }
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#endif // ZIMT_RECURSIVE_H
+#endif // sentinel

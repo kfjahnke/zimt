@@ -76,12 +76,21 @@
 
 */
 
-#ifndef ZIMT_CONVOLVE_H
-#define ZIMT_CONVOLVE_H
+// #ifndef ZIMT_CONVOLVE_H
+// #define ZIMT_CONVOLVE_H
 
 #include "common.h"
 #include "filter.h"
 #include "extrapolate.h"
+
+#if defined(ZIMT_CONVOLVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_CONVOLVE_H
+    #undef ZIMT_CONVOLVE_H
+  #else
+    #define ZIMT_CONVOLVE_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 namespace zimt {
 
@@ -588,6 +597,6 @@ void convolve (
   }
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#endif // ZIMT_CONVOLVE_H
+#endif // sentinel

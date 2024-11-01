@@ -83,8 +83,17 @@
 #include <climits>
 #include <zimt/zimt.h>
 
-#ifndef ZIMT_FILTER_H
-#define ZIMT_FILTER_H
+// #ifndef ZIMT_FILTER_H
+// #define ZIMT_FILTER_H
+
+#if defined(ZIMT_FILTER_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_FILTER_H
+    #undef ZIMT_FILTER_H
+  #else
+    #define ZIMT_FILTER_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 namespace zimt
 {
@@ -1638,6 +1647,6 @@ void amplify ( const zimt::view_t
   zimt::multithread ( payload , njobs ) ;
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#endif // ZIMT_FILTER_H
+#endif // sentinel

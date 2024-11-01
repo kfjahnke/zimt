@@ -474,14 +474,6 @@ protected:
   }
 } ;
 
-struct dispatch
-{
-#define ZIMT_REGISTER(RET,NAME,...) \
-  virtual RET NAME ( __VA_ARGS__ ) const = 0 ;
-#include "interface.h"
-#undef ZIMT_REGISTER
-} ;
-
 } ; // end of namespace zimt
 
 // to use highway's foreach_target mechanism, a nested namespace

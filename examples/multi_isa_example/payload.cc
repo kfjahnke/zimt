@@ -51,8 +51,10 @@ namespace project
     {
       // here, we provide an override of the pure virtual member
       // function in the base class with a concrete implementation.
+      // Note the HWY_ATTR prefix - highway needs this to make the
+      // compiler compile the code correctly with SIMD capability.
 
-      void payload() const
+      HWY_ATTR void payload() const
       {
         // let's do something ISA-specific
       

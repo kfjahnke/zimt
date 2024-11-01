@@ -139,15 +139,22 @@
 
 */
 
-#ifndef VSPLINE_BSPLINE_H
-#define VSPLINE_BSPLINE_H
+// #ifndef VSPLINE_BSPLINE_H
+// #define VSPLINE_BSPLINE_H
 
 #include <limits>
 
 #include "prefilter.h"
 #include "brace.h"
 
-namespace zimt {
+#if defined(VSPLINE_BSPLINE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef VSPLINE_BSPLINE_H
+    #undef VSPLINE_BSPLINE_H
+  #else
+    #define VSPLINE_BSPLINE_H
+  #endif
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// struct bspline is the object in zimt holding b-spline coefficients.
 /// In a way, the b-spline 'is' it's coefficients, since it is totally
@@ -1090,6 +1097,6 @@ template < class spline_type >
 using bspl_value_type
 = typename spline_type::value_type ;
 
-} ; // end of namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#endif // VSPLINE_BSPLINE_H
+#endif // sentinel

@@ -54,7 +54,22 @@
 #undef MULTI_SIMD_ISA
 #endif
 
-#ifdef MULTI_SIMD_ISA
+// we define a dispatch base class. All tye 'payload' code is called
+// through virtual member functions of this class. In this example,
+// we only have a single payload function. We have to enclose this
+// base class definition in an include guard, because it must not
+// be compiled repeatedly, which happens when highway's foreach_target
+// mechansim is used.
+
+#ifndef DISPATCH_BASE
+#define DISPATCH_BASE
+
+struct dispatch_base
+{
+  virtual int payload ( int argc , char * argv[] ) const = 0 ;
+} ;
+
+#endif
 
 // if we're using MULTI_SIMD_ISA, we have to define HWY_TARGET_INCLUDE
 // to tell the foreach_target mechanism which file should be repeatedly
@@ -66,34 +81,9 @@
 #include <hwy/foreach_target.h>  // must come before highway.h
 #include <hwy/highway.h>
 
-#endif
-
 // now we #include the zimt headers we need:
 
 #include "../zimt/wielding.h"
-
-// To test the dispatch mechanism, we provide an implementation of
-// the SIMD-ISA-specific function 'dummy'. The implementations live
-// in the SIMD-ISA-specific nested namespaces (zimt::ZIMT_SIMD_ISA)
-// - here we return a value which indicates the SIMD ISA which is
-// used when the program executes. With MULTI_SIMD_ISA #defined,
-// we return the current highway target architecture, without it,
-// we return a negative value derived from the zimt backend, so
-// the value will depend on whether the code is compiled with
-// -DUSE_VC, -DUSE_STDSIMD etc., in which case there is no
-// dispatch to several SIMD ISAs but just a single SIMD ISA fixed
-// at compile time.
-
-int zimt::ZIMT_SIMD_ISA::_dispatch::dummy ( float z ) const
-{
-  std::cout << "hello dummy" << std::endl ;
-#ifdef MULTI_SIMD_ISA
-  return HWY_TARGET ;
-#else
-  auto be = zimt::ZIMT_SIMD_ISA::simdized_type<float,16>::backend ;
-  return -1 * int ( be ) ;
-#endif
-}
 
 // this macro puts us into a nested namespace inside namespace 'project'.
 // For single-SIMD-ISA builds, this is conventionally project::zsimd,
@@ -101,22 +91,6 @@ int zimt::ZIMT_SIMD_ISA::_dispatch::dummy ( float z ) const
 // is defined in common.h
 
 BEGIN_ZIMT_SIMD_NAMESPACE(project)
-
-// Before we start out with the payload code, we define the SIMD-ISA-
-// specific _get_dispatch variant. This will call the nested SIMD
-// namespace's get_dispatch, returning a pointer to zimt::dispatch,
-// the base class of all dispatchers. With this pointer, we can
-// invoke SIMD_ISA_specific member functions of class dispatcher:
-// in the base class, they are pure virtual, the SIMD-ISA-specific
-// derived class has concrete definitions which are ISA-specific.
-// So if we want to invoke the ISA-specific code, we go via the
-// pointer we receive here - see driver.cc for an example of using
-// this dispatch.
-
-static ZIMT_ATTR const zimt::dispatch* const _get_dispatch()
-{
-  return zimt::ZIMT_SIMD_ISA::get_dispatch() ;
-}
 
 // we use a namespace alias 'zimt' for the corresponding nested
 // namespace in namespace zimt. since the nested namespace in
@@ -126,12 +100,21 @@ static ZIMT_ATTR const zimt::dispatch* const _get_dispatch()
 
 namespace zimt = zimt::ZIMT_SIMD_ISA ;
 
-static ZIMT_ATTR int _payload()
+// here comes the payload function. We code '_payload' which is
+// local to the (potentially ISA-specific) nested namespace - the
+// dispatch to this namespace is handled further down by calling
+// this local function from a member function of the dispatch
+// object.
+
+ZIMT_ATTR int _payload ( int argc , char * argv[] )
 {
 #ifdef USE_HWY
   std::cout << "paylod: target = " << hwy::TargetName ( HWY_TARGET )
             << std::endl ;
 #endif
+
+  if ( argc > 1 )
+    std::cout << "first arg: " << argv[1] << std::endl ;
 
   zimt::bill_t bill ;
   static const std::size_t VSZ = 16 ;
@@ -220,6 +203,30 @@ static ZIMT_ATTR int _payload()
   return 0 ;
 }
 
+// to dispatch to the local _payload function, we call it from a
+// member function 'payload' in class dispatch. Another possibility
+// would have been to inline the code here, but I think it's
+// clearer this way.
+
+struct dispatch
+: public dispatch_base
+{
+  int payload ( int argc , char * argv[] ) const
+  {
+    return _payload ( argc , argv ) ;
+  }
+} ;
+
+// we also code a local function _get_dispatch which return a pointer
+// to 'dispatch_base', which points to an object of the derived class
+// 'dispatch'.
+
+const dispatch_base * const _get_dispatch()
+{
+  static dispatch d ;
+  return &d ;
+}
+
 END_ZIMT_SIMD_NAMESPACE
 
 #if ZIMT_ONCE
@@ -227,38 +234,55 @@ END_ZIMT_SIMD_NAMESPACE
 namespace project {
 
 #ifdef MULTI_SIMD_ISA
-  
-HWY_EXPORT(_payload);
+
+// we're using highway's foreach_target mechanism. To get access to the
+// SIMD-ISA-specific variant of _get_dispatch (in project::HWY_NAMESPACE)
+// we use the HWY_EXPORT macro:
+
 HWY_EXPORT(_get_dispatch);
 
-// payload is defined in namespace project, but it might be in
-// another namespace as well.
+// now we can code get_dispatch: it simply uses HWY_DYNAMIC_DISPATCH
+// to pick the SIMD-ISA-specific get_dispatch variant, which in turn
+// yields the desired dispatch_base pointer.
 
-int payload ( int argc , char * argv[] )
-{
-  return HWY_DYNAMIC_DISPATCH(_payload)() ;
-}
-
-const zimt::dispatch * const get_dispatch()
+const dispatch_base * const get_dispatch()
 {
   return HWY_DYNAMIC_DISPATCH(_get_dispatch)() ;
 }
 
 #else
 
-int payload ( int argc , char * argv[] )
-{
-  return zsimd::_payload() ;
-}
+// if we're not using highway's foreach_target mechanism, there is
+// only a single _get_dispatch variant in namespace project::zsimd.
+// So we call that one, to receive the desired dispatch_base pointer.
 
-const zimt::dispatch * const get_dispatch()
+const dispatch_base * const get_dispatch()
 {
   return zsimd::_get_dispatch() ;
 }
 
 #endif
 
+// we now have get_dispatch, which will yield a dispatch_base pointer.
+// Now we can code project::payload. We obtain the disptach_base pointer.
+// the object it points to has a virtual member 'payload', which we
+// invoke:
+
+int payload ( int argc , char * argv[] )
+{
+  auto dp = get_dispatch() ;
+  return dp->payload ( argc , argv ) ;
+}
+
 }  // namespace project
+
+// finally we code main, which in turn invokes project::payload.
+
+int main ( int argc , char * argv[] )
+{
+  int success = project::payload ( argc , argv ) ;
+  std::cout << "payload returned " << success << std::endl ;
+}
 
 #endif  // HWY_ONCE
 

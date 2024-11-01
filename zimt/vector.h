@@ -246,21 +246,21 @@ void assign_if ( T & target ,
     target = source ;
 }
 
-struct _dispatch
-: public dispatch
-{
-#define ZIMT_REGISTER(RET,NAME,...) RET NAME ( __VA_ARGS__ ) const ;
-#include "interface.h"
-#undef ZIMT_REGISTER
-} ;
-
-static const _dispatch local_dispatch ;
-
-const dispatch * const get_dispatch()
-{
-  std::cout << "inside vector.h, return " << & local_dispatch << std::endl ;
-  return & local_dispatch ;
-}
+// struct _dispatch
+// : public dispatch
+// {
+// #define ZIMT_REGISTER(RET,NAME,...) RET NAME ( __VA_ARGS__ ) const ;
+// #include "interface.h"
+// #undef ZIMT_REGISTER
+// } ;
+// 
+// static const _dispatch local_dispatch ;
+// 
+// const dispatch * const get_dispatch()
+// {
+//   std::cout << "inside vector.h, return " << & local_dispatch << std::endl ;
+//   return & local_dispatch ;
+// }
 
 END_ZIMT_SIMD_NAMESPACE
 

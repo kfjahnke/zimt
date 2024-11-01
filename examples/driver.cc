@@ -44,6 +44,8 @@
 // be compiled in different ways - be it with highway's foreach_target,
 // or with a single ISA-specific set of compiler flags.
 
+#define ZIMT_REGISTER_LIST "zimt_register_list_example.h"
+
 #include "../zimt/common.h"
 #include <iostream>
 
