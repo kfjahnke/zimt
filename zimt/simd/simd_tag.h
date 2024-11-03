@@ -52,6 +52,8 @@
 #ifndef SIMD_TAG_H
 #define SIMD_TAG_H
 
+#include <string>
+
 namespace zimt
 {
   // to mark all variations of SIMD data types, we'll derive them
@@ -71,14 +73,15 @@ namespace zimt
   // single SIMD ISA and I didn't mange to even patch is so as to
   // fit in with a multiple-reinclusion scheme.
 
-  enum backend_e { GOADING , VC , HWY , STDSIMD } ;
+  enum backend_e { GOADING , VC , HWY , STDSIMD , NBACKENDS } ;
 
   // For diagnostic output:
 
   const std::string backend_name[] { "GOADING" ,
                                      "Vc" ,
                                      "highway" ,
-                                     "std::simd" } ;
+                                     "std::simd" ,
+                                     "unknown" } ;
 
   // now we can code the tag:
 

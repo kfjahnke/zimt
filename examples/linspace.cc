@@ -54,6 +54,8 @@
 #undef MULTI_SIMD_ISA
 #endif
 
+#include "../zimt/simd/simd_tag.h"
+
 // we define a dispatch base class. All tye 'payload' code is called
 // through virtual member functions of this class. In this example,
 // we only have a single payload function. We have to enclose this
@@ -66,6 +68,19 @@
 
 struct dispatch_base
 {
+  // in dispatch_base and derived classes, we keep two flags.
+  // 'backend' holds a value indicating which of zimt's back-end
+  // libraries is used. 'hwy_isa' is only set when the highway
+  // backend is used and holds highway's HWY_TARGET value for
+  // the given nested namespace.
+
+  zimt::backend_e backend = zimt::NBACKENDS ;
+  unsigned long hwy_isa = 0 ;
+
+  // next we have pure virtual member function definitions for
+  // payload code. In this example, we only have one payload
+  // function:
+
   virtual int payload ( int argc , char * argv[] ) const = 0 ;
 } ;
 
@@ -94,6 +109,9 @@ struct dispatch_base
 // and for multi-SIMD-ISA builds it is project::HWY_NAMESPACE. The macro
 // is defined in common.h
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(project)
 
 // we use a namespace alias 'zimt' for the corresponding nested
@@ -110,7 +128,7 @@ namespace zimt = zimt::ZIMT_SIMD_ISA ;
 // this local function from a member function of the dispatch
 // object.
 
-ZIMT_ATTR int _payload ( int argc , char * argv[] )
+int _payload ( int argc , char * argv[] )
 {
 #ifdef USE_HWY
   std::cout << "paylod: target = " << hwy::TargetName ( HWY_TARGET )
@@ -215,15 +233,28 @@ ZIMT_ATTR int _payload ( int argc , char * argv[] )
 struct dispatch
 : public dispatch_base
 {
+  // We fit the derived dispatch class with a c'tor which fills in
+  // information about the nested SIMD ISA we're currently in.
+
+  dispatch()
+  {
+    backend = zimt::simdized_type<int,4>::backend ;
+    #if defined USE_HWY || defined MULTI_SIMD_ISA
+      hwy_isa = HWY_TARGET ;
+    #endif
+  }
+
   int payload ( int argc , char * argv[] ) const
   {
     return _payload ( argc , argv ) ;
   }
 } ;
 
-// we also code a local function _get_dispatch which return a pointer
+// we also code a local function _get_dispatch which returns a pointer
 // to 'dispatch_base', which points to an object of the derived class
-// 'dispatch'.
+// 'dispatch'. This is used with highway's HWY_DYNAMIC_DISPATCH and
+// returns the dispatch pointer for the SIMD ISA which highway deems
+// most appropriate for the CPU on which the code is currently running.
 
 const dispatch_base * const _get_dispatch()
 {
@@ -232,6 +263,9 @@ const dispatch_base * const _get_dispatch()
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #if ZIMT_ONCE
 
@@ -275,6 +309,13 @@ const dispatch_base * const get_dispatch()
 int payload ( int argc , char * argv[] )
 {
   auto dp = get_dispatch() ;
+  std::cout << "obtained dispatch pointer " << dp << std::endl ;
+  std::cout << "dispatching to back-end   "
+            << zimt::backend_name [ dp->backend ] << std::endl ;
+#if defined USE_HWY || defined MULTI_SIMD_ISA
+  std::cout << "dispatch hwy_isa is       "
+            << hwy::TargetName ( dp->hwy_isa ) << std::endl ;
+#endif
   return dp->payload ( argc , argv ) ;
 }
 

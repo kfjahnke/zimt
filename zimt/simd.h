@@ -114,13 +114,17 @@ BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 static const std::size_t ZIMT_VECTOR_NBYTES
 
+// TODO: with some payloads, 4 * HWY_MAX_BYTES seems better. It may have
+// to do with some instructions needing-set up and having several in sequence
+// hiding latency.
+
 #if defined USE_HWY
-  = 4 * HWY_MAX_BYTES ;
+  = 2 * HWY_MAX_BYTES ;
 #else
   #if defined USE_VC
     = (2*sizeof(Vc::Vector<float>)) ;
   #else
-    = 64 ;
+    = 32 ;
   #endif
 #endif
 

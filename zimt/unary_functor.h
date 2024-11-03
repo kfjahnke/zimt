@@ -144,6 +144,9 @@
 #include "common.h"
 #include "vector.h"
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// we derive all unary_functors from this empty class, to have
@@ -1421,6 +1424,9 @@ uf_adapt ( const W & inner )
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // ZIMT_UNARY_FUNCTOR_H
 

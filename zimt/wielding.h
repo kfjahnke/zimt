@@ -103,6 +103,9 @@
     #define ZIMT_WIELDING_H
   #endif
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 typedef std::size_t ic_type ;
@@ -464,5 +467,8 @@ void process ( const xel_t < std::size_t , D > & shape ,
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel

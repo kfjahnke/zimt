@@ -73,6 +73,9 @@
     #define ZIMT_CONVOLVE_H
   #endif
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 using namespace std ;
@@ -1093,5 +1096,8 @@ void forward_backward_recursive_filter (
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel

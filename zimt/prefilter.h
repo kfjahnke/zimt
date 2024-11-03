@@ -83,18 +83,29 @@
     [CIT2000] Interpolation Revisited by Philippe Thévenaz, Member,IEEE, Thierry Blu, Member, IEEE, and Michael Unser, Fellow, IEEE in IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. 19, NO. 7, JULY 2000,
 */
 
-#ifndef ZIMT_PREFILTER_H
-#define ZIMT_PREFILTER_H
+// #ifndef ZIMT_PREFILTER_H
+// #define ZIMT_PREFILTER_H
 
 #include <limits>
+
 #include "common.h"
 #include "poles.h"
 #include "recursive.h"
 
-namespace zimt {
+#if defined(ZIMT_PREFILTER_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_PREFILTER_H
+    #undef ZIMT_PREFILTER_H
+  #else
+    #define ZIMT_PREFILTER_H
+  #endif
+
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 using namespace std ;
-using namespace zimt ;
+// using namespace zimt ;
 
 /// 'prefilter' handles b-spline prefiltering for the whole range of
 /// acceptable input and output. It combines two bodies of code to
@@ -187,6 +198,9 @@ void prefilter ( const
     ( input , output , vspecs ) ;
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
-#endif // ZIMT_PREFILTER_H
+#endif // sentinel

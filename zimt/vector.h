@@ -50,6 +50,9 @@
 
 #include "simd.h"
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// with the definition of 'simd_traits', we can proceed to implement
@@ -246,22 +249,9 @@ void assign_if ( T & target ,
     target = source ;
 }
 
-// struct _dispatch
-// : public dispatch
-// {
-// #define ZIMT_REGISTER(RET,NAME,...) RET NAME ( __VA_ARGS__ ) const ;
-// #include "interface.h"
-// #undef ZIMT_REGISTER
-// } ;
-// 
-// static const _dispatch local_dispatch ;
-// 
-// const dispatch * const get_dispatch()
-// {
-//   std::cout << "inside vector.h, return " << & local_dispatch << std::endl ;
-//   return & local_dispatch ;
-// }
-
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // for sentinel

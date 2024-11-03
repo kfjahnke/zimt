@@ -95,6 +95,7 @@
 // The bulk of the implementation of zimt's two 'transform' functions
 // is now in wielding.h:
 
+#include "common.h"
 #include "wielding.h"
 
 #if defined(ZIMT_TRANSFORM_H) == defined(HWY_TARGET_TOGGLE)
@@ -104,7 +105,10 @@
     #define ZIMT_TRANSFORM_H
   #endif
 
-BEGIN_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 template < typename view_type ,
            typename = std::enable_if
@@ -413,5 +417,8 @@ void apply ( const unary_functor_type & ev ,
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel

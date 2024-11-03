@@ -58,7 +58,7 @@
 #include <iostream>
 #include <initializer_list>
 #include "common.h"
-#include "vector.h"
+#include "simd/simd_tag.h"
 
 #define XEL xel_t
 

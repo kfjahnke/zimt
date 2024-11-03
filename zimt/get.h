@@ -61,6 +61,9 @@
     #define ZIMT_GET_H
   #endif
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 // Here we have a collection of get_t objects to cover a set of
@@ -1080,5 +1083,8 @@ grok_get_t < T , N , D , L > grok_get ( G grokkee )
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel

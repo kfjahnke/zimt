@@ -61,6 +61,9 @@
     #define ZIMT_PUT_H
   #endif
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 // class storer disposes of the results of calling the 'act'
@@ -435,5 +438,8 @@ grok_put_t < T , N , D , L > grok_put
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel

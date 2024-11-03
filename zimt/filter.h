@@ -81,7 +81,7 @@
 
 #include <vector>
 #include <climits>
-#include <zimt/zimt.h>
+#include "zimt.h"
 
 // #ifndef ZIMT_FILTER_H
 // #define ZIMT_FILTER_H
@@ -93,10 +93,10 @@
     #define ZIMT_FILTER_H
   #endif
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
-
-namespace zimt
-{
 
 // // enums for boundary conditions and their respective names as strings
 // 
@@ -1648,5 +1648,8 @@ void amplify ( const zimt::view_t
 }
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel

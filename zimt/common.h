@@ -499,14 +499,15 @@ protected:
 #ifdef MULTI_SIMD_ISA
 
   #define ZIMT_SIMD_ISA HWY_NAMESPACE
-  #define ZIMT_ATTR HWY_ATTR
   #define ZIMT_ONCE HWY_ONCE
 
 #else
 
   #define ZIMT_SIMD_ISA zsimd
-  #define ZIMT_ATTR
   #define ZIMT_ONCE true
+
+  #define HWY_BEFORE_NAMESPACE()
+  #define HWY_AFTER_NAMESPACE()
 
 #endif
 

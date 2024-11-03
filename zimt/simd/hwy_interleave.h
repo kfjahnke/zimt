@@ -57,6 +57,9 @@
 // 
 // namespace HWY_NAMESPACE {  // required: unique per target
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 namespace hn = hwy::HWY_NAMESPACE ;

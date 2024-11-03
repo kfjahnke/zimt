@@ -154,6 +154,9 @@
     #define VSPLINE_BSPLINE_H
   #endif
 
+#ifdef MULTI_SIMD_ISA
+HWY_BEFORE_NAMESPACE() ;
+#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// struct bspline is the object in zimt holding b-spline coefficients.
@@ -1098,5 +1101,8 @@ using bspl_value_type
 = typename spline_type::value_type ;
 
 END_ZIMT_SIMD_NAMESPACE
+#ifdef MULTI_SIMD_ISA
+HWY_AFTER_NAMESPACE() ;
+#endif
 
 #endif // sentinel
