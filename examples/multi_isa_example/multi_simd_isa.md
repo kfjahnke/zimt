@@ -4,17 +4,17 @@ For many years - even decades - CPUs have been supplied with SIMD units. What st
 
 ## ... but it works!
 
-Let's say you have a program which is computationally expensive - something like an image processor. With every new CPU, you will notice performance gains, and you suspect that these gains are due to the new CPU's better architecture. This is, in part, true - but if your software is still the same, chances are that it will only exploit the CPU's features which were available at the program's inception, or use features which represent some 'lowest common denominator' shared by all CPUs not deemed totally obsolete. So what you do is in fact 'strangle' the beautiful new CPU and force it to execute machine code from a few generations back, leaving it's shiny new advanced SIMD units unused. The code will work, and due to overall improvements in CPU speed and architecture it will run faster, but you're not reaping all the benefits you might - if you could exploit the new SIMD ISA. The program is still faster than on the previous box: 'it works'. You get small improvements and are content, but this is much less than it has to offer.
+Let's say you have a program which is computationally expensive - something like an image processor. With every new CPU, you will notice performance gains, and you suspect that these gains are due to the new CPU's better architecture. This is, in part, true - but if your software is still the same, chances are that it will only exploit the CPU's features which were available at the program's inception, or use features which represent some 'lowest common denominator' shared by all CPUs not deemed totally obsolete. So what you do is in fact 'strangle' the beautiful new CPU and force it to execute machine code from a few generations back, leaving it's shiny new advanced SIMD units unused. The code will work, and due to overall improvements in CPU speed and architecture it will run faster, but you're not reaping all the benefits you might - if you could exploit the new SIMD ISA. The program is still faster than on the previous box: 'it works'. You get small improvements and are content, but this may be much less than your new CPU has to offer.
 
 ## Let's Try the New ISA
 
-To use a new SIMD ISA, you have to *tell your compiler* - By default, the compiler will pick the lowest-common-denominator SIMD ISA deemed the acceptable minimum, which only fails to run on *very* old CPUs. On x86, this is usually some level of SSE. If you want anything beyond that, you need specific compiler flags, like -mavx2 on gnu and clang compilers. The resulting binary may now contain instructions specific to the chosen SIMD ISA. If your machine actually has the specific SIMD unit, the code will run and should be faster - provided you have optimization on which allows *autovectorization* (usually -O2 does the trick) and there are inner loops which can be autovectorized. But what if the CPU doesn't support the new SIMD ISA? Then your program will terminate with an *Illegal Instruction* error. Obviously, you can't ship code like this without safeguards, so let's think of ways how to deal with this issue.
+To use a new SIMD ISA, you have to *tell your compiler* - By default, the compiler will pick the lowest-common-denominator SIMD ISA deemed the acceptable minimum, which only fails to run on *very* old CPUs. On x86, this is usually some level of SSE. If you want anything beyond that, you need specific compiler flags, like -mavx2 on gnu and clang compilers. The resulting binary may now contain instructions specific to the chosen SIMD ISA. If your machine actually has this specific SIMD unit, the code will run and should be faster - provided you have optimization on which allows *autovectorization* (usually -O2 does the trick) and there are inner loops which can be autovectorized. But what if the CPU doesn't support the new SIMD ISA? Then your program will terminate with an *Illegal Instruction* error. Obviously, you can't ship code like this without safeguards, so let's think of ways how to deal with this issue.
 
 ## Dealing with several SIMD ISAs
 
-The first - and simplest - approach is to compile several 'incarnations' of your program, each targeting a specific SIMD ISA, and use some mechanism to pick the right one for a given target machine. You might ship a bundle holding all versions, then use a small dispatching program on-site to pick the right one. Or you deploy to a specific machine, where you know the right version beforehand. Obviously this is cumbersome and error-prone - what happens, for example, if the target machine receives a CPU upgrade and you deployed code for the initial CPU? And if you use a dispatcher program, you have to maintain it and make sure the user doesn't execute an incarnation which isn't suitable.
+The first - and simplest - approach is to compile several 'incarnations' of your program, each targeting a specific SIMD ISA, and to use some mechanism to pick the right one for a given target machine. You might ship a bundle holding all versions, then use a small dispatching program on-site to pick the right one. Or you deploy to a specific machine, where you know the right version beforehand. Obviously this is cumbersome and error-prone - what happens, for example, if the target machine receives a CPU upgrade and you deployed code for the initial CPU? And if you use a dispatcher program, you have to maintain it and make sure the user doesn't execute an incarnation which isn't suitable.
 
-So instead you might look for a way to create a 'monolithical' binary which contains all the variants and dispatches internally. It turns out that this is suprisingly difficult. I devised a scheme to achieve this, compiling ISA-specific code into ISA-specific TUs and dispached via the VFT of a pure virtual base class, overriding the virtual member functions in the ISA-specific implementations in each ISA-specific TU. This works and is a reasonably general approach, but it's also cumbersome and requires a fair amount of compiler and build system artistry.
+So instead you might look for a way to create a 'monolithic' binary which contains all the variants and dispatches internally. It turns out that this is suprisingly difficult. I devised a scheme to achieve this, compiling ISA-specific code into ISA-specific TUs and dispatched via the VFT of a pure virtual base class, overriding the virtual member functions in the ISA-specific implementations in each ISA-specific TU. This works and is a reasonably general approach, but it's also cumbersome and requires a fair amount of compiler and build system artistry.
 
 What I really wanted was a method to achieve the dispatch without massive intrusion into my coding, and without having to 'manually' decide which SIMD ISAs to address and how to 'tell the compiler' about it. As it turns out, there is a ready-made solution which does just that - it's part of the highway library!
 
@@ -32,11 +32,11 @@ With this capability of generating ISA-specific code 'from the inside', it becom
 
 I've already hinted at the way how highway provides access to the ISA-specific code: via nested namespaces. This sounds scary if you don't usually use namespaces much, but it's really quite simple once you get the hang of it. Let's first start out without ISA-specific code, but set up namespaces which we'll later populate with the nested namespaces. We'll start up with highway code in a namespace named 'hwy' (that's where it usually lives) and our own code in a namespace names 'project'. When calling into highway code from our code, we'd *qualify* the access with a hwy:: prefix. This is simple and straightforward - and good practise anyway, keeping our own code in a separate namespace and qualifying use of code from other components with their namespace prefix (or using a 'using' directive to the same effect, which can become obscure).
 
-If we want to have several variants of a body code, we can enclose these variants each into a separate scope. Then we can use the same set symbols in each of those scopes, and we can introduce a selector to address the symbol set in a specific scope. We use indirection. One way of setting up a scope is a namespace: it's simply a scope with a name. Another way is using classes. Class members share the same scope, and they are distinct from members with the same name in a different scope.
+If we want to have several variants of a body code, we can enclose these variants each into a separate scope. Then we can use the same set of symbols in each of those scopes, and we can introduce a selector to address the symbol set in a specific scope: We use indirection. One way of setting up a scope is a namespace: it's simply a scope with a name. Another way is using classes. Class members share the same scope, and they are distinct from members with the same name in a different scope.
 
-highway uses namespaces. To be more specific, it uses nested namespaces: The specific versions 'live' in namespaces 'one level down'. ISA-specific code 'lives' in hwy::N_SSE2, hwy::N_AVX2 etc.
+highway uses namespaces. To be more specific, it uses nested namespaces: The ISA-specific code versions 'live' in namespaces 'one level down' from the 'hwy' namespace. highway's 'own' ISA-specific code 'lives' in hwy::N_SSE2, hwy::N_AVX2 etc. - and we'll follow the same scheme for our own code in namespace 'project' and put SIMD_ISA-specific code inside project::N_SSE2, project::N_AVX2 etc.
 
-You can interface with these specific nested namespaces if you must - by qualifying access with the nested namespace's name - but what's much more attractive is to *write code which does not use these nested namespace explicitly*. highway's foreach_target mechanism - which we'll come to shortly - provides 'client code' with a macro: HWY_NAMESPACE. The value of this macro is set to one of the SIMD architectures available *on the CPU running the code*, e.g. AVX2. Instead of qualifying your code to access symbols in e.g. hwy::AVX2, you code access to hwy::HWY_NAMESPACE, and your code becomes *generalized* to call into any given variant, while you can *delegate* which one is picked to a *dispatch* mechanism, which highway also provides.
+You can interface with these specific nested namespaces if you must - by qualifying access with the nested namespace's name - but what's much more attractive is to *write code which does not use these nested namespace explicitly*. highway's foreach_target mechanism - which we'll come to shortly - provides 'client code' with a macro: HWY_NAMESPACE. The value of this macro is set to one of the SIMD architectures available *on the CPU running the code*, e.g. N_AVX2. Instead of qualifying your code to access symbols in e.g. hwy::N_AVX2, you code access to hwy::HWY_NAMESPACE, and your code becomes *generalized* to call into any given variant, while you can *delegate* which one is picked to a *dispatch* mechanism, which highway also provides.
 
 Dispatch is, again, coded with macros: HWY_EXPORT and HWY_DYNAMIC_DISPATCH. You write functions which are 'fed' to highway's foreach_target mechanism, HWY_EXPORT 'picks up' all variants highway deems suitable for the client CPU architecture (x86, ARM, RISC...) and holds them under a common handle, and HWY_DYNAMIC_DISPATCH picks the variant which highway deems most suitable at the time when the dispatch is invoked at run-time. All it takes to use the mechanism is placing the 'workhorse' code into a bit of 'scaffolding' code which submits it to highways dispatching mechanism.
 
@@ -72,7 +72,7 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
     // we start out with a bit of 'scaffolding' code to use highway's 
     // foreach_target mechanism
 
-    // 'clear' HWY_TARGET_INCLUDE if if it's set already
+    // 'clear' HWY_TARGET_INCLUDE if it's set already
 
     #undef HWY_TARGET_INCLUDE
 
@@ -120,6 +120,7 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
                     << hwy::TargetName ( HWY_TARGET )
                     << std::endl ;
         }
+      } ; // end of nested namespace HWY_NAMESPACE
 
       #if HWY_ONCE
 
@@ -149,8 +150,7 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
 ## Compile it
 
 All we need now is to compile and link the program and try out what we get. Let's assume you're using g++. You can use this one-liner - note the -I.
-statement, which is needed because we want to #include 'payload.cc' and
-it's located inside this folder.
+statement, which is needed because highway needs to#include 'payload.cc' several times and it's located inside this very folder, or '.' for short.
 
     g++ driver.cc payload.cc -I. -lhwy
 
@@ -172,7 +172,7 @@ You may argue that we need a fair bit of scaffolding for something which seems t
 
 ## Artistry
 
-What we have, so far, is a way to provide our program with free functions in the 'project' namespace which, in turn, invoke SIMD-ISA-specific variants. If you only have a few functions using SIMD, that's okay, but if your program grows to use more of these functions, coding becomes somewhat repetitive. Can we do better? I've come up with a scheme to 'bundle' payload functions using a dispatch class. Let's start with the gist of it and elaborate later. We add a new (base) class 'dispatch', where we introduce declarations of our payload functions *as pure virtual member functions*. Let's go step by step. The first thing we do is to factor out the declaration for namespace 'project' into a separate header file 'project.h' and add the definition of the 'dispatch_base' base class.
+What we have, so far, is a way to provide our program with free functions in the 'project' namespace which, in turn, invoke SIMD-ISA-specific variants. If you only have a few functions using SIMD, that's okay, but if your program grows to use more of these functions, coding becomes somewhat repetitive. Can we do better? I've come up with a scheme to 'bundle' payload functions using a dispatch class. Let's start with the gist of it and elaborate later. We add a new (base) class 'dispatch_base', where we introduce declarations of our payload functions *as pure virtual member functions*. Let's go step by step. The first thing we do is to factor out the declaration for namespace 'project' into a separate header file 'project.h' and add the definition of the 'dispatch_base' base class.
 
 ### project.h
 
@@ -183,22 +183,26 @@ What we have, so far, is a way to provide our program with free functions in the
 
     namespace project
     {
-      // We want a 'dispatch' object with - for now - one member function.
+      // We want a 'dispatch object' with - for now - one member function.
       // This is the 'payload' function we had as a free function - now
       // it's a pure virtual member function of class dispatch_base.
 
       struct dispatch_base
       {
-        // we declare 'payload' as a *pure virtual member function'. That looks
-        // scary, but it makes it impossible to invoke the 'payload' member
-        // of struct dispatch itself - only derived classes with an actual
-        // implementation can be used to invoke their specific implementation.
+        // we declare 'payload' as a *pure virtual member function'. That
+        // makes it impossible to invoke the 'payload' member of struct
+        // dispatch itself (because there is none) - only derived classes
+        // with an actual implementation can be used to invoke their
+        // specific implementation.
 
         virtual void payload() = 0 ;
       } ;
 
       // We have one free function: get_dispatch will yield a dispatch_base
-      // pointer.
+      // pointer. This is our 'conduit' to the derived dispatch classes and
+      // makes use of the C++ virtual member function mechanism: even though
+      // we'll invoke it via a pointer to dispatch_base, the function in
+      // the derived class will be invoked.
 
       dispatch_base * get_dispatch() ;
     } ;
@@ -206,7 +210,7 @@ What we have, so far, is a way to provide our program with free functions in the
     #endif // to #ifndef PROJECT_H
 
 
-### payload.cc
+### payload.cc with 'VFT dispatch'
 
     // we want to echo stuff to the console
 
@@ -314,7 +318,7 @@ What we have, so far, is a way to provide our program with free functions in the
     }
 
 
-### driver.cc
+### driver.cc with 'VFT dispatch'
 
     #include "project.h"
 
