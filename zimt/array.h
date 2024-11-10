@@ -412,13 +412,8 @@ private:
   // now the slicing operation. it creates a subdimensional view
   // coinciding with a window with dimension d having extent 1.
   // If 'this' view already is 1D, the only dimension left is
-  // dimension 0, and the only meaningful argument 'k' is zero.
-  // This is not enforced - it's assumed that no sane code will
-  // attempt to slice 1D views - but the 1D case is handled
-  // saparately and returns the same view.
-  // TODO: might consider a 1D view a 2D view with extent 1
-  // in the second axis. Then, d could be 0 or 1, and k would
-  // be meaningful.
+  // dimension 0. The returned slice is a 1D view with only one
+  // element - the one at position k.
 
   slice_t _slice ( std::size_t d , long k , std::false_type ) const
   {
@@ -439,7 +434,7 @@ private:
 
   slice_t _slice ( std::size_t d , long k , std::true_type ) const
   {
-    return slice_t ( origin , strides , 1 ) ; // shape ) ;
+    return slice_t ( origin + k * strides [ 0 ] , 1 , 1 ) ;
   }
 
 public:
@@ -736,9 +731,18 @@ public:
   : base_t ( nullptr ,
              make_strides ( _shape ) ,
              _shape ) ,
-    base ( new T [ _shape.prod() ] )
+    // base ( new T [ _shape.prod() ] ) // <<< problematic
+    base ( nullptr )
   {
     static_assert ( std::is_trivially_destructible < T > :: value ) ;
+
+    // when allocating vc_simd_type with new[], deallocation fails.
+    // so now I use the std::allocator, and since it's 'allocate'
+    // member is not static, I need an object. So I can't initialize
+    // 'base' before entering the scope of this c'tor.
+
+    static std::allocator < T > alloc ;
+    base.reset ( alloc.allocate ( _shape.prod() ) ) ;
     origin = base.get() ;
   }
 

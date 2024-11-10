@@ -617,7 +617,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
   
   auto sample_slice = source[0].bindAt ( axis , 0 ) ;
 
-  zimt::mci_t < dimension - 1 > sliter ( sample_slice.shape() ) ;
+  zimt::mci_t < dimension - 1 > sliter ( sample_slice.shape ) ;
 
   // shape_type can hold an nD index into the slice, just what
   // sliter refers to.
@@ -675,7 +675,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
       
       for ( int e = 0 ; e < vsize ; e++ )   
       {
-        offsets[e] = sum ( slice.stride() * indexes[e] ) ;
+        offsets[e] = sum ( slice.strides * indexes[e] ) ;
       }
       
       // form a 'bundle' to pass the data to the handler
@@ -714,7 +714,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
       auto target_base_adress = slice.data() ;
 
       for ( int e = 0 ; e < vsize ; e++ )          
-        offsets[e] = sum ( slice.stride() * indexes[e] ) ;
+        offsets[e] = sum ( slice.strides * indexes[e] ) ;
       
       bundle < ttype , vsize > bo ( target_base_adress ,
                                     offsets.data() ,
@@ -944,7 +944,7 @@ struct separable_filter
     // runup == INT_MAX signals that fake 2D processing is inappropriate.
     // if input is too short to bother with fake 2D, just single-lane it
     
-    if ( runup == INT_MAX || input.shape(0) < min_length )
+    if ( runup == INT_MAX || input.shape[0] < min_length )
     {
       lanes = 1 ;
     }
@@ -962,10 +962,10 @@ struct separable_filter
       
       int split = 1 ;
       
-      // suppose we split input.shape(0) in ( 2 * split ) parts, is it still larger
+      // suppose we split input.shape[0] in ( 2 * split ) parts, is it still larger
       // than this 'good' length? If not, leave split factor as it is.
       
-      while ( input.shape(0) / ( 2 * split ) >= good_length )
+      while ( input.shape[0] / ( 2 * split ) >= good_length )
       {  
         // if yes, double split factor, try again
         split *= 2 ;
@@ -1010,7 +1010,7 @@ struct separable_filter
         // safe side, provided the user hasn't chosen an unsuitable
         // math_type.
         
-        zimt::array_t < 1 , math_type > buffer ( input.shape() ) ;
+        zimt::array_t < 1 , math_type > buffer ( input.shape ) ;
           
         auto raw_filter = stripe_handler_type::template
           get_raw_filter < in_value_type ,
@@ -1019,11 +1019,14 @@ struct separable_filter
 
         raw_filter.solve ( input , buffer ) ;
         
-        auto trg = output.begin() ;
-        for ( auto const & src : buffer )
+        // auto trg = output.begin() ;
+        auto * src = &(buffer[0]) ; // output.begin() ;
+        auto * trg = &(output[0]) ; // output.begin() ;
+        // for ( auto const & src : buffer )
+        for ( std::size_t i = 0 ; i < input.shape[0] ; i++ )
         {
-          *trg = out_value_type ( src ) ;
-          ++trg ;
+          *trg = out_value_type ( *src ) ;
+          ++src ; ++trg ;
         }
       }      
       return ; // return directly. we're done
@@ -1033,14 +1036,14 @@ struct separable_filter
     // we want as many chunks as we have lanes. There may be some data left
     // beyond the chunks (tail_size of value_type)
     
-    int core_size = input.shape(0) ;
+    int core_size = input.shape[0] ;
     int chunk_size = core_size / lanes ;
     core_size = lanes * chunk_size ;
-    int tail_size = input.shape(0) - core_size ;
+    int tail_size = input.shape[0] - core_size ;
     
     // just doublecheck
 
-    assert ( core_size + tail_size == input.shape(0) ) ;
+    assert ( core_size + tail_size == input.shape[0] ) ;
     
     // now here's the strategy: we treat the data as if they were 2D. This will
     // introduce errors along the 'vertical' margins, since there the 2D treatment
@@ -1078,15 +1081,18 @@ struct separable_filter
     
     zimt::array_t < 1 , math_type > head_and_tail ( total ) ;
     
-    auto target_it = head_and_tail.begin() ;
-    auto source_it = input.begin() ;
+    // auto target_it = head_and_tail.begin() ;
+    // auto source_it = input.begin() ;
+    auto * target_it = &(head_and_tail[0]) ;
+    auto * source_it = &(input[0]) ;
     for ( int i = 0 ; i < front ; i++ )
     {
       *target_it = math_type ( *source_it ) ;
       ++target_it ;
       ++source_it ;
     }
-    source_it = input.end() - back ;
+    // source_it = input.end() - back ;
+    source_it = &(input[input.shape[0]]) - back ;
     for ( int i = 0 ; i < back ; i++ )
     {
       *target_it = math_type ( *source_it ) ;
@@ -1103,11 +1109,14 @@ struct separable_filter
     // we copied into the buffer. The first bit of 'head' and the last bit
     // of 'tail' hold valid data and will be used further down.
 
-    zimt::view_t < 1 , math_type > head
-      ( zimt::xel_t<std::size_t,1> ( front ) , head_and_tail.data() ) ;
-
-    zimt::view_t < 1 , math_type > tail
-      ( zimt::xel_t<std::size_t,1> ( back ) , head_and_tail.data() + front ) ;
+    // zimt::view_t < 1 , math_type > head
+    //   ( zimt::xel_t<std::size_t,1> ( front ) , head_and_tail.data() ) ;
+    // 
+    // zimt::view_t < 1 , math_type > tail
+    //   ( zimt::xel_t<std::size_t,1> ( back ) , head_and_tail.data() + front ) ;
+    
+    auto head = head_and_tail.subarray ( 0 , front ) ;
+    auto tail = head_and_tail.subarray ( front , front + back ) ;
     
     // head now has runup correct values at the beginning, succeeded by runup
     // invalid values, and tail has tail_size + runup correct values at the end,
@@ -1141,21 +1150,21 @@ struct separable_filter
     
     zimt::view_t < 2 , in_value_type >
     
-      fake_2d_margin ( zimt::xel_t<std::size_t,2> { 4 * runup ,
-                                                    lanes - 1 } ,
+      fake_2d_margin ( input.data() +  input.strides[0]
+                                       * ( chunk_size - 2 * runup ) ,
                        
-                       zimt::xel_t<std::size_t,2> { input.stride(0) ,
-                                                    input.stride(0)
+                       zimt::xel_t<std::size_t,2> { input.strides[0] ,
+                                                    input.strides[0]
                                                     * chunk_size } ,
                        
-                       input.data() +  input.stride(0)
-                                       * ( chunk_size - 2 * runup )
+                       zimt::xel_t<std::size_t,2> { 4 * runup ,
+                                                    lanes - 1 }
                      ) ;
   
     // again we create a buffer and filter into the buffer
 
     zimt::array_t < 2 , out_value_type >
-      margin_buffer ( fake_2d_margin.shape() ) ;
+      margin_buffer ( fake_2d_margin.shape ) ;
 
     separable_filter < zimt::view_t < 2 , in_value_type > ,
                        zimt::view_t < 2 , out_value_type > ,
@@ -1176,15 +1185,15 @@ struct separable_filter
 
     zimt::view_t < 2 , out_value_type >
     
-      margin_target ( zimt::xel_t<std::size_t,2> { 2 * runup ,
-                                                   lanes - 1 } ,
+      margin_target ( output.data() + output.strides[0]
+                                      * ( chunk_size - runup ) ,
                       
-                      zimt::xel_t<std::size_t,2> { output.stride(0) ,
-                                                   output.stride(0)
+                      zimt::xel_t<std::size_t,2> { output.strides[0] ,
+                                                   output.strides[0]
                                                    * chunk_size } ,
                       
-                      output.data() + output.stride(0)
-                                      * ( chunk_size - runup )
+                      zimt::xel_t<std::size_t,2> { 2 * runup ,
+                                                   lanes - 1 }
                     ) ;
                       
     // next we 'fake' a 2D array from input and filter it to output, this may
@@ -1192,18 +1201,19 @@ struct separable_filter
     // earlier and deposited what we need in buffers.
     
     zimt::view_t < 2 , in_value_type >
-      fake_2d_source ( zimt::xel_t<std::size_t,2> { chunk_size , lanes } ,
-                       zimt::xel_t<std::size_t,2> { input.stride(0) ,
-                                                    input.stride(0)
+      fake_2d_source ( input.data() ,
+                       zimt::xel_t<std::size_t,2> { input.strides[0] ,
+                                                    input.strides[0]
                                                     * chunk_size } ,
-                       input.data() ) ;
+                       zimt::xel_t<std::size_t,2> { chunk_size , lanes }
+                      ) ;
 
     zimt::view_t < 2 , out_value_type >
-      fake_2d_target ( zimt::xel_t<std::size_t,2> { chunk_size , lanes } ,
-                       zimt::xel_t<std::size_t,2> { output.stride(0) ,
-                                                    output.stride(0)
+      fake_2d_target ( output.data() ,
+                       zimt::xel_t<std::size_t,2> { output.strides[0] ,
+                                                    output.strides[0]
                                                     * chunk_size } ,
-                       output.data() ) ;
+                       zimt::xel_t<std::size_t,2> { chunk_size , lanes } ) ;
 
     // now we filter the fake 2D source to the fake 2D target
 

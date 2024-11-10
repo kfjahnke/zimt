@@ -285,6 +285,13 @@ typename std::conditional \
                         + std::declval < B > () ) \
            > :: type
 
+#define REAL_EQUIV(A)  \
+typename std::conditional \
+           < sizeof(A) <= 4 , \
+             float , \
+             double \
+           > :: type
+
 /// zimt creates views/arrays of vectorized types. As long as
 /// the vectorized types are Vc::SimdArray or zimt::simd_type, using
 /// std::allocator is fine, but when using other types, using a specific
@@ -515,16 +522,41 @@ protected:
 // in a nested namespace inside 'OUTER_NAMESPACE'. The nesting is
 // done in the same way: inside highway, OUTER_NAMESPACE would be
 // 'hwy', inside zimt it would be 'zimt', and in a concrete project
-// it might be 'project'.
+// it might be 'project'. The nested namespace has a using declaration
+// for namespace 'zimt' which 'pulls in' zimt code which isn't
+// SIMD-ISA-specific. Then, the nested namespace under zimt is
+// made available under the name 'zimt'. This sequence of declarations
+// results in both the SIMD-ISA-specific and the other names being
+// accessible via a zimt:: prefix - so here, inside the nested
+// namespace of OUTER_NAMESPACE, we can access all zimt code with
+// the plain zimt::prefix - this makes it easier for the user who
+// should not need to be aware of whether zimt symbols stem from
+// 'true' zimt or the current nested namespace.
+// If, on the other hand, MULTI_SIMD_ISA is not defined, the nested
+// namespace's symbols are pulled into the 'plain' zimt namespace.
+// In both cases, client code can use a simple zimt:: qualifier,
+// only it's designation differs: for MULTI_SIMD_ISA builds, it
+// refers to all of 'plain' zimt and the currently processed nested
+// namespace - N_AVX2 etc. - and for other builds it refers to all
+// of plain zimt and the only nested namespace, namely zsimd.
 
 #define BEGIN_ZIMT_SIMD_NAMESPACE(OUTER_NAMESPACE) \
   namespace OUTER_NAMESPACE { \
     namespace ZIMT_SIMD_ISA { \
       using namespace zimt ; \
+      namespace zimt = zimt::ZIMT_SIMD_ISA ;
 
+#ifdef MULTI_SIMD_ISA
+#define END_ZIMT_SIMD_NAMESPACE \
+    } ; \
+  } ;
+#else
 #define END_ZIMT_SIMD_NAMESPACE \
     } ; \
   } ; \
+namespace zimt { using namespace zimt::zsimd ; } ;
+#endif
+
 
 // just a shorthand.
 

@@ -192,12 +192,21 @@ friend std::istream & operator>> ( std::istream & isr ,
 // compiler flags, like, e.g., -fno-math-errno for clang++, to
 // produce hardware SIMD instructions.
 
+// #define BROADCAST_STD_FUNC(FUNC) \
+//   friend XEL FUNC ( XEL arg ) \
+//   { \
+//     XEL result ; \
+//     for ( size_type i = 0 ; i < N ; i++ ) \
+//       result [ i ] = std::FUNC ( arg [ i ] ) ; \
+//     return result ; \
+//   }
+
 #define BROADCAST_STD_FUNC(FUNC) \
   friend XEL FUNC ( XEL arg ) \
   { \
     XEL result ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
-      result [ i ] = std::FUNC ( arg [ i ] ) ; \
+      result [ i ] = FUNC ( arg [ i ] ) ; \
     return result ; \
   }
 

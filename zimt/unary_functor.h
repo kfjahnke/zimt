@@ -752,6 +752,14 @@ public:
     _v_ev ( p_context , i , o ) ;
   }
 
+  void eval ( const in_type & i , out_type & o )
+  {
+    in_v iv ( i ) ;
+    out_v ov ;
+    eval ( iv , ov ) ;
+    o = ov[0] ;
+  }
+
   // capped evaluation function template
 
   void eval ( const in_v & i , out_v & o , const std::size_t & cap )

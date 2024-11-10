@@ -121,7 +121,7 @@ void convert ( const vc_simd_type < src_t , vsize > & src ,
 
 template < typename _value_type ,
            std::size_t _vsize >
-struct vc_simd_type
+struct alignas(64) vc_simd_type
 : private Vc::SimdArray < _value_type , _vsize > ,
   public simd_tag < _value_type , _vsize , VC >
 {

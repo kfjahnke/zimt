@@ -149,6 +149,8 @@ struct bracer
                       int rsz ,       // ditto, to the right
                       int axis )      // axis along which to apply bracing 
   {
+    // std::cout << "bracer receives lsz " << lsz
+    //           << " rsz " << rsz << std::endl ;
     int w = a.shape [ axis ] ;  // width of containing array along axis 'axis'
     int m = w - ( lsz + rsz ) ; // width of 'core' array
 
@@ -322,6 +324,10 @@ struct bracer
         rs -= ds ;
       }
     }
+    // a.traverse ( [](const value_type & v)
+    //                { std::cout << "** " << v << std::endl ;
+    //                  return v ;
+    //               } ) ;
   }
   
   /// This overload of 'apply' braces along all axes in one go.
