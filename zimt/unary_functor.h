@@ -144,9 +144,7 @@
 #include "common.h"
 #include "vector.h"
 
-#ifdef MULTI_SIMD_ISA
 HWY_BEFORE_NAMESPACE() ;
-#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// we derive all unary_functors from this empty class, to have
@@ -328,47 +326,6 @@ struct vs_adapter
       ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
         reinterpret_cast < typename inner_type::out_v & > ( out ) ) ;
   }
-
-// private:
-//
-//   // To detect if a unary functor has a capped eval overload, I use code
-//   // adapted from from Valentin Milea's anser to
-//   // https://stackoverflow.com/questions/87372/check-if-a-class-has-a-member-function-of-a-given-signature
-//   // when providing a capped eval overload of your eval function, please
-//   // note that it will only be recognized if one of the three signatures
-//   // tested below is matched precisely.
-//
-//   template < class C >
-//   class has_capped_eval_t
-//   {
-//       typedef typename C::in_v in_v ;
-//       typedef typename C::out_v out_v ;
-//
-//       // we allow the cap to be passed as const&, &, and by value,
-//       // the remainder of the signature is 'as usual'
-//
-//       template < class T , class cap_t >
-//       static std::true_type testSignature
-//         (void (T::*)(const in_v&, out_v&, const cap_t&));
-//
-//       template < class T , class cap_t >
-//       static std::true_type testSignature
-//         (void (T::*)(const in_v&, out_v&, cap_t&));
-//
-//       template < class T , class cap_t >
-//       static std::true_type testSignature
-//         (void (T::*)(const in_v&, out_v&, cap_t));
-//
-//       template <class T>
-//       static decltype(testSignature(&T::eval)) test(std::nullptr_t);
-//
-//       template <class T>
-//       static std::false_type test(...);
-//
-//   public:
-//       using type = decltype(test<C>(nullptr));
-//       static const bool value = type::value;
-//   };
 
   // does inner_type have a capped eval function? If so, the adapter
   // will dispatch to it, otherwise it will call eval without cap.
@@ -1432,9 +1389,7 @@ uf_adapt ( const W & inner )
 }
 
 END_ZIMT_SIMD_NAMESPACE
-#ifdef MULTI_SIMD_ISA
 HWY_AFTER_NAMESPACE() ;
-#endif
 
 #endif // ZIMT_UNARY_FUNCTOR_H
 

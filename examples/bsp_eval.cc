@@ -281,7 +281,7 @@ struct dispatch
     px_t * p = a.data() ;
     std::mt19937 gen(42); // Standard mersenne_twister_engine
     std::uniform_real_distribution<> dis(0.0, 1.0);
-    for ( std::size_t i = 0 ; i < 1024 * 1024 ; i++ )
+    for ( std::size_t i = 0 ; i < shape.prod() ; i++ )
     {
       p[i] = { dis(gen) , dis(gen) , dis(gen) } ;
     }
