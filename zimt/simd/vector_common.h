@@ -391,3 +391,19 @@ value_type prod() const
   return s ;
 }
 
+value_type hmax() const
+{
+  value_type s ( _store[0] ) ;
+  for ( std::size_t e = 1 ; e < N ; e++ )
+    s = std::max ( s , _store[e] ) ;
+  return s ;
+}
+
+value_type hmin() const
+{
+  value_type s ( _store[0] ) ;
+  for ( std::size_t e = 1 ; e < N ; e++ )
+    s = std::min ( s , _store[e] ) ;
+  return s ;
+}
+

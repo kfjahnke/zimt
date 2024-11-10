@@ -76,12 +76,6 @@
 // times, adding dispatch capability later on by passing the relevant
 // compiler flags.
 
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <random>
-#include <chrono>
-
 // if the code is compiled to use the Vc or std::simd back-ends, we
 // can't (yet) use highway's foreach_target mechanism, so we #undef
 // MULTI_SIMD_ISA, which is zimt's way of activating that mechanism.
@@ -91,13 +85,21 @@
 #undef MULTI_SIMD_ISA
 #endif
 
-// We #include the zimt headers which are independent of the SIMD ISA.
-// They have 'conventional' sentinels and will not be included more
-// than once.
+// I'll mark code sections which will differ from one example to the
+// next, prefixing with ////////... and postfixing with //-------...
+// You'll notice that there are only four places where you have to
+// change stuff to set up your own program, and all the additions
+// are simple (except for your 'client code', which may be complex).
 
-#include "../zimt/simd/simd_tag.h"
-#include "../zimt/array.h"
-#include "../zimt/xel.h"
+/////////////////////// #include 'regular' headers here:
+
+#include <iostream>
+#include <iomanip>
+#include <vector>
+#include <random>
+#include <chrono>
+
+//--------------------------------------------------------------------
 
 // we define a dispatch base class. All the 'payload' code is called
 // through virtual member functions of this class. In this example,
@@ -117,7 +119,7 @@ struct dispatch_base
   // backend is used and holds highway's HWY_TARGET value for
   // the given nested namespace.
 
-  zimt::backend_e backend = zimt::NBACKENDS ;
+  int backend = -1 ;
   unsigned long hwy_isa = 0 ;
 
   // next we have pure virtual member function definitions for
@@ -137,21 +139,28 @@ struct dispatch_base
 // re-included and re-copmpiled with SIMD-ISA-specific flags
 
 #undef HWY_TARGET_INCLUDE
+
+/////////////// Tell highway which file to submit to foreach_target
+
+// TODO: can't we somehow use __FILE__ here?
+
 #define HWY_TARGET_INCLUDE "bsp_eval.cc"  // this very file
 
+//--------------------------------------------------------------------
+
 #include <hwy/foreach_target.h>  // must come before highway.h
+
 #include <hwy/highway.h>
 
-#endif //#ifdef MULTI_SIMD_ISA
+#endif // #ifdef MULTI_SIMD_ISA
 
-// now we #include those zimt headers which have SIMD-ISA-specific
-// code:
+/////////////////////// #include zimt headers here:
 
-// #include "../zimt/zimt.h"
-// #include "../zimt/bspline.h"
 #include "../zimt/eval.h"
 
-// to make highway's use of #pragme directives to the compiler
+//--------------------------------------------------------------------
+
+// to make highway's use of #pragma directives to the compiler
 // effective, we surround the SIMD-ISA-specific code with
 // HWY_BEFORE_NAMESPACE() and HWY_AFTER_NAMESPACE().
 
@@ -168,8 +177,9 @@ BEGIN_ZIMT_SIMD_NAMESPACE(project)
 
 // you can use float, but then can't use very high spline degrees.
 
-typedef double dtype ;
-typedef zimt::xel_t < dtype , 2 > dt2 ;
+typedef float dtype ;
+typedef zimt::xel_t < dtype , 2 > crd_t ;
+typedef zimt::xel_t < dtype , 3 > px_t ;
 
 // Here, we define the SIMD-ISA-specific derived 'dispatch' class:
 
@@ -181,7 +191,7 @@ struct dispatch
 
   dispatch()
   {
-    backend = zimt::simdized_type<int,4>::backend ;
+    backend = int ( zimt::simdized_type<int,4>::backend ) ;
     #if defined USE_HWY || defined MULTI_SIMD_ISA
       hwy_isa = HWY_TARGET ;
     #endif
@@ -190,8 +200,16 @@ struct dispatch
   // 'payload', the SIMD-ISA-specific overload of dispatch_base's
   // pure virtual member function, now has the code which was in
   // main() when this example was first coded without dispatch.
+  // One might be more tight-fisted with which part of the former
+  // 'main' should go here and which part should remain in the
+  // new 'main', but the little extra code which wouldn't benefit
+  // from vectorization doesn't make much of a difference here.
+  // Larger projects would have both several payload-type functions
+  // and a body of code which is independent of vectorization.
 
-  HWY_ATTR int payload ( int argc , char * argv[] ) const
+///////////////// write a payload function with a 'main' signature
+  
+  int payload ( int argc , char * argv[] ) const
   {
     // The first argument gives the number of repetitions of the
     // 1M-eval test code.
@@ -252,37 +270,39 @@ struct dispatch
 
     // we want a 2D b-spline of 1024X1024 2-channel values
 
-    typedef zimt::bspline < dt2 , 2 > spline22_type ;
-    spline22_type bsp22 ( { 1024 , 1024 } , spline_degree , bc ) ;
+    typedef zimt::bspline < px_t , 2 > spline_type ;
+    zimt::xel_t < std::size_t , 2 > shape { 1023 , 1025 } ;
+
+    spline_type bsp ( shape , spline_degree , bc ) ;
 
     // and an array of random values with equal extents
 
-    zimt::array_t < 2 , dt2 > a ( { 1024 , 1024 } ) ;
-    dt2 * p = a.data() ;
+    zimt::array_t < 2 , px_t > a ( shape ) ;
+    px_t * p = a.data() ;
     std::mt19937 gen(42); // Standard mersenne_twister_engine
     std::uniform_real_distribution<> dis(0.0, 1.0);
     for ( std::size_t i = 0 ; i < 1024 * 1024 ; i++ )
     {
-      p[i] = { dis(gen) , dis(gen) } ;
+      p[i] = { dis(gen) , dis(gen) , dis(gen) } ;
     }
 
     // prefilter overload which 'pulls in' knot point data from an array
 
-    bsp22.prefilter ( a ) ;
+    bsp.prefilter ( a ) ;
 
     std::cout << "created bspline object:" << std::endl
-              << bsp22 << std::endl ;
+              << bsp << std::endl ;
 
     // create an evaluator
 
     // typedef zimt::evaluator < dt2 , dt2 > ev22_t ;
     // ev22_t ev22 ( bsp22 ) ;
 
-    auto ev22 = zimt::make_safe_evaluator ( bsp22 ) ;
+    auto ev = zimt::make_safe_evaluator ( bsp ) ;
 
     // set up an array to receive results
 
-    zimt::array_t < 2 , dt2 > trg ( { 1024 , 1024 } ) ;
+    zimt::array_t < 2 , px_t > trg ( shape ) ;
 
     // we want to time the operation
 
@@ -303,7 +323,7 @@ struct dispatch
       // reconstruction kernel - the set of basis function values at
       // discrete coordinates.
 
-      zimt::transform ( ev22 , trg ) ;
+      zimt::transform ( ev , trg ) ;
     }
 
     std::chrono::system_clock::time_point end
@@ -318,29 +338,27 @@ struct dispatch
     // the knot point data, since we've evaluated precisely at discrete
     // coordinates.
 
-    dt2 * p1 = a.data() ;
-    dt2 * p2 = trg.data() ;
-    dtype max_d = 0.0 ;
+    const auto * p1 = a.data() ;
+    const auto * p2 = trg.data() ;
+
+    px_t mx = 0 , mn = 0 ;
     
-    for ( std::size_t i = 0 ; i < 1024 * 1024 ; i++ )
+    for ( std::size_t i = 0 ; i < shape.prod() ; i++ )
     {
       auto d = p1[i] - p2[i] ;
-      if ( fabs ( d[0] ) > max_d )
-      {
-        max_d = fabs ( d[0] ) ;
-        // std::cout << "max d0 @ " << i << " = " << max_d << std::endl ;
-      }
-      if ( fabs ( d[1] ) > max_d )
-      {
-        max_d = fabs ( d[1] ) ;
-        // std::cout << "max d1 @ " << i << " = " << max_d << std::endl ;
-      }
+      mx = mx.at_least ( d ) ;
+      mn = mn.at_most ( d ) ;
     }
-    std::cout << "max_d: " << max_d << std::endl ;
+
+    mx = mx.at_least ( - mn ) ;
+
+    std::cout << "delta max: " << mx.hmax() << std::endl ;
 
     return 0 ;
   }
 } ;
+
+//--------------------------------------------------------------------
 
 // we also code a local function _get_dispatch which returns a pointer
 // to 'dispatch_base', which points to an object of the derived class

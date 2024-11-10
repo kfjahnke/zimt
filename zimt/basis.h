@@ -76,6 +76,8 @@
   #endif
 
 #include "common.h"
+#include "xel.h"
+#include "array.h"
 
 // poles.h has precomputed basis function values sampled at n * 1/2.
 // These values were calculated to very high precision in a separate
