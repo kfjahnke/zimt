@@ -187,12 +187,12 @@ struct unary_functor
 
   // number of fundamentals in simdized data.
 
-  enum { vsize = _vsize } ;
+  static const std::size_t vsize = _vsize ;
 
   // number of dimensions. This may well be different for IN and OUT.
 
-  enum { dim_in = vector_traits < IN > :: dimension } ;
-  enum { dim_out = vector_traits < OUT > :: dimension } ;
+  static const std::size_t dim_in = vector_traits < IN > :: dimension ;
+  static const std::size_t dim_out = vector_traits < OUT > :: dimension ;
   
   // typedefs for incoming (argument) and outgoing (result) type. These two types
   // are non-vectorized types, like zimt::xel_t < float , 2 >. Since such types
@@ -398,7 +398,7 @@ struct chain_type
 {
   // definition of base_type
 
-  enum { vsize = T1::vsize } ;
+  static const std::size_t vsize = T1::vsize ;
 
   typedef unary_functor < typename T1::in_type ,
                                 typename T2::out_type ,
@@ -762,8 +762,8 @@ struct amplify_type
 {
   typedef unary_functor < _in_type , _out_type , _vsize > base_type ;
   
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
   
   // TODO: might assert common dimensionality
   
@@ -843,8 +843,8 @@ struct flip
 {
   typedef unary_functor < _in_type , _in_type , _vsize > base_type ;
                      
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
   
   using typename base_type::in_type ;
   using typename base_type::out_type ;
@@ -936,9 +936,9 @@ struct yield_type
                           data_t ,
                          _vsize > base_type ;
 
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
-  enum { channels = base_type::dim_out } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
+  static const std::size_t channels = base_type::dim_out ;
   using typename base_type::in_type ;
   using typename base_type::out_type ;
   using typename base_type::in_ele_type ;
@@ -1072,9 +1072,9 @@ struct yield_type
                           data_t ,
                          _vsize > base_type ;
 
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
-  enum { channels = base_type::dim_out } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
+  static const std::size_t channels = base_type::dim_out ;
   using typename base_type::in_type ;
   using typename base_type::out_type ;
   using typename base_type::in_ele_type ;

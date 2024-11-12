@@ -50,9 +50,7 @@
 
 #include "simd.h"
 
-#ifdef MULTI_SIMD_ISA
 HWY_BEFORE_NAMESPACE() ;
-#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// with the definition of 'simd_traits', we can proceed to implement
@@ -242,16 +240,14 @@ void assign_if ( VT1 & target ,
 
 template < typename T >
 void assign_if ( T & target ,
-            const bool & predicate ,
-            const T & source )
+                 const bool & predicate ,
+                 const T & source )
 {
   if ( predicate )
     target = source ;
 }
 
 END_ZIMT_SIMD_NAMESPACE
-#ifdef MULTI_SIMD_ISA
 HWY_AFTER_NAMESPACE() ;
-#endif
 
 #endif // for sentinel

@@ -121,7 +121,7 @@ void convert ( const vc_simd_type < src_t , vsize > & src ,
 
 template < typename _value_type ,
            std::size_t _vsize >
-struct alignas(64) vc_simd_type
+struct vc_simd_type
 : private Vc::SimdArray < _value_type , _vsize > ,
   public simd_tag < _value_type , _vsize , VC >
 {
@@ -549,7 +549,6 @@ struct alignas(64) vc_simd_type
 
   BROADCAST_STD_FUNC(sin)
   BROADCAST_STD_FUNC(cos)
-  // BROADCAST_STD_FUNC(tan)
   BROADCAST_STD_FUNC(asin)
   BROADCAST_STD_FUNC(acos)
   BROADCAST_STD_FUNC(atan)
@@ -582,6 +581,8 @@ struct alignas(64) vc_simd_type
     }
 
   BROADCAST_STD_FUNC2(atan2)
+  BROADCAST_STD_FUNC2(min)
+  BROADCAST_STD_FUNC2(max)
 
   #undef BROADCAST_STD_FUNC2
 

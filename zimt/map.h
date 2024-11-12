@@ -480,10 +480,9 @@ struct map_functor
   typedef typename base_type::in_type in_type ;
   typedef typename base_type::out_type out_type ;
   
-  enum { vsize = _vsize } ;
+  static const std::size_t vsize = _vsize ;
 
-  // enum { dimension = ExpandElementResult < nd_rc_type > :: size } ;
-  enum { dimension = get_ele_t<nd_rc_type>::size } ;
+  static const std::size_t dimension = get_ele_t<nd_rc_type>::size ;
   
   // we hold the 1D mappers in a tuple
   

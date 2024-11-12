@@ -199,11 +199,7 @@
 #include "../common.h"
 #include "simd_tag.h"
 
-// HWY_BEFORE_NAMESPACE();
-
-#ifdef MULTI_SIMD_ISA
 HWY_BEFORE_NAMESPACE() ;
-#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 // namespace hn = hwy::HWY_NAMESPACE ;
@@ -578,9 +574,7 @@ bool none_of ( gen_simd_type < P , vsize > arg )
 #undef XEL
 
 END_ZIMT_SIMD_NAMESPACE
-#ifdef MULTI_SIMD_ISA
 HWY_AFTER_NAMESPACE() ;
-#endif
 
 // HWY_AFTER_NAMESPACE();  // at file scope
 

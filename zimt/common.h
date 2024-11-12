@@ -481,6 +481,40 @@ protected:
   }
 } ;
 
+// Inside namespace zimt, we want 'using' declarations for functions
+// from the std namespace which we broadcast to xel_t and simdized
+// types, in order to allow us to formulate the 'roll-out' using the
+// function's name without qualifier and still getting the std one.
+// If these functions have definitions inside namespace zimt for
+// arguments of xel_t or simdized_type, they can be used as well
+// inside namespace zimt without qualifier. With this trick we can
+// write the BROADCAST_STD_FUNC macro in vector_common.h without
+// qualifiers for the math functions and get the right outcome for
+// xel_t and simdized types alike - and also for xel_t of simdized
+// types, and xel_t of these...
+
+using std::abs ;
+using std::trunc ;
+using std::round ;
+using std::floor ;
+using std::abs ;
+using std::ceil ;
+using std::log ;
+using std::exp ;
+using std::sqrt ;
+using std::sin ;
+using std::cos ;
+using std::tan ;
+using std::asin ;
+using std::acos ;
+using std::atan ;
+using std::atan2 ;
+using std::pow ;
+using std::fma ;
+
+using std::min ;
+using std::max ;
+
 } ; // end of namespace zimt
 
 // to use highway's foreach_target mechanism, a nested namespace

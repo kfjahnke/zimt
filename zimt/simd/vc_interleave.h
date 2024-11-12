@@ -41,8 +41,15 @@
     \brief de/interleaving with Vc
 */
 
-namespace simd
-{
+#if defined(ZIMT_VC_INTERLEAVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_VC_INTERLEAVE_H
+    #undef ZIMT_VC_INTERLEAVE_H
+  #else
+    #define ZIMT_VC_INTERLEAVE_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 namespace detail
 {
@@ -166,4 +173,7 @@ interleave ( const XEL < vc_simd_type < ele_type , vsz > , chn > & src ,
     ( src , trg , 0 , Vc::make_index_sequence<chn>() ) ;
 }
 
-} ;
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
+
+#endif // sentinel

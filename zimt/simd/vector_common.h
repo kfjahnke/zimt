@@ -191,15 +191,14 @@ friend std::istream & operator>> ( std::istream & isr ,
 // autovectorization of standard functions often needs additional
 // compiler flags, like, e.g., -fno-math-errno for clang++, to
 // produce hardware SIMD instructions.
-
-// #define BROADCAST_STD_FUNC(FUNC) \
-//   friend XEL FUNC ( XEL arg ) \
-//   { \
-//     XEL result ; \
-//     for ( size_type i = 0 ; i < N ; i++ ) \
-//       result [ i ] = std::FUNC ( arg [ i ] ) ; \
-//     return result ; \
-//   }
+// In common.h, we have using declarations in namespace zimt for
+// all of the std functions we broadcast here, So if there is no
+// 'genuine' zimt version of the function, the std version is
+// picked, rather than functions from the gloabl namespace which
+// can be problematic here, e.g. abs vs. fabs.
+// The functions taking zimt types are in turn produced via
+// 'friend' declarations from inside the zimt tpes' class
+// definition.
 
 #define BROADCAST_STD_FUNC(FUNC) \
   friend XEL FUNC ( XEL arg ) \
@@ -230,11 +229,11 @@ BROADCAST_STD_FUNC(atan)
 
 #define BROADCAST_STD_FUNC2(FUNC) \
   friend XEL FUNC ( XEL arg1 , \
-                          XEL arg2 ) \
+                    XEL arg2 ) \
   { \
     XEL result ; \
     for ( size_type i = 0 ; i < N ; i++ ) \
-      result [ i ] = std::FUNC ( arg1 [ i ] , arg2 [ i ] ) ; \
+      result [ i ] = FUNC ( arg1 [ i ] , arg2 [ i ] ) ; \
     return result ; \
   }
 
@@ -247,13 +246,15 @@ BROADCAST_STD_FUNC(atan)
 
 BROADCAST_STD_FUNC2(atan2)
 BROADCAST_STD_FUNC2(pow)
+BROADCAST_STD_FUNC2(min)
+BROADCAST_STD_FUNC2(max)
 
 #undef BROADCAST_STD_FUNC2
 
 #define BROADCAST_STD_FUNC3(FUNC) \
   friend XEL FUNC ( XEL arg1 , \
-                          XEL arg2 , \
-                          XEL arg3 ) \
+                    XEL arg2 , \
+                    XEL arg3 ) \
   { \
     XEL result ; \
     for ( size_type i = 0 ; i < N ; i++ ) \

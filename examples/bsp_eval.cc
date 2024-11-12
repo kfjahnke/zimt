@@ -211,8 +211,17 @@ struct dispatch
   
   int payload ( int argc , char * argv[] ) const
   {
-    // The first argument gives the number of repetitions of the
-    // 1M-eval test code.
+    // we can get information about the specific dispatch object:
+
+    std::cout << "payload code is using back-end: "
+              << zimt::backend_name [ backend ] << std::endl ;
+
+    #if defined USE_HWY || defined MULTI_SIMD_ISA
+
+    std::cout << "highway target: "
+              << hwy::TargetName ( hwy_isa ) << std::endl ;
+
+    #endif
 
     long TIMES = 1 ;
     if ( argc > 1 )
@@ -290,13 +299,10 @@ struct dispatch
 
     bsp.prefilter ( a ) ;
 
-    std::cout << "created bspline object:" << std::endl
-              << bsp << std::endl ;
+    // std::cout << "created bspline object:" << std::endl
+    //           << bsp << std::endl ;
 
     // create an evaluator
-
-    // typedef zimt::evaluator < dt2 , dt2 > ev22_t ;
-    // ev22_t ev22 ( bsp22 ) ;
 
     auto ev = zimt::make_safe_evaluator ( bsp ) ;
 
@@ -345,12 +351,12 @@ struct dispatch
     
     for ( std::size_t i = 0 ; i < shape.prod() ; i++ )
     {
-      auto d = p1[i] - p2[i] ;
+      auto d = abs ( p1[i] - p2[i] ) ;
       mx = mx.at_least ( d ) ;
-      mn = mn.at_most ( d ) ;
+      // mn = mn.at_most ( d ) ;
     }
 
-    mx = mx.at_least ( - mn ) ;
+    // mx = mx.at_least ( - mn ) ;
 
     std::cout << "delta max: " << mx.hmax() << std::endl ;
 
@@ -435,18 +441,40 @@ int main ( int argc , char * argv[] )
 
   // we can get information about the specific dispatch object:
 
-  std::cout << "obtained dispatch pointer " << dp << std::endl ;
-  std::cout << "dispatching to back-end   "
-            << zimt::backend_name [ dp->backend ] << std::endl ;
-#if defined USE_HWY || defined MULTI_SIMD_ISA
-  std::cout << "dispatch hwy_isa is       "
-            << hwy::TargetName ( dp->hwy_isa ) << std::endl ;
-#endif
+  std::cout << "******** calling payload with dynamic dispatch"
+            << std::endl ;
 
   // now we call the payload via the dispatch_base pointer.
 
   int success = dp->payload ( argc , argv ) ;
-  std::cout << "payload returned " << success << std::endl ;
+  std::cout << "******** payload returned " << success << std::endl ;
+
+#ifdef MULTI_SIMD_ISA
+
+  std::cout << "calling payloads with successively better ISAs:"
+            << std::endl ;
+
+  std::cout << "******** calling SSE2 payload" << std::endl ;
+  project::N_SSE2::dispatch d3 ;
+  d3.payload ( argc , argv ) ;
+
+  std::cout << "******** calling SSSE3 payload" << std::endl ;
+  project::N_SSSE3::dispatch d4 ;
+  d4.payload ( argc , argv ) ;
+
+  std::cout << "******** calling SSE4 payload" << std::endl ;
+  project::N_SSE4::dispatch d5 ;
+  d5.payload ( argc , argv ) ;
+
+  std::cout << "******** calling AVX2 payload" << std::endl ;
+  project::N_AVX2::dispatch d6 ;
+  d6.payload ( argc , argv ) ;
+
+  std::cout << "******** calling AVX3 payload" << std::endl ;
+  project::N_AVX3::dispatch d7 ;
+  d7.payload ( argc , argv ) ;
+
+#endif
 }
 
 #endif  // ZIMT_ONCE

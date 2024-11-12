@@ -389,20 +389,8 @@ struct std_simd_type
       return FUNC ( arg.to_base() ) ; \
     }
 
-    // TODO: getting zero back for negative args, hence no BROADCAST_STD_FUNC
-    // this happens with clang++ only, I opened an issue with VcDevel/std-simd:
-    // https://github.com/VcDevel/std-simd/issues/31
-
-//   BROADCAST_STD_FUNC(abs)
-
-  friend std_simd_type abs ( std_simd_type arg )
-  {
-    arg ( arg < 0 ) = - arg ;
-    return arg ;
-  }
-
+  BROADCAST_STD_FUNC(abs)
   BROADCAST_STD_FUNC(trunc)
-
   BROADCAST_STD_FUNC(round)
   BROADCAST_STD_FUNC(floor)
   BROADCAST_STD_FUNC(ceil)
@@ -422,33 +410,33 @@ struct std_simd_type
   BROADCAST_STD_FUNC(acos)
   BROADCAST_STD_FUNC(atan)
 
-  // TODO: odd: with clang++, sin and cos don't perform as expected;
-  // using a loop does the trick:
-
-#ifdef __clang__
-
-  friend std_simd_type cos ( std_simd_type arg )
-  {
-    std_simd_type result ;
-    for ( std::size_t i = 0 ; i < size() ; i++ )
-      result[i] = std::cos ( arg[i] ) ;
-    return result ;
-  }
-
-  friend std_simd_type sin ( std_simd_type arg )
-  {
-    std_simd_type result ;
-    for ( std::size_t i = 0 ; i < size() ; i++ )
-      result[i] = std::sin ( arg[i] ) ;
-    return result ;
-  }
-
-#else
+//   // TODO: odd: with clang++, sin and cos don't perform as expected;
+//   // using a loop does the trick:
+// 
+// #ifdef __clang__
+// 
+//   friend std_simd_type cos ( std_simd_type arg )
+//   {
+//     std_simd_type result ;
+//     for ( std::size_t i = 0 ; i < size() ; i++ )
+//       result[i] = std::cos ( arg[i] ) ;
+//     return result ;
+//   }
+// 
+//   friend std_simd_type sin ( std_simd_type arg )
+//   {
+//     std_simd_type result ;
+//     for ( std::size_t i = 0 ; i < size() ; i++ )
+//       result[i] = std::sin ( arg[i] ) ;
+//     return result ;
+//   }
+// 
+// #else
 
   BROADCAST_STD_FUNC(sin)
   BROADCAST_STD_FUNC(cos)
 
-#endif
+// #endif
 
   #undef BROADCAST_STD_FUNC
 
@@ -466,6 +454,8 @@ struct std_simd_type
 
   BROADCAST_STD_FUNC2(atan2)
   BROADCAST_STD_FUNC2(pow)
+  BROADCAST_STD_FUNC2(min)
+  BROADCAST_STD_FUNC2(max)
 
   #undef BROADCAST_STD_FUNC2
 

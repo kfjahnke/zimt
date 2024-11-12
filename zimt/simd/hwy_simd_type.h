@@ -1484,29 +1484,21 @@ public:
   BROADCAST_HWY_FUNC(sin,Sin)
   BROADCAST_HWY_FUNC(cos,Cos)
 
-  // hn function not (yet) available for tan, rolling out to sin/cos
+  // hn function not (yet) available for tan, rolling out to sincos
 
-//   BROADCAST_HWY_FUNC(tan,Tan)
-  
   friend simd_t tan ( const simd_t & arg )
   {
     simd_t result ;
     for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += arg.L() )
-      result.take ( i ,
-                    hn::Div ( hn::Sin ( D() , arg.yield ( i ) ) ,
-                              hn::Cos ( D() , arg.yield ( i ) ) ) ) ;
+    {
+      vec_t xx = arg.yield ( i ) ;
+      vec_t ss , cc ;
+      hn::SinCos ( D() , xx , ss , cc ) ;
+      result.take ( i , hn::Div ( ss , cc ) ) ;
+    }
     return result ;
   }
   
-  // goading version
-
-//   friend simd_t tan ( simd_t arg )
-//   {
-//     static const mod_f f = [](const T & x)
-//       { return T ( std::tan ( x ) ) ; } ;
-//     return arg.broadcast ( f ) ;
-//   }
-
   BROADCAST_HWY_FUNC(asin,Asin)
   BROADCAST_HWY_FUNC(acos,Acos)
   BROADCAST_HWY_FUNC(atan,Atan)
@@ -1544,10 +1536,10 @@ public:
     }
 
   BROADCAST_HWY_FUNC2(atan2,Atan2)
+  BROADCAST_HWY_FUNC2(min,Min)
+  BROADCAST_HWY_FUNC2(max,Max)
 
   // no hwy function available for pow
-
-  // BROADCAST_HWY_FUNC2(pow,Pow)
 
   friend simd_t pow ( const simd_t & base , const simd_t & exponent )
   {
@@ -2010,6 +2002,117 @@ struct simd_allocator
   }
   using base_t::base_t ;
 } ;
+
+// for the time being, highway can interleave 2, 3, and 4-channel
+// data. We route the code with overloads, because there is no
+// generalized code for an arbitrary number of channels.
+// code de/interleaving xel data with more than four channels will
+// be routed to one of the templates in xel.h, using gather/scatter
+
+template < typename T , std::size_t vsz >
+void interleave ( const xel_t < simd_t < T , vsz > , 2 > & src ,
+                        xel_t < T , 2 > * const & trg )
+{
+  typedef typename simd_t < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved2 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 2 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void interleave ( const xel_t < simd_t < T , vsz > , 3 > & src ,
+                        xel_t < T , 3 > * const & trg )
+{
+  typedef typename simd_t < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved3 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        src[2].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 3 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void interleave ( const xel_t < simd_t < T , vsz > , 4 > & src ,
+                        xel_t < T , 4 > * const & trg )
+{
+  typedef typename simd_t < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved4 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        src[2].yield ( i ) ,
+                        src[3].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 4 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const xel_t < T , 2 > * const & src ,
+                          xel_t < simd_t < T , vsz > , 2 > & trg )
+{
+  typedef typename simd_t < T , vsz > :: vec_t vec_t ;
+  typedef  typename simd_t < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved2 ( D() , p_src , c0 , c1 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    p_src += 2 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const xel_t < T , 3 > * const & src ,
+                          xel_t < simd_t < T , vsz > , 3 > & trg )
+{
+  typedef typename simd_t < T , vsz > :: vec_t vec_t ;
+  typedef  typename simd_t < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 , c2 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved3 ( D() , p_src , c0 , c1 , c2 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    trg[2].take ( i , c2 ) ;
+    p_src += 3 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const xel_t < T , 4 > * const & src ,
+                          xel_t < simd_t < T , vsz > , 4 > & trg )
+{
+  typedef typename simd_t < T , vsz > :: vec_t vec_t ;
+  typedef  typename simd_t < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 , c2 , c3 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved4 ( D() , p_src , c0 , c1 , c2 , c3 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    trg[2].take ( i , c2 ) ;
+    trg[3].take ( i , c3 ) ;
+    p_src += 4 * trg[0].L() ;
+  }
+}
 
 template < typename T , std::size_t SZ >
 using hwy_simd_type = simd_t < T , SZ > ;
