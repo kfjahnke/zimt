@@ -565,17 +565,27 @@ void bunch ( const xel_t < ET < value_type > , nch > * src ,
              std::size_t cap ,
              bool _stuff = false )
 {
-  for ( std::size_t e = 0 ; e < cap ; e++ )
+  // for ( std::size_t e = 0 ; e < cap ; e++ )
+  // {
+  //   for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+  //   {
+  //     (*this)[ch][e] = src [ e * stride ] [ ch ] ;
+  //   }
+  // }
+  // TODO: untested!
+  auto indexes = value_type::IndexesFromZero() ;
+  auto mask = ! ( indexes < int(cap) ) ;
+  indexes ( mask ) = int ( cap - 1 ) ;
+  indexes *= ( stride * nch ) ;
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ )
   {
-    for ( std::size_t ch = 0 ; ch < nch ; ch++ )
-    {
-      (*this)[ch][e] = src [ e * stride ] [ ch ] ;
-    }
+    // stuffs automatically
+    (*this)[ch] . gather ( (ET < value_type >*)src , indexes ) ;
   }
-  if ( _stuff )
-  {
-    stuff ( cap ) ;
-  }
+  // if ( _stuff )
+  // {
+  //   stuff ( cap ) ;
+  // }
 }
 
 // The next to member functions are for stashing and unstashing

@@ -280,7 +280,7 @@ struct dispatch
     // we want a 2D b-spline of 1024X1024 2-channel values
 
     typedef zimt::bspline < px_t , 2 > spline_type ;
-    zimt::xel_t < std::size_t , 2 > shape { 1023 , 1025 } ;
+    zimt::xel_t < std::size_t , 2 > shape { 1024 , 1024 } ;
 
     spline_type bsp ( shape , spline_degree , bc ) ;
 
@@ -299,8 +299,8 @@ struct dispatch
 
     bsp.prefilter ( a ) ;
 
-    // std::cout << "created bspline object:" << std::endl
-    //           << bsp << std::endl ;
+    std::cout << "created bspline object:" << std::endl
+              << bsp << std::endl ;
 
     // create an evaluator
 

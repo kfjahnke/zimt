@@ -1390,7 +1390,8 @@ public:
     typedef vector < math_ele_type , vsize > math_ele_v ;
 
     block_t < math_ele_v , 2 >
-      weight ( Shape2 ( spline_order , dimension ) ) ;
+      weight ( { std::size_t ( spline_order ) ,
+                 std::size_t ( dimension ) } ) ;
 
     obtain_weights ( weight ) ;
 

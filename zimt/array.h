@@ -334,17 +334,44 @@ struct view_t
     return origin [ offset ( crd ) ] ;
   }
 
-  template < typename index_type >
-  const T & operator[] ( const index_type & crd ) const
+  // we set up a 'lure' for calls to operator[] with integral indices
+  // but prevent it's use for other than 1D arrays with a static
+  // assertion. This is to block such 1D indices form being converted
+  // to index_type, which is not wanted: if you were using a[3] on a
+  // 2D array, this would convert to a[(3,3)].
+  // vigra::MultiArrayView allows such indexing, but interprets the
+  // index as an iterator. In zimt, this has to be done explicitly.
+  // On the other hand, if the array is indeed 1D, indexing with an
+  // integral fundamental is most effective, saving the offset
+  // calculation.
+
+  template < typename E ,
+             typename = std::enable_if < std::is_integral < E > :: value > >
+  const T & operator[] ( const E & crd ) const
   {
-    return origin [ offset ( crd ) ] ;
+    static_assert ( D == 1 , "use fundamental indexes only for 1D arrays" ) ;
+    return origin [ crd ] ;
   }
 
-  template < typename index_type >
-  T & operator[] ( const index_type & crd )
+  template < typename E ,
+             typename = std::enable_if < std::is_integral < E > :: value > >
+  T & operator[] ( const E & crd )
   {
-    return origin [ offset ( crd ) ] ;
+    static_assert ( D == 1 , "use fundamental indexes only for 1D arrays" ) ;
+    return origin [ crd ] ;
   }
+
+//   template < typename index_type >
+//   const T & operator[] ( const index_type & crd ) const
+//   {
+//     return origin [ offset ( crd ) ] ;
+//   }
+//   
+//   template < typename index_type >
+//   T & operator[] ( const index_type & crd )
+//   {
+//     return origin [ offset ( crd ) ] ;
+//   }
 
   // 'peek' function giving access to the view's origin
 

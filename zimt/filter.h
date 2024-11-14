@@ -1610,49 +1610,17 @@ void amplify ( const zimt::view_t
 
   assert ( input.size() == output.size() ) ;
 
-  // set up variables to orchestrate the batchwise processing
-  // of the data by multithread's payload routine
-
-  std::ptrdiff_t batch_size = 1024 ;
-  std::ptrdiff_t total_size = input.size() ;
-  zimt::atomic < std::ptrdiff_t > tickets ( total_size ) ;
-  
-  // the payload routine will process batches of up to batch_size
-  // and continue to do so until the input is exhausted
-  
-  std::function < void() > payload =
-  [&]()
+  if ( std::is_same < in_value_type , out_value_type > :: value )
   {
-    // start and end index for the batches to be processed;
-    // these are fetched from 'tickets' in the caller, above
+    output.copy_data ( input ) ;
+    return ;
+  }
+  
+  // amplify has built-in type conversion.
+  // TODO: amplify with boost == 1 is futile.
 
-    std::ptrdiff_t lo , hi ;
-
-    while ( zimt::fetch_range_ascending
-              ( tickets , batch_size , total_size , lo , hi ) )
-    {
-      if ( boost == math_ele_type ( 1 ) )
-      {
-        while ( lo < hi )
-        {
-          output[lo] = out_value_type ( input[lo] ) ;
-          ++lo ;
-        }
-      }
-      else
-      {
-        while ( lo < hi )
-        {
-          output[lo] = out_value_type ( input[lo] * boost ) ;
-          ++lo ;
-        }
-      }
-    }
-  } ;
-
-  // launch njobs workers executing the payload routine
-
-  zimt::multithread ( payload , njobs ) ;
+  amplify_type < in_value_type , out_value_type > amp ( boost ) ;
+  transform ( amp , input , output ) ;
 }
 
 END_ZIMT_SIMD_NAMESPACE

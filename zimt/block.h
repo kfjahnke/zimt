@@ -47,6 +47,7 @@
 
 #include <vector>
 #include "xel.h"
+#include "array.h"
 
 namespace zimt
 {
@@ -63,7 +64,7 @@ namespace zimt
 // size is fixed at construction, this type should optimize well.
 
 template < typename T , std::size_t D >
-struct block_t
+struct vblock_t
 : protected std::vector < T >
 {
   typedef xel_t < std::size_t , D > index_t ;
@@ -85,7 +86,7 @@ struct block_t
     return strides ;
   }
 
-  block_t ( const index_t & _shape )
+  vblock_t ( const index_t & _shape )
   : std::vector < T > ( _shape.prod() ) ,
     shape ( _shape ) ,
     strides ( make_strides ( _shape ) )
@@ -119,6 +120,40 @@ struct block_t
   T * data()
   {
     return & ( (*this)[0] ) ;
+  }
+} ;
+
+template < typename T , std::size_t D >
+struct block_t
+: public view_t < D , T >
+{
+  typedef view_t < D , T > base_t ;
+  using base_t::origin ;
+  using typename base_t::index_type ;
+
+  static index_type make_strides ( const index_type & shape )
+  {
+    index_type strides ;
+    std::size_t stride = 1 ;
+    strides [ 0 ] = stride ;
+
+    for ( std::size_t d = 1 ; d < D ; d++ )
+    {
+      stride *= shape [ d - 1 ] ;
+      strides [ d ] = stride ;
+    }
+    return strides ;
+  }
+
+  block_t ( const index_type & _shape )
+  : base_t ( new T [ _shape.prod() ] ,
+             make_strides ( _shape ) ,
+             _shape )
+  { }
+
+  ~block_t()
+  {
+    delete[] origin ;
   }
 } ;
 

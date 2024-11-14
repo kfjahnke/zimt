@@ -778,7 +778,7 @@ struct amplify_type
   
   // typedef typename vigra::ExpandElementResult < math_type > :: type
   //   math_ele_type ;
-  typedef typename math_type::value_type math_ele_type ;
+  typedef typename get_ele_t < math_type > :: type math_ele_type ;
 
   typedef zimt::xel_t < math_ele_type , dimension > math_nd_ele_type ;
   
@@ -1363,8 +1363,8 @@ template < typename T , std::size_t N ,
            std::size_t L = vector_traits < T > :: vsize >
 struct echo
 : public unary_functor < zimt::xel_t < T , N > ,
-                               zimt::xel_t < T , N > ,
-                               L >
+                         zimt::xel_t < T , N > ,
+                         L >
 {
   template < typename I , typename O >
   void eval ( const I & i , O & o , const std::size_t cap = 0 )
