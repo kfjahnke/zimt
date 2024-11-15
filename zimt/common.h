@@ -497,7 +497,6 @@ using std::abs ;
 using std::trunc ;
 using std::round ;
 using std::floor ;
-using std::abs ;
 using std::ceil ;
 using std::log ;
 using std::exp ;

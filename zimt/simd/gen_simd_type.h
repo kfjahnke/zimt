@@ -260,7 +260,7 @@ gen_simd_type ( const X < U , N > & rhs )
 // binary operators (used to be in xel_inner.h)
 
 #define INTEGRAL_ONLY \
-  static_assert ( std::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \
@@ -576,6 +576,12 @@ bool none_of ( gen_simd_type < P , vsize > arg )
 END_ZIMT_SIMD_NAMESPACE
 HWY_AFTER_NAMESPACE() ;
 
-// HWY_AFTER_NAMESPACE();  // at file scope
+namespace zimt
+{
+  template < typename T , size_t N >
+  struct is_integral < zimt::gen_simd_type < T , N > >
+  : public std::is_integral < T >
+  { } ;
+} ;
 
 #endif // #define GEN_SIMD_TYPE_H

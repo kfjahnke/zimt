@@ -72,14 +72,9 @@ struct xel_t ;
 
 // all xel data are deemed integral if their value_type is.
 
-// template < typename T >
-// struct is_integral
-// : public std::is_integral < T >
-// { } ;
-
 template < typename T , size_t N >
 struct is_integral < xel_t < T , N > >
-: public std::is_integral < T >
+: public is_integral < T >
 { } ;
 
 // 'form' is a traits class used to abstract from the concrete
@@ -190,7 +185,7 @@ struct xel_t
 // values, both with 'C semantics' type promotion.
 
 #define INTEGRAL_ONLY \
-  static_assert ( zimt::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \
@@ -356,7 +351,7 @@ xel_t < value_type , nch + 1 > widen ( const value_type & by ,
 // vector code for scalar values as well.
 
 #define INTEGRAL_ONLY \
-  static_assert ( std::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \

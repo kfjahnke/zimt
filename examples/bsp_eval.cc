@@ -142,8 +142,6 @@ struct dispatch_base
 
 /////////////// Tell highway which file to submit to foreach_target
 
-// TODO: can't we somehow use __FILE__ here?
-
 #define HWY_TARGET_INCLUDE "bsp_eval.cc"  // this very file
 
 //--------------------------------------------------------------------

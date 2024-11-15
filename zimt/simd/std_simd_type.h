@@ -97,7 +97,9 @@ struct std_simd_type
   typedef std::size_t size_type ;
 
   typedef std::experimental::simd < value_type , abi_t > base_t ;
-  typedef std::experimental::simd < int , abi_t > index_type ;
+  typedef std::experimental::simd < int , abi_t > index_base_type ;
+  typedef std_simd_type < int , _vsize > index_type ;
+
   using typename base_t::mask_type ;
 
   // provide the size as a constexpr

@@ -66,6 +66,7 @@
 
 #include <iostream>
 #include <stdlib.h>
+#include <chrono>
 
 #include <zimt/zimt_vigra.h>
 #include <zimt/prefilter.h>
@@ -84,7 +85,7 @@ typedef zimt::array_t < 2 , pixel_type > target_type ;
 
 int main ( int argc , char * argv[] )
 {
-  if ( argc < 2 )
+  if ( argc < 3 )
   {
     std::cerr << "pass a colour image file as argument," << std::endl ;
     std::cerr << "followed by the spline degree" << std::endl ;
@@ -107,6 +108,11 @@ int main ( int argc , char * argv[] )
 
   vigra::importImage ( imageInfo , zimt::to_vigra ( a ) ) ;
 
+  // we want to time the operation
+
+  std::chrono::system_clock::time_point start
+    = std::chrono::system_clock::now() ;
+
   // apply the filter
 
   zimt::prefilter
@@ -116,6 +122,14 @@ int main ( int argc , char * argv[] )
      degree ) ;
 
   // store the result with vigra impex
+
+  std::chrono::system_clock::time_point end
+    = std::chrono::system_clock::now() ;
+
+  std::cout << "prefilter took "
+            << std::chrono::duration_cast<std::chrono::milliseconds>
+                ( end - start ) . count()
+            << " ms" << std::endl ;
 
   vigra::ImageExportInfo eximageInfo ( "prefilter.tif" );
   

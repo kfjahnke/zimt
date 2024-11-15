@@ -76,7 +76,7 @@
 // lookup via OIIO's 'environment' function comes out as one would
 // expect with this scheme.
 
-#include <array>
+#include <memory>
 
 #include <zimt/zimt.h>
 
@@ -121,7 +121,7 @@ T norm ( const C < T , N > & x )
 struct lookup_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  TextureSystem * ts ;
+  std::shared_ptr<TextureSystem> ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -153,7 +153,7 @@ struct lookup_t
   // signs changes on the y axis in the code. The image's x axis and
   // the IMath x axis coincide.
 
-  lookup_t ( TextureSystem * _ts ,
+  lookup_t ( std::shared_ptr<TextureSystem> _ts ,
              TextureOptBatch & _batch_options ,
              TextureSystem::TextureHandle * _th ,
              const std::array < v3_t , 2 > & _step )
@@ -289,7 +289,7 @@ struct lookup_t
 struct laplace_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  TextureSystem * ts ;
+  std::shared_ptr<TextureSystem> ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -297,12 +297,12 @@ struct laplace_t
   const float laplace1 ;
   const float laplace2 ;
 
-  lookup_t ( TextureSystem * _ts ,
-             TextureOptBatch & _batch_options ,
-             TextureSystem::TextureHandle * _th ,
-             const std::array < v3_t , 2 > & _step ,
-             const float & _laplace1 = 1.0f ,
-             const float & _laplace2 = 1.0f )
+  laplace_t ( std::shared_ptr<TextureSystem> _ts ,
+              TextureOptBatch & _batch_options ,
+              TextureSystem::TextureHandle * _th ,
+              const std::array < v3_t , 2 > & _step ,
+              const float & _laplace1 = 1.0f ,
+              const float & _laplace2 = 1.0f )
   : ts ( _ts ) ,
     batch_options ( _batch_options ) ,
     th ( _th ) ,
@@ -502,7 +502,7 @@ int main ( int argc , char * argv[] )
 
   // now we set up the TextureSystem, which is really simple.
 
-  auto * ts = TextureSystem::create() ; 
+  auto ts = TextureSystem::create() ; 
 
   // The options for the lookup determine the quality of the output
   // and the time it takes to compute it. Switching MipMapping off

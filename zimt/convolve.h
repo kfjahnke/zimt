@@ -557,7 +557,7 @@ void convolve (
     return ;
   }
   
-  xlf_type kernel [ ksize ] ;
+  std::vector < xlf_type > kernel ( ksize ) ;
   for ( int i = 0 ; i < ksize ; i++ )
     kernel[i] = kv[i] ;
   
@@ -576,7 +576,7 @@ void convolve (
     {
       vspecs.push_back 
         ( fir_filter_specs
-          ( bcv [ axis ] , ksize , headroom , kernel ) ) ;
+          ( bcv [ axis ] , ksize , headroom , kernel.data() ) ) ;
     }
  
     filter
@@ -592,7 +592,7 @@ void convolve (
     filter
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , axis ,
-      fir_filter_specs ( bcv [ axis ] , ksize , headroom , kernel ) ,
+      fir_filter_specs ( bcv [ axis ] , ksize , headroom , kernel.data() ) ,
       njobs ) ;
   }
 }

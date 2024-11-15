@@ -601,7 +601,7 @@ struct vc_simd_type
   // TODO: might relax constraints by using 'std::is_convertible'
 
   #define INTEGRAL_ONLY \
-    static_assert ( std::is_integral < value_type > :: value , \
+    static_assert ( is_integral < value_type > :: value , \
                     "this operation is only allowed for integral types" ) ;
 
   #define BOOL_ONLY \

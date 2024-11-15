@@ -1580,7 +1580,7 @@ public:
   // TODO: might relax constraints by using 'std::is_convertible'
 
   #define INTEGRAL_ONLY \
-    static_assert ( std::is_integral < value_type > :: value , \
+    static_assert ( is_integral < value_type > :: value , \
                     "this operation is only allowed for integral types" ) ;
 
   // augmented assignment with a chunk as rhs and with a T as rhs.
@@ -2120,6 +2120,16 @@ using hwy_simd_type = simd_t < T , SZ > ;
 END_ZIMT_SIMD_NAMESPACE
 
 HWY_AFTER_NAMESPACE();  // at file scope
+
+// all SIMD data are deemed integral if their value_type is.
+
+namespace zimt
+{
+  template < typename T , size_t N >
+  struct is_integral < hwy_simd_type < T , N > >
+  : public std::is_integral < T >
+  { } ;
+}
 
 namespace std
 {

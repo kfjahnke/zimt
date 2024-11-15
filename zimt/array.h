@@ -346,7 +346,11 @@ struct view_t
   // calculation.
 
   template < typename E ,
-             typename = std::enable_if < std::is_integral < E > :: value > >
+             typename = typename std::enable_if
+               <    std::is_fundamental < E > :: value
+                 && std::is_integral < E > :: value
+               > :: type
+            >
   const T & operator[] ( const E & crd ) const
   {
     static_assert ( D == 1 , "use fundamental indexes only for 1D arrays" ) ;
@@ -354,7 +358,11 @@ struct view_t
   }
 
   template < typename E ,
-             typename = std::enable_if < std::is_integral < E > :: value > >
+             typename = typename std::enable_if
+               <    std::is_fundamental < E > :: value
+                 && std::is_integral < E > :: value
+               > :: type
+            >
   T & operator[] ( const E & crd )
   {
     static_assert ( D == 1 , "use fundamental indexes only for 1D arrays" ) ;
