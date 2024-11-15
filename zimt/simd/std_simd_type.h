@@ -97,7 +97,11 @@ struct std_simd_type
   typedef std::size_t size_type ;
 
   typedef std::experimental::simd < value_type , abi_t > base_t ;
-  typedef std::experimental::simd < int , abi_t > index_base_type ;
+
+  // we use a std::simd_type of integers as index_type, to be able to
+  // manipulate it with zimt functions - If we were to use the base
+  // type, idioms like indexes(mask) = ... would not work.
+
   typedef std_simd_type < int , _vsize > index_type ;
 
   using typename base_t::mask_type ;
@@ -480,7 +484,7 @@ struct std_simd_type
   // TODO: might relax constraints by using 'std::is_convertible'
 
   #define INTEGRAL_ONLY \
-    static_assert ( std::is_integral < value_type > :: value , \
+    static_assert ( is_integral < value_type > :: value , \
                     "this operation is only allowed for integral types" ) ;
 
   #define BOOL_ONLY \
