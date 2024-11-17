@@ -136,8 +136,6 @@
 /// context will require careful planning. With zimt::process,
 /// everything should 'snap into place'.
 
-#ifndef ZIMT_TILES_H
-
 #include <stdio.h>
 #include <utility>
 #include <vector>
@@ -146,14 +144,22 @@
 #include "xel.h"
 #include "array.h"
 
+#if defined(ZIMT_TILES_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_TILES_H
+    #undef ZIMT_TILES_H
+  #else
+    #define ZIMT_TILES_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
 #ifndef ZIMT_SINGLETHREAD
 std::mutex stdout_mutex ;
 #endif
 std::atomic < long > load_count ( 0 ) ;
 std::atomic < long > store_count ( 0 ) ;
 
-namespace zimt
-{
 // tile_t acts as conduit to a tile's data and encodes it's
 // interaction with files. The struct itself is lightweight,
 // and memory for storage of the tile's actual data is allocated
@@ -604,48 +610,13 @@ public:
     }
   }
 
-  // close the tile store altogether - i.e. after it was processed.
-  // The 'read_from_disk' and 'write_to_disk' flags are cleared,
-  // in case this object is to be re-used. User code should call
-  // close() when re-using the tile store, or use a new tile_store
-  // object (which is more RAII style) - the tile_store object
-  // in itself is not a very valuable asset.
-
-  void close()
-  {
-    read_from_disk = false ;
-    write_to_disk = false ;
-
-    // test: have all data duly been processed by now?
-    // can go later. We rely on the zimt::process run to
-    // result in zero due transits, so the tile store can
-    // bo opened again without having to reset the due
-    // values in the tether.
-
-    zimt::mcs_t < D > mcs ( store_shape ) ;
-    for ( std::size_t i = 0 ; i < store_shape.prod() ; i++ )
-    {
-      // this is the tile we're looking at:
-
-      auto tile_index = mcs() ;
-      auto & tether ( store [ tile_index ] ) ; // shorthand
-
-      if ( tether.due != 0 )
-        std::cerr << "warning: for tile " << tile_index
-                  << " due is nonzero: " << tether.due << std::endl ;
-
-      // TODO: with example program image_tiles.cc, this asserion fails,
-      // but the result seems to be correct. Hence the 'warning' above.
-      // This needs investigation - tether.due should be zero.
-
-      // assert ( tether.due == 0 ) ;
-    }
-  }
-
   // tile_store_t's c'tor receives the 'notional' shape of the
   // entire workload, the intended - or given - shape of an
   // individual tile, and the base name of files associated
   // with tiles.
+  // attention: immediately after construction, the member 'store'
+  // is not initialized (it's a zimt::array) - the tether_t objects
+  // are only initialized when open() is called.
 
   tile_store_t ( shape_type _array_shape ,
                  shape_type _tile_shape ,
@@ -656,16 +627,6 @@ public:
     store ( get_store_shape ( _array_shape , _tile_shape ) ) ,
     basename ( _basename )
   { }
-
-  // this d'tor is not really necessary, but while the design
-  // solidifies, we call close() to make sure all due transits
-  // have indeed happened, so we'll be alerted if the logic
-  // isn't right.
-
-  ~tile_store_t()
-  {
-    close() ;
-  }
 
   // 'get' provides a pointer to the tile at 'tile_index'. If the
   // pointer in the 'tether' is initially nullptr, a new tile_t
@@ -748,7 +709,10 @@ public:
       tether.due -= done ;
 
       if ( tether.due == 0 )
+      {
+        // std::cout << "dropping tile " << tile_index << std::endl ;
         drop ( tile_index ) ;
+      }
     }
   }
 
@@ -1568,7 +1532,7 @@ public:
   }
 } ; // class tile_storer
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#define ZIMT_TILES_H
-#endif
+#endif // sentinel

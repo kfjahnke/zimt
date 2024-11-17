@@ -164,10 +164,9 @@ struct rotate_rgb_t
   template < typename I , typename O >
   void eval ( const I & in , O & out ) const
   {
-    // out [ 0 ] = in [ 1 ] ;
-    // out [ 1 ] = in [ 2 ] ;
-    // out [ 2 ] = in [ 0 ] ;
-    out = in ;
+    out [ 0 ] = in [ 1 ] ;
+    out [ 1 ] = in [ 2 ] ;
+    out [ 2 ] = in [ 0 ] ;
   }
 } ;
 
@@ -265,12 +264,6 @@ int main ( int argc , char * argv[] )
 
   zimt::process < 2 > ( { w , h } , tl , rotate_rgb_t() , tp , bill ) ;
 
-  std::cout << "load count: " << load_count << std::endl ;
-  std::cout << "store count: " << store_count << std::endl ;
-
-  inp->close() ;
-  std::cout << "inp->close() returned" << std::endl ;
-
-  out->close() ;
-  std::cout << "out->close() returned" << std::endl ;
+  std::cout << "load count: " << zimt::load_count << std::endl ;
+  std::cout << "store count: " << zimt::store_count << std::endl ;
 }

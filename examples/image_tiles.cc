@@ -131,10 +131,9 @@ struct rotate_rgb_t
   template < typename I , typename O >
   void eval ( const I & in , O & out ) const
   {
-    out = in ;
-    // out [ 0 ] = in [ 1 ] ;
-    // out [ 1 ] = in [ 2 ] ;
-    // out [ 2 ] = in [ 0 ] ;
+    out [ 0 ] = in [ 1 ] ;
+    out [ 1 ] = in [ 2 ] ;
+    out [ 2 ] = in [ 0 ] ;
   }
 } ;
 
@@ -244,10 +243,9 @@ int main ( int argc , char * argv[] )
     auto success = inp->read_tile ( column , line , 0 , typedesc , p_trg ) ;
     // dump_tile ( "input" , column , line , p_trg ) ;
     std::lock_guard < std::mutex > lk ( cout_mutex ) ;
-    std::cout << "read_tile: x " << column << " y " << line ;
     if ( ! success )
-      std::cout << " failed" ;
-    std::cout << std::endl ;
+      std::cout << "read_tile: x " << column << " y " << line
+                << " failed" << std::endl ;
     return success ;
   } ;
 
@@ -261,10 +259,9 @@ int main ( int argc , char * argv[] )
     bool success = out->write_tile ( column , line , 0 , typedesc , p_src ) ;
     // dump_tile ( "output" , column , line , p_src ) ;
     std::lock_guard < std::mutex > lk ( cout_mutex ) ;
-    std::cout << "write_tile: x " << column << " y " << line ;
     if ( ! success )
-      std::cout << " failed" ;
-    std::cout << std::endl ;
+      std::cout << "write_tile: x " << column << " y " << line
+                << " failed" << std::endl ;
     return success ;
   } ;
 
@@ -298,18 +295,7 @@ int main ( int argc , char * argv[] )
 
   zimt::bill_t bill ;
 
-  if ( random_access )
-  {
-    // more to show that we can than for any other reason - accessing
-    // the data with aggregation along axis 1 is less efficient, but
-    // needed for some purposes.
-  
-    std::cout << "target supports random access, will go columns-first"
-              << std::endl ;
-  
-    bill.axis = 1 ;
-  }
-  else
+  if ( ! random_access )
   {
     // multithreaded access is only safe if the target can accept
     // tiles in random order. So if it can't, we limit the process
@@ -356,12 +342,6 @@ int main ( int argc , char * argv[] )
 
   zimt::process < 2 > ( { w , h } , tl , rotate_rgb_t() , tp , bill ) ;
 
-  std::cout << "load count: " << load_count << std::endl ;
-  std::cout << "store count: " << store_count << std::endl ;
-
-  inp->close() ;
-  std::cout << "inp->close() returned" << std::endl ;
-
-  out->close() ;
-  std::cout << "out->close() returned" << std::endl ;
+  std::cout << "load count: " << zimt::load_count << std::endl ;
+  std::cout << "store count: " << zimt::store_count << std::endl ;
 }

@@ -551,36 +551,28 @@ void stuff ( std::size_t cap )
   }
 }
 
-// capped bunch. TODO: rewrite using masks
+// capped bunch.
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void bunch ( const xel_t < ET < value_type > , nch > * src ,
+void bunch ( const xel_t < ET < value_type > , nch > * _src ,
              std::size_t stride ,
              std::size_t cap ,
              bool _stuff = false )
 {
-  // for ( std::size_t e = 0 ; e < cap ; e++ )
-  // {
-  //   for ( std::size_t ch = 0 ; ch < nch ; ch++ )
-  //   {
-  //     (*this)[ch][e] = src [ e * stride ] [ ch ] ;
-  //   }
-  // }
-  // TODO: untested!
   auto indexes = value_type::IndexesFromZero() ;
   auto mask = ! ( indexes < int(cap) ) ;
   indexes ( mask ) = int ( cap - 1 ) ;
   indexes *= ( stride * nch ) ;
-  for ( std::size_t ch = 0 ; ch < nch ; ch++ )
+  const ET<value_type> * src = (const ET<value_type>*) _src ;
+
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ , src++ )
   {
-    // stuffs automatically
-    (*this)[ch] . gather ( (ET < value_type >*)src , indexes ) ;
+    // stuffs automatically, because indexes for lane nr. cap
+    // and larger are set to cap-1, so gather a valid datum.
+
+    (*this)[ch] . gather ( src , indexes ) ;
   }
-  // if ( _stuff )
-  // {
-  //   stuff ( cap ) ;
-  // }
 }
 
 // The next to member functions are for stashing and unstashing
