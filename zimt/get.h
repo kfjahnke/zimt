@@ -52,8 +52,6 @@
     namely the two init and two increase overloads.
 */
 
-// #ifndef ZIMT_GET_H
-
 #if defined(ZIMT_GET_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_GET_H
     #undef ZIMT_GET_H

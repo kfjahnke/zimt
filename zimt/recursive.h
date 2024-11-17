@@ -59,9 +59,6 @@
 
 */
 
-// #ifndef ZIMT_RECURSIVE_H
-// #define ZIMT_RECURSIVE_H
-
 #include <limits>
 #include "common.h"
 #include "filter.h"
@@ -73,9 +70,7 @@
     #define ZIMT_CONVOLVE_H
   #endif
 
-#ifdef MULTI_SIMD_ISA
 HWY_BEFORE_NAMESPACE() ;
-#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 using namespace std ;
@@ -1011,7 +1006,7 @@ void forward_backward_recursive_filter (
                    < dimension ,
                      out_value_type > & output ,
                  xel_t < bc_code , dimension > bcv ,
-                 std::vector < xlf_type > pv ,
+                 std::vector < xlf_type > poles ,
                  xlf_type tolerance = -1 ,
                  xlf_type boost = xlf_type ( 1 ) ,
                  int axis = -1 , // -1: apply along all axes
@@ -1024,7 +1019,7 @@ void forward_backward_recursive_filter (
   if ( tolerance < 0 )
     tolerance = std::numeric_limits < math_ele_type > :: epsilon() ;
 
-  int npoles = pv.size() ;
+  int npoles = poles.size() ;
   
   if ( npoles < 1 )
   {
@@ -1042,10 +1037,6 @@ void forward_backward_recursive_filter (
   }
   
 
-  xlf_type poles [ npoles ] ;
-  for ( int i = 0 ; i < npoles ; i++ )
-    poles[i] = pv[i] ;
-  
   typedef recursive_filter < simdized_type ,
                              math_ele_type ,
                              vsize
@@ -1066,7 +1057,7 @@ void forward_backward_recursive_filter (
     {
       vspecs.push_back
         ( iir_filter_specs
-          ( bcv [ axis ] , npoles , poles , tolerance , 1 ) ) ;
+          ( bcv [ axis ] , npoles , poles.data() , tolerance , 1 ) ) ;
     }
 
     // 'boost' is only applied to dimension 0, since it is meant to
@@ -1088,14 +1079,12 @@ void forward_backward_recursive_filter (
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , axis ,
       iir_filter_specs (
-        bcv [ axis ] , npoles , poles , tolerance , boost ) ,
+        bcv [ axis ] , npoles , poles.data() , tolerance , boost ) ,
       njobs ) ;
   }
 }
 
 END_ZIMT_SIMD_NAMESPACE
-#ifdef MULTI_SIMD_ISA
 HWY_AFTER_NAMESPACE() ;
-#endif
 
 #endif // sentinel

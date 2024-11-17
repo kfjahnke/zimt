@@ -2126,7 +2126,7 @@ HWY_AFTER_NAMESPACE();  // at file scope
 namespace zimt
 {
   template < typename T , size_t N >
-  struct is_integral < hwy_simd_type < T , N > >
+  struct is_integral < ZIMT_ENV::hwy_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
 }

@@ -131,9 +131,6 @@
 
 #include "array.h"
 
-// #ifndef ZIMT_UNARY_FUNCTOR_H
-// #define ZIMT_UNARY_FUNCTOR_H
-
 #if defined(ZIMT_UNARY_FUNCTOR_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_UNARY_FUNCTOR_H
     #undef ZIMT_UNARY_FUNCTOR_H

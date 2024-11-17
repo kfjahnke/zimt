@@ -76,9 +76,6 @@
 
 */
 
-// #ifndef ZIMT_CONVOLVE_H
-// #define ZIMT_CONVOLVE_H
-
 #include "common.h"
 #include "filter.h"
 #include "extrapolate.h"
@@ -90,9 +87,7 @@
     #define ZIMT_CONVOLVE_H
   #endif
 
-#ifdef MULTI_SIMD_ISA
 HWY_BEFORE_NAMESPACE() ;
-#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// fir_filter_specs holds the parameters for a filter performing
@@ -598,8 +593,6 @@ void convolve (
 }
 
 END_ZIMT_SIMD_NAMESPACE
-#ifdef MULTI_SIMD_ISA
 HWY_AFTER_NAMESPACE() ;
-#endif
 
 #endif // sentinel

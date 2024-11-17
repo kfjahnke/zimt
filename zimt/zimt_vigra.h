@@ -42,6 +42,7 @@
 */
 
 #ifndef ZIMT_VIGRA_H
+#define ZIMT_VIGRA_H
 
 #include <vigra/tinyvector.hxx>
 #include <vigra/multi_array.hxx>
@@ -157,6 +158,5 @@ to_vigra ( zimt::view_t < D , zimt::xel_t < T , N > > & v )
 
 } ; // namespace zimt
 
-#define ZIMT_VIGRA_H
 #endif // #ifndef ZIMT_VIGRA_H
 

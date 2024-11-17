@@ -36,6 +36,9 @@
 /*                                                                      */
 /************************************************************************/
 
+// TODO: the result is not correct: one channel is missing in
+// the last columns.
+
 // This example demonstrates processing an image file with a simple
 // functor. It opens an image using OpenImageIO, reads the scanlines,
 // applies the functor to the scanlines and stores the scanlines to
@@ -161,9 +164,10 @@ struct rotate_rgb_t
   template < typename I , typename O >
   void eval ( const I & in , O & out ) const
   {
-    out [ 0 ] = in [ 1 ] ;
-    out [ 1 ] = in [ 2 ] ;
-    out [ 2 ] = in [ 0 ] ;
+    // out [ 0 ] = in [ 1 ] ;
+    // out [ 1 ] = in [ 2 ] ;
+    // out [ 2 ] = in [ 0 ] ;
+    out = in ;
   }
 } ;
 
@@ -260,4 +264,13 @@ int main ( int argc , char * argv[] )
   // much memory load and with better cache efficiency.
 
   zimt::process < 2 > ( { w , h } , tl , rotate_rgb_t() , tp , bill ) ;
+
+  std::cout << "load count: " << load_count << std::endl ;
+  std::cout << "store count: " << store_count << std::endl ;
+
+  inp->close() ;
+  std::cout << "inp->close() returned" << std::endl ;
+
+  out->close() ;
+  std::cout << "out->close() returned" << std::endl ;
 }

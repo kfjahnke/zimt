@@ -987,11 +987,9 @@ namespace std
 
 namespace zimt
 {
-
   template < typename T , size_t N >
   struct is_integral < zimt::vc_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
-
 } ;
 #endif // #define VC_SIMD_TYPE_H

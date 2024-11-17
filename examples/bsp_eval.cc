@@ -297,8 +297,8 @@ struct dispatch
 
     bsp.prefilter ( a ) ;
 
-    std::cout << "created bspline object:" << std::endl
-              << bsp << std::endl ;
+    // std::cout << "created bspline object:" << std::endl
+    //           << bsp << std::endl ;
 
     // create an evaluator
 
@@ -439,17 +439,22 @@ int main ( int argc , char * argv[] )
 
   // we can get information about the specific dispatch object:
 
-  std::cout << "******** calling payload with dynamic dispatch"
-            << std::endl ;
+  std::cout << "******** calling payload with "
+#ifdef MULTI_SIMD_ISA
+            << "dynamic dispatch" << std::endl ;
+#else
+            << "static dispatch" << std::endl ;
+#endif
 
   // now we call the payload via the dispatch_base pointer.
 
   int success = dp->payload ( argc , argv ) ;
+
   std::cout << "******** payload returned " << success << std::endl ;
 
 #ifdef MULTI_SIMD_ISA
 
-  std::cout << "calling payloads with successively better ISAs:"
+  std::cout << "******** calling payloads with successively better ISAs:"
             << std::endl ;
 
   std::cout << "******** calling SSE2 payload" << std::endl ;

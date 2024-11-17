@@ -784,11 +784,10 @@ std_simd_type & broadcast ( bin_f f , const std_simd_type & rhs )
 
 namespace zimt
 {
-
   template < typename T , size_t N >
   struct is_integral < zimt::std_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
-
 } ;
+
 #endif // #define ZIMT_SIMD_TYPE_H

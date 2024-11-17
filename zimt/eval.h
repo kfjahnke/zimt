@@ -124,9 +124,6 @@
     transform.h for more on the topic.
 */
 
-// #ifndef ZIMT_EVAL_H
-// #define ZIMT_EVAL_H
-
 #if defined(ZIMT_EVAL_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_EVAL_H
     #undef ZIMT_EVAL_H

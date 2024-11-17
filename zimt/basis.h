@@ -246,135 +246,135 @@ real_type bspline_basis_2 ( int x2 , int degree , int derivative = 0 )
 /// A weight matrix is also used by 'basis_functor', in a similar way to how
 /// it's used for weight generation.
 
-template < class target_type >
-void calculate_weight_matrix ( zimt::array_t < 2 , target_type > & res )
-{
-  int order = res.shape[0] ;
-  int degree = order - 1 ;
-  int derivative = order - res.shape[1] ;
-  
-  // guard against impossible parameters
-  
-  if ( derivative >= order )
-    return ;
-
-  xlf_type faculty = 1 ; // why xlf_type? because integral types overflow
-  
-  // we do the calculations for each row of the weight matrix in the same type
-  // as the precomputed basis function values, only casting down to 'target_type'
-  // once the row is ready
-  
-  xlf_type der_line [ degree + 1 ] ;
-  
-  for ( int row = 0 ; row < order - derivative ; row++ )
-  {
-    if ( row > 1 )
-      faculty *= row ;
-
-    // obtain pointers to beginning of row and past it's end
-    
-    xlf_type * p_first = der_line ;
-    xlf_type * p_end = der_line + degree + 1 ;
-    
-    // now we want to pick basis function values. The first row to go into
-    // the weight matrix gets basis function values for 'degree', the next
-    // one values for degree-1, but differenced once, the next one values
-    // for degree-2, differenced twice etc.
-    // Picking the values is done so that for odd degrees, basis function
-    // values for whole x are picked, for even spline degrees, values
-    // 1/2 + n, n E N are picked. Why so? When looking at the recursion
-    // used in bspline_basis_2, you can see that each step of the recursion
-    // forms the difference between a value 'to the left' and a value 'to
-    // the right' of the current position (x2-1 and x2+1). If you follow
-    // this pattern, you can see that, depending on the degree, the recursion
-    // will run down to either all even or all odd x2, so this is what we
-    // pick, since the other values will not participate in the result
-    // at all.
-    // Note how, to pick the basis function values, we use bspline_basis_2,
-    // which 'knows' how to get the right precomputed values. Contrary to my
-    // previous implementation, it is *not* used to calculate the derivatives,
-    // it is only used as a convenient way to pick the precomputed values.
-
-    int m = degree - derivative - row ;
-    
-    if ( m == 0 )
-    {
-      der_line[0] = 1 ;
-      ++p_first ;
-    }
-    else if ( degree & 1 )
-    {
-      for ( int x2 = - m + 1 ; x2 <= m - 1 ; x2 += 2 )
-      {
-        *(p_first++) = bspline_basis_2<xlf_type> ( x2 , m ) ;
-      }
-    }
-    else
-    {
-      for ( int x2 = - m ; x2 <= m ; x2 += 2 )
-      {
-        *(p_first++) = bspline_basis_2<xlf_type> ( x2 , m ) ;
-      }
-    }
-    
-    // fill the remainder of the line with zeroes
-    
-    xlf_type * p = p_first ;
-    while ( p < p_end )
-      *(p++) = 0 ;
-    
-    // now we have the initial basis function values. We need to differentiate
-    // the sequence, possibly several times. We have the initial values
-    // flush with the line's left bound, so we perform the differentiation
-    // back to front, and after the last differentiation the line is full.
-    // Note how this process might be abbreviated further by exploiting
-    // symmetry relations (most rows are symmetric or antisymmetric).
-    // I refrain from doing so (for now) and I suspect that this may even be
-    // preferable in respect to error propagation (TODO: check).
-
-    for ( int d = m ; d < degree ; d++ )
-    {
-      // deposit first difference after the last basis function value
-      
-      xlf_type * put = p_first ;
-      
-      // and form the difference to the value before it.
-      
-      xlf_type * pick = put - 1 ;
-      
-      // now form differences back to front
-      
-      while ( pick >= der_line )
-      {
-        *put = *pick - *put ;
-        --put ;
-        --pick ;
-      }
-      
-      // since we have nothing left 'to the left', where another zero
-      // would be, we simply invert the sign (*put = 0 - *put).
-      
-      *put = - *put ;
-      
-      // The next iteration has to start one place further to the right,
-      // since there is now one more value in the line
-      
-      p_first++ ;
-    }
-      
-    // the row is ready and can now be assigned to the corresponding row of
-    // the weight matrix after applying the final division by 'faculty' and,
-    // possibly, downcasting to 'target_type'.
-
-    // we store to a array_t, which is row-major, so storing as we do
-    // places the results in memory in the precise order in which we want to
-    // use them later on in the weight calculation.
-    
-    for ( int k = 0 ; k < degree + 1 ; k++ )
-
-      res [ { k , row } ] = der_line[k] / faculty ;
-  }
-}
+// template < class target_type >
+// void calculate_weight_matrix ( zimt::array_t < 2 , target_type > & res )
+// {
+//   int order = res.shape[0] ;
+//   int degree = order - 1 ;
+//   int derivative = order - res.shape[1] ;
+//   
+//   // guard against impossible parameters
+//   
+//   if ( derivative >= order )
+//     return ;
+// 
+//   xlf_type faculty = 1 ; // why xlf_type? because integral types overflow
+//   
+//   // we do the calculations for each row of the weight matrix in the same type
+//   // as the precomputed basis function values, only casting down to 'target_type'
+//   // once the row is ready
+//   
+//   xlf_type der_line [ degree + 1 ] ;
+//   
+//   for ( int row = 0 ; row < order - derivative ; row++ )
+//   {
+//     if ( row > 1 )
+//       faculty *= row ;
+// 
+//     // obtain pointers to beginning of row and past it's end
+//     
+//     xlf_type * p_first = der_line ;
+//     xlf_type * p_end = der_line + degree + 1 ;
+//     
+//     // now we want to pick basis function values. The first row to go into
+//     // the weight matrix gets basis function values for 'degree', the next
+//     // one values for degree-1, but differenced once, the next one values
+//     // for degree-2, differenced twice etc.
+//     // Picking the values is done so that for odd degrees, basis function
+//     // values for whole x are picked, for even spline degrees, values
+//     // 1/2 + n, n E N are picked. Why so? When looking at the recursion
+//     // used in bspline_basis_2, you can see that each step of the recursion
+//     // forms the difference between a value 'to the left' and a value 'to
+//     // the right' of the current position (x2-1 and x2+1). If you follow
+//     // this pattern, you can see that, depending on the degree, the recursion
+//     // will run down to either all even or all odd x2, so this is what we
+//     // pick, since the other values will not participate in the result
+//     // at all.
+//     // Note how, to pick the basis function values, we use bspline_basis_2,
+//     // which 'knows' how to get the right precomputed values. Contrary to my
+//     // previous implementation, it is *not* used to calculate the derivatives,
+//     // it is only used as a convenient way to pick the precomputed values.
+// 
+//     int m = degree - derivative - row ;
+//     
+//     if ( m == 0 )
+//     {
+//       der_line[0] = 1 ;
+//       ++p_first ;
+//     }
+//     else if ( degree & 1 )
+//     {
+//       for ( int x2 = - m + 1 ; x2 <= m - 1 ; x2 += 2 )
+//       {
+//         *(p_first++) = bspline_basis_2<xlf_type> ( x2 , m ) ;
+//       }
+//     }
+//     else
+//     {
+//       for ( int x2 = - m ; x2 <= m ; x2 += 2 )
+//       {
+//         *(p_first++) = bspline_basis_2<xlf_type> ( x2 , m ) ;
+//       }
+//     }
+//     
+//     // fill the remainder of the line with zeroes
+//     
+//     xlf_type * p = p_first ;
+//     while ( p < p_end )
+//       *(p++) = 0 ;
+//     
+//     // now we have the initial basis function values. We need to differentiate
+//     // the sequence, possibly several times. We have the initial values
+//     // flush with the line's left bound, so we perform the differentiation
+//     // back to front, and after the last differentiation the line is full.
+//     // Note how this process might be abbreviated further by exploiting
+//     // symmetry relations (most rows are symmetric or antisymmetric).
+//     // I refrain from doing so (for now) and I suspect that this may even be
+//     // preferable in respect to error propagation (TODO: check).
+// 
+//     for ( int d = m ; d < degree ; d++ )
+//     {
+//       // deposit first difference after the last basis function value
+//       
+//       xlf_type * put = p_first ;
+//       
+//       // and form the difference to the value before it.
+//       
+//       xlf_type * pick = put - 1 ;
+//       
+//       // now form differences back to front
+//       
+//       while ( pick >= der_line )
+//       {
+//         *put = *pick - *put ;
+//         --put ;
+//         --pick ;
+//       }
+//       
+//       // since we have nothing left 'to the left', where another zero
+//       // would be, we simply invert the sign (*put = 0 - *put).
+//       
+//       *put = - *put ;
+//       
+//       // The next iteration has to start one place further to the right,
+//       // since there is now one more value in the line
+//       
+//       p_first++ ;
+//     }
+//       
+//     // the row is ready and can now be assigned to the corresponding row of
+//     // the weight matrix after applying the final division by 'faculty' and,
+//     // possibly, downcasting to 'target_type'.
+// 
+//     // we store to a array_t, which is row-major, so storing as we do
+//     // places the results in memory in the precise order in which we want to
+//     // use them later on in the weight calculation.
+//     
+//     for ( int k = 0 ; k < degree + 1 ; k++ )
+// 
+//       res [ { k , row } ] = der_line[k] / faculty ;
+//   }
+// }
 
 /// basis_functor is an object producing the b-spline basis function value
 /// for given arguments, or optionally a derivative of the basis function.
@@ -413,13 +413,145 @@ template < typename math_type = xlf_type >
 struct basis_functor
 {
   zimt::array_t < 2 , math_type > weight_matrix ;
-  int degree ;
+  zimt::array_t < 1 , xlf_type > der_line ;
+  const int degree ;
+  const int order ;
+  const int derivative ;
   
+  void calculate_weight_matrix()
+  {
+    // guard against impossible parameters
+    
+    if ( derivative >= order )
+      return ;
+
+    xlf_type faculty = 1 ; // why xlf_type? because integral types overflow
+    
+    // we do the calculations for each row of the weight matrix in the same
+    // type as the precomputed basis function values, only casting down to
+    // 'target_type' once the row is ready
+    
+    // xlf_type der_line [ degree + 1 ] ;
+    
+    for ( int row = 0 ; row < order - derivative ; row++ )
+    {
+      if ( row > 1 )
+        faculty *= row ;
+
+      // obtain pointers to beginning of row and past it's end
+      
+      xlf_type * p_first = der_line.data() ;
+      xlf_type * p_end = p_first + degree + 1 ;
+      
+      // now we want to pick basis function values. The first row to go into
+      // the weight matrix gets basis function values for 'degree', the next
+      // one values for degree-1, but differenced once, the next one values
+      // for degree-2, differenced twice etc.
+      // Picking the values is done so that for odd degrees, basis function
+      // values for whole x are picked, for even spline degrees, values
+      // 1/2 + n, n E N are picked. Why so? When looking at the recursion
+      // used in bspline_basis_2, you can see that each step of the recursion
+      // forms the difference between a value 'to the left' and a value 'to
+      // the right' of the current position (x2-1 and x2+1). If you follow
+      // this pattern, you can see that, depending on the degree, the recursion
+      // will run down to either all even or all odd x2, so this is what we
+      // pick, since the other values will not participate in the result
+      // at all.
+      // Note how, to pick the basis function values, we use bspline_basis_2,
+      // which 'knows' how to get the right precomputed values. Contrary to my
+      // previous implementation, it is *not* used to calculate the derivatives,
+      // it is only used as a convenient way to pick the precomputed values.
+
+      int m = degree - derivative - row ;
+      
+      if ( m == 0 )
+      {
+        der_line[0] = 1 ;
+        ++p_first ;
+      }
+      else if ( degree & 1 )
+      {
+        for ( int x2 = - m + 1 ; x2 <= m - 1 ; x2 += 2 )
+        {
+          *(p_first++) = bspline_basis_2<xlf_type> ( x2 , m ) ;
+        }
+      }
+      else
+      {
+        for ( int x2 = - m ; x2 <= m ; x2 += 2 )
+        {
+          *(p_first++) = bspline_basis_2<xlf_type> ( x2 , m ) ;
+        }
+      }
+      
+      // fill the remainder of the line with zeroes
+      
+      xlf_type * p = p_first ;
+      while ( p < p_end )
+        *(p++) = 0 ;
+      
+      // now we have the initial basis function values. We need to differentiate
+      // the sequence, possibly several times. We have the initial values
+      // flush with the line's left bound, so we perform the differentiation
+      // back to front, and after the last differentiation the line is full.
+      // Note how this process might be abbreviated further by exploiting
+      // symmetry relations (most rows are symmetric or antisymmetric).
+      // I refrain from doing so (for now) and I suspect that this may even be
+      // preferable in respect to error propagation (TODO: check).
+
+      for ( int d = m ; d < degree ; d++ )
+      {
+        // deposit first difference after the last basis function value
+        
+        xlf_type * put = p_first ;
+        
+        // and form the difference to the value before it.
+        
+        xlf_type * pick = put - 1 ;
+        
+        // now form differences back to front
+        
+        while ( pick >= der_line.data() )
+        {
+          *put = *pick - *put ;
+          --put ;
+          --pick ;
+        }
+        
+        // since we have nothing left 'to the left', where another zero
+        // would be, we simply invert the sign (*put = 0 - *put).
+        
+        *put = - *put ;
+        
+        // The next iteration has to start one place further to the right,
+        // since there is now one more value in the line
+        
+        p_first++ ;
+      }
+        
+      // the row is ready and can now be assigned to the corresponding row of
+      // the weight matrix after applying the final division by 'faculty' and,
+      // possibly, downcasting to 'target_type'.
+
+      // we store to a array_t, which is row-major, so storing as we do
+      // places the results in memory in the precise order in which we want to
+      // use them later on in the weight calculation.
+      
+      for ( int k = 0 ; k < degree + 1 ; k++ )
+      {
+        weight_matrix [ { k , row } ] = der_line[k] / faculty ;
+      }
+    }
+  }
+
   basis_functor ( int _degree , int _derivative = 0 )
   : weight_matrix ( { _degree + 1 , _degree + 1 - _derivative } ) ,
-    degree ( _degree )
+    der_line ( _degree + 1 ) ,
+    degree ( _degree ) ,
+    order ( _degree + 1 ) ,
+    derivative ( _derivative )
   {
-    calculate_weight_matrix ( weight_matrix ) ;
+    calculate_weight_matrix() ;
   } ;
 
 //   basis_functor & operator= ( const basis_functor & other )

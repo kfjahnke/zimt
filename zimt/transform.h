@@ -89,9 +89,6 @@
     more about this topic.
 */
 
-// #ifndef ZIMT_TRANSFORM_H
-// #define ZIMT_TRANSFORM_H
-
 // The bulk of the implementation of zimt's two 'transform' functions
 // is now in wielding.h:
 

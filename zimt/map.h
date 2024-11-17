@@ -70,9 +70,6 @@
     boundary conditions.
 */
 
-// #ifndef ZIMT_MAP_H
-// #define ZIMT_MAP_H
-
 #if defined(ZIMT_MAP_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_MAP_H
     #undef ZIMT_MAP_H

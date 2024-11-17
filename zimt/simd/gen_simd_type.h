@@ -579,7 +579,7 @@ HWY_AFTER_NAMESPACE() ;
 namespace zimt
 {
   template < typename T , size_t N >
-  struct is_integral < zimt::gen_simd_type < T , N > >
+  struct is_integral < ZIMT_ENV::gen_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
 } ;

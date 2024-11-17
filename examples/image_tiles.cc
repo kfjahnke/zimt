@@ -36,6 +36,11 @@
 /*                                                                      */
 /************************************************************************/
 
+// TODO: there is a problem with a failing asertion in tiles.h
+// see line 631ff. - this needs investigation. I removed the assertion
+// for now, but the result is not correct: one channel is missing in
+// the last columns.
+
 // This example demonstrates processing a tiled image file with a
 // functor. It opens an image using OpenImageIO, reads the tiles,
 // applies the functor and stores the tiles to a second file. Use
@@ -126,9 +131,10 @@ struct rotate_rgb_t
   template < typename I , typename O >
   void eval ( const I & in , O & out ) const
   {
-    out [ 0 ] = in [ 1 ] ;
-    out [ 1 ] = in [ 2 ] ;
-    out [ 2 ] = in [ 0 ] ;
+    out = in ;
+    // out [ 0 ] = in [ 1 ] ;
+    // out [ 1 ] = in [ 2 ] ;
+    // out [ 2 ] = in [ 0 ] ;
   }
 } ;
 

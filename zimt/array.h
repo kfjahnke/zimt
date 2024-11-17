@@ -83,6 +83,7 @@
 #include <cstring>
 
 #ifndef ZIMT_ARRAY_H
+#define ZIMT_ARRAY_H
 
 namespace zimt
 {
@@ -844,6 +845,5 @@ array_t < D + 1 , T > get_vector_buffer
 
 } ;
 
-#define ZIMT_ARRAY_H
 #endif
 

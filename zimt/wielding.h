@@ -94,8 +94,6 @@
 #include "get.h"
 #include "put.h"
 
-// #ifndef ZIMT_WIELDING_H
-
 #if defined(ZIMT_WIELDING_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_WIELDING_H
     #undef ZIMT_WIELDING_H

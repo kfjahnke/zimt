@@ -56,15 +56,6 @@
     #define ZIMT_SIMD_H
   #endif
 
-// namespace simd
-// {
-// template < typename T >
-// struct allocator_traits
-// {
-//   typedef std::allocator < T > type ;
-// } ;
-// } ;
-
 // we have two back-ends which can provide data types for the entire
 // range zimt intends to cover: arbitrary fundamentals and any number
 // of lanes. One of these is 'zimt's own' - a simple container type
@@ -126,7 +117,7 @@ static const std::size_t ZIMT_VECTOR_NBYTES
   #if defined USE_VC
     = (2*sizeof(Vc::Vector<float>)) ;
   #else
-    = 32 ;
+    = 64 ;
   #endif
 #endif
 
