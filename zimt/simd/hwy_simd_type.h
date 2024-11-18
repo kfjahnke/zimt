@@ -1243,7 +1243,7 @@ public:
     static const auto floor
       = std::numeric_limits < index_ele_type > :: min() ;
 
-    assert ( start + ( vsize - 1 ) * step >= floor ) ;
+    assert ( index_ele_type ( start + ( vsize - 1 ) * step ) >= floor ) ;
 
     return ( index_type::iota() * step + start ) ;
   }

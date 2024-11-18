@@ -56,7 +56,7 @@
 
 #include "../zimt/simd/simd_tag.h"
 
-// we define a dispatch base class. All tye 'payload' code is called
+// we define a dispatch base class. All the 'payload' code is called
 // through virtual member functions of this class. In this example,
 // we only have a single payload function. We have to enclose this
 // base class definition in an include guard, because it must not
@@ -109,15 +109,13 @@ struct dispatch_base
 // and for multi-SIMD-ISA builds it is project::HWY_NAMESPACE. The macro
 // is defined in common.h
 
-#ifdef MULTI_SIMD_ISA
 HWY_BEFORE_NAMESPACE() ;
-#endif
 BEGIN_ZIMT_SIMD_NAMESPACE(project)
 
 // we use a namespace alias 'zimt' for the corresponding nested
 // namespace in namespace zimt. since the nested namespace in
 // namespace zimt has a using declaration for 'plain' namespace
-// zimt, we can use a zimt:: qualifier for all symbols from
+// zimt, we can now use a zimt:: qualifier for all symbols from
 // 'plain' zimt as well as all symbolds from zimt::ZIMT_SIMD_ISA.
 
 namespace zimt = zimt::ZIMT_SIMD_ISA ;
@@ -130,11 +128,6 @@ namespace zimt = zimt::ZIMT_SIMD_ISA ;
 
 int _payload ( int argc , char * argv[] )
 {
-#ifdef USE_HWY
-  std::cout << "paylod: target = " << hwy::TargetName ( HWY_TARGET )
-            << std::endl ;
-#endif
-
   if ( argc > 1 )
     std::cout << "first arg: " << argv[1] << std::endl ;
 
@@ -263,9 +256,7 @@ const dispatch_base * const _get_dispatch()
 }
 
 END_ZIMT_SIMD_NAMESPACE
-#ifdef MULTI_SIMD_ISA
 HWY_AFTER_NAMESPACE() ;
-#endif
 
 #if ZIMT_ONCE
 

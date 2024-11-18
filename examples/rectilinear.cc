@@ -60,7 +60,7 @@
 // creating a cubemap with openEXR's exrenvmap utility and feeding
 // it to this program, but the result shows that the format is not
 // understood. So, for now, input must be a lat/lon environment map,
-// a.k.a full spherical. Note also that the full spherical image which
+// a.k.a. full spherical. Note also that the full spherical image which
 // this program expects should be uniformly sampled in a particular way:
 // if the image is h pixels high and w = 2 * h pixels wide, then the
 // image center, coinciding with the view straight ahead, is at
@@ -150,7 +150,7 @@ struct lookup_t
   // increasing the line. Note also that the 'canonical' image
   // coordinates increase from the image's top to it's bottom, while
   // the spatial y axis in IMath points upward, so you may notice
-  // signs changes on the y axis in the code. The image's x axis and
+  // sign changes on the y axis in the code. The image's x axis and
   // the IMath x axis coincide.
 
   lookup_t ( std::shared_ptr<TextureSystem> _ts ,
@@ -209,7 +209,7 @@ struct lookup_t
     // the purpose of a SIMDized interface. But if OIIO comes round to
     // providing proper SIMD code, we're already there and this program
     // will immediately exploit it.
-    // Not also that the zimt::process 'driver' code which calls the
+    // Note also that the zimt::process 'driver' code which calls the
     // 'act' functor repeatedly is multithreaded: there will be several
     // worker threads which cooperate to get through all the lookups
     // neded for the entire target image. All of the parcelling of
@@ -441,7 +441,7 @@ int main ( int argc , char * argv[] )
             << " roll: " << roll << std::endl ;
   std::cout << "output: " << output << std::endl ;
 
-  // move to radians, reverse yaw and pitch (we might accept the
+  // move to radians, reverse yaw and pitch. We might accept the
   // values unchanged, but I accept angles in panotools convention
   // to make the program easily comparable to the equivalent
   // operation done with lux or software using libpano, like the

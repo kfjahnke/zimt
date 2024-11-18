@@ -43,13 +43,15 @@
 // (it's tile access functions are virtual) and the remainder of the
 // tile-based code accesses tiles via the base class, we can simply
 // 'slot in' apropriate scanline-reading and scanline-writing functions.
-// Here, we simple fake the loads and stores and instead emit text
+// Here, we simply fake the loads and stores and instead emit text
 // indicating what calls the tiled process emits. A real application
 // would create a line_store_t with real load/store functions, which
 // access scan lines in a file. Note that there is no guarantee that
 // the loads/stores will work through the scanlines in sequential
 // order, unless you run a single-threaded process. Some scanline-
 // based processes may fail to provide non-sequential access.
+// Note that there is an example 'image_lines.cc' which demonstrates
+// scanline-based access to an image.
 
 #include <zimt/zimt.h>
 #include <zimt/scanlines.h>
