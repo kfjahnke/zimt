@@ -32,9 +32,9 @@ With this capability of generating ISA-specific code 'from the inside', it becom
 
 I've already hinted at the way how highway provides access to the ISA-specific code: via nested namespaces. This sounds scary if you don't usually use namespaces much, but it's really quite simple once you get the hang of it. Let's first start out without ISA-specific code, but set up namespaces which we'll later populate with the nested namespaces. We'll start up with highway code in a namespace named 'hwy' (that's where it usually lives) and our own code in a namespace names 'project'. When calling into highway code from our code, we'd *qualify* the access with a hwy:: prefix. This is simple and straightforward - and good practise anyway, keeping our own code in a separate namespace and qualifying use of code from other components with their namespace prefix (or using a 'using' directive to the same effect, which can become obscure).
 
-If we want to have several variants of a body code, we can enclose these variants each into a separate scope. Then we can use the same set of symbols in each of those scopes, and we can introduce a selector to address the symbol set in a specific scope: We use indirection. One way of setting up a scope is a namespace: it's simply a scope with a name. Another way is using classes. Class members share the same scope, and they are distinct from members with the same name in a different scope.
+If we want to have several variants of a body of code, we can enclose these variants each into a separate scope. Then we can use the same set of symbols in each of those scopes, and we can introduce a selector to address the symbol set in a specific scope: We use indirection. One way of setting up a scope is a namespace: it's simply a scope with a name. Another way is using classes. Class members share the same scope, and they are distinct from members with the same name in a different scope.
 
-highway uses namespaces. To be more specific, it uses nested namespaces: The ISA-specific code versions 'live' in namespaces 'one level down' from the 'hwy' namespace. highway's 'own' ISA-specific code 'lives' in hwy::N_SSE2, hwy::N_AVX2 etc. - and we'll follow the same scheme for our own code in namespace 'project' and put SIMD_ISA-specific code inside project::N_SSE2, project::N_AVX2 etc.
+highway uses namespaces. To be more specific, it uses nested namespaces: The ISA-specific code versions 'live' in namespaces 'one level down' from the 'hwy' namespace. highway's 'own' ISA-specific code 'lives' in hwy::N_SSE2, hwy::N_AVX2 etc. - and we'll follow the same scheme for our own code in namespace 'project' and put SIMD-ISA-specific code inside project::N_SSE2, project::N_AVX2 etc.
 
 You can interface with these specific nested namespaces if you must - by qualifying access with the nested namespace's name - but what's much more attractive is to *write code which does not use these nested namespace explicitly*. highway's foreach_target mechanism - which we'll come to shortly - provides 'client code' with a macro: HWY_NAMESPACE. The value of this macro is set to one of the SIMD architectures available *on the CPU running the code*, e.g. N_AVX2. Instead of qualifying your code to access symbols in e.g. hwy::N_AVX2, you code access to hwy::HWY_NAMESPACE, and your code becomes *generalized* to call into any given variant, while you can *delegate* which one is picked to a *dispatch* mechanism, which highway also provides.
 
@@ -150,7 +150,7 @@ We'll now code a simple program which uses highway's dispatching mechanism - the
 ## Compile it
 
 All we need now is to compile and link the program and try out what we get. Let's assume you're using g++. You can use this one-liner - note the -I.
-statement, which is needed because highway needs to#include 'payload.cc' several times and it's located inside this very folder, or '.' for short.
+statement, which is needed because highway needs to #include 'payload.cc' several times and it's located inside this very folder, or '.' for short.
 
     g++ driver.cc payload.cc -I. -lhwy
 
@@ -191,9 +191,9 @@ What we have, so far, is a way to provide our program with free functions in the
       {
         // we declare 'payload' as a *pure virtual member function'. That
         // makes it impossible to invoke the 'payload' member of struct
-        // dispatch itself (because there is none) - only derived classes
-        // with an actual implementation can be used to invoke their
-        // specific implementation.
+        // dispatch_base itself (because there is none) - only derived
+        // classes with an actual implementation can be used to invoke
+        // their specific implementation.
 
         virtual void payload() = 0 ;
       } ;
@@ -255,7 +255,7 @@ What we have, so far, is a way to provide our program with free functions in the
         // dont' want to know *which specific one* that might be - we
         // keep the code general.
 
-        // Let's define a 'dispatch' class from the 'dispatch_base' base
+        // Let's derive a 'dispatch' class from the 'dispatch_base' base
         // class we have in 'project.h'. It's important that the derived
         // class is in the SIMD-ISA-specific namespace!
 
@@ -401,22 +401,22 @@ Some zimt headers don't use SIMD, but most do. The ones which do are modified to
     // a single-ISA binary, fixing the SIMD ISA at compile time by passing
     // appropriate flags to the compiler. This will work with all SIMD
     // back-ends - here, I show the compiler invocations for an AVX2 version.
-    // Note the -I. directive to tell the compiler to find files to #include
-    // in the current folder as well.
 
-    //   clang++ -mavx2 bsp_eval.ccc -O2 -I. -DUSE_HWY -lhwy
-    //   clang++ -mavx2 bsp_eval.ccc -O2 -I. -DUSE_VC -lVc
-    //   clang++ -mavx2 bsp_eval.ccc -O2 -I. -DUSE_STDSIMD
-    //   clang++ -mavx2 bsp_eval.ccc -O2 -I.
+    //   clang++ -mavx2 bsp_eval.ccc -O3 -DUSE_HWY -lhwy
+    //   clang++ -mavx2 bsp_eval.ccc -O3 -DUSE_VC -lVc
+    //   clang++ -mavx2 bsp_eval.ccc -O3 -DUSE_STDSIMD
+    //   clang++ -mavx2 bsp_eval.ccc -O3
 
     // The second way is to use highway's automatic dispatch to embedded
     // variants of the code running with different ISAs. This requires the
     // definition of MULTI_SIMD_ISA and linkage to libhwy and can only
     // be used for the highway and the 'goading' back-end. Here, no
-    // architecture flags are passed to the compiler:
+    // architecture flags are passed to the compiler. Note the -I.
+    // directive to tell the compiler to find files to #include in the
+    // current folder as well.
 
-    //   clang++ bsp_eval.ccc -O2 -I. -DMULTI_SIMD_ISA -DUSE_HWY -lhwy
-    //   clang++ bsp_eval.ccc -O2 -I. -DMULTI_SIMD_ISA -lhwy
+    //   clang++ bsp_eval.ccc -O3 -I. -DMULTI_SIMD_ISA -DUSE_HWY -lhwy
+    //   clang++ bsp_eval.ccc -O3 -I. -DMULTI_SIMD_ISA -lhwy
 
     // binaries made with the second method will dispatch to what is deemd
     // the best SIMD ISA available on the CPU on which the binary is run.
@@ -424,7 +424,8 @@ Some zimt headers don't use SIMD, but most do. The ones which do are modified to
     // the binary variant which is picked is usually optimal and may
     // out-perform single-ISA variants with 'manually' supplied ISA flags,
     // if the set of flags isn't optimal as well. The disadvantage of the
-    // multi-SIMD-ISA variants is (much) longer compile time and code size.
+    // multi-SIMD-ISA variants is (much) longer compile time and larger
+    // code size.
     // Due to the 'commodification' the source code itself doesn't have
     // to be modified in any way to produce one variant or another.
     // This suggests that during the implementation of a new program a
@@ -497,8 +498,6 @@ Some zimt headers don't use SIMD, but most do. The ones which do are modified to
     #undef HWY_TARGET_INCLUDE
 
     /////////////// Tell highway which file to submit to foreach_target
-
-    // TODO: can't we somehow use __FILE__ here?
 
     #define HWY_TARGET_INCLUDE "bsp_eval.cc"  // this very file
 
