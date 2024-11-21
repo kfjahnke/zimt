@@ -137,7 +137,6 @@
 #include "bspline.h"
 #include "unary_functor.h"
 #include "map.h"
-#include "block.h"
 
 // #if HWY_ONCE
 
@@ -764,7 +763,7 @@ public:
   /// which encodes the generation of the set of weights.
   
   template < typename nd_rc_type , typename weight_type >
-  void obtain_weights ( block_t < weight_type , 2 > & weight ,
+  void obtain_weights ( array_t < 2 , weight_type > & weight ,
                         const nd_rc_type & c ) const
   {
     const auto * ci = &(c[0]) ; // c.cbegin() ;
@@ -773,7 +772,7 @@ public:
   }
 
   template < typename weight_type >
-  void obtain_weights ( block_t < weight_type , 2 > & weight ) const
+  void obtain_weights ( array_t < 2 , weight_type > & weight ) const
   {
     for ( int axis = 0 ; axis < dimension ; ++axis )
       wgt[axis] ( weight.data() + axis * spline_order ) ;
@@ -919,7 +918,7 @@ private:
     inline
     void operator() ( const offset_type & locus ,
                       cf_pointer_iterator & cfp_iter ,
-                      const block_t < math1_type , 2 > & weight ,
+                      const array_t < 2 , math1_type > & weight ,
                       xel_t < math1_type , channels > & sum
                     ) const
     {
@@ -994,7 +993,7 @@ private:
     inline
     void operator() ( const offset_type & locus ,
                       cf_pointer_iterator & cfp_iter ,
-                      const block_t < math1_type , 2 > & weight ,
+                      const array_t < 2 , math1_type > & weight ,
                       xel_t < math1_type , channels > & sum
                     ) const
     {
@@ -1143,7 +1142,7 @@ public:
   template < class result_type , class math1_type , class offset_type >
   inline
   void eval ( const offset_type& select ,
-              const block_t < math1_type , 2 > & weight ,
+              const array_t < 2 , math1_type > & weight ,
               result_type & result
             ) const
   {
@@ -1244,9 +1243,9 @@ private:
               result_type & result ,
               std::integral_constant < int , arbitrary_spline_degree > ) const
   {
-    // 'weight' is a 2D block_t of math1_type:
+    // 'weight' is a 2D array_t of math1_type:
 
-    block_t < math1_type , 2 >
+    array_t < 2 , math1_type >
       weight ( { std::size_t ( spline_order ) ,
                  std::size_t ( dimension ) } ) ;
 
@@ -1386,7 +1385,7 @@ public:
   {
     typedef vector < math_ele_type , vsize > math_ele_v ;
 
-    block_t < math_ele_v , 2 >
+    array_t < 2 , math_ele_v >
       weight ( { std::size_t ( spline_order ) ,
                  std::size_t ( dimension ) } ) ;
 

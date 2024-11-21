@@ -116,7 +116,7 @@ namespace zimt
 
   // forward declaration of xel_t
 
-  template < typename T , std::size_t > struct xel_t ;
+  template < typename T , std::size_t N > struct xel_t ;
 
   // UnsuitableTypeForExpandElements is a legacy symbol originating
   // in vigra - I use it here in the same way, but it's bulky and

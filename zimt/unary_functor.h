@@ -1369,7 +1369,7 @@ struct echo
     if ( once )
     {
       std::cout << i << std::endl ;
-      once = false ;
+      // once = false ;
     }
     o = i ;
   }

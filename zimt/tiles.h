@@ -327,6 +327,13 @@ struct tether_t
   // this is the tile pointer itself
 
   tile_t * p_tile = nullptr ;
+
+  tether_t()
+  : p_tile ( nullptr ) ,
+    tile_mutex() ,
+    due ( 0 )
+  { }
+    
 } ;
 
 // tile_store_t holds an array of tether_t to mediate access

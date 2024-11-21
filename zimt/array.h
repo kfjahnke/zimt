@@ -705,9 +705,11 @@ public:
 
   // add a shared_ptr to the data the view is 'based on', meaning that
   // the chunk of memory the shared_ptr points to envelopes the data
-  // the view refers to.
+  // the view refers to. Note the template argument 'T[]' - initially
+  // I used plain T, but that did not work for non-trivial types T.
+  // Using T[] instead, all seems well.
 
-  std::shared_ptr < T > base ;
+  std::shared_ptr < T[] > base ;
 
   using typename base_t::value_type ;
   using typename base_t::shape_type ;
@@ -724,7 +726,7 @@ public:
   // in, and if the array is destroyed, the memory is only released
   // if this was the last copy of the shared_ptr in circulation
 
-  array_t ( std::shared_ptr < T > _base ,
+  array_t ( std::shared_ptr < T[] > _base ,
             const shape_type & _shape )
   : base_t ( _base.get() ,
              make_strides ( _shape ) ,
@@ -734,7 +736,7 @@ public:
 
   // array based on a shared_ptr and a view
 
-  array_t ( std::shared_ptr < T > _base ,
+  array_t ( std::shared_ptr < T[] > _base ,
             const base_t & view )
   : base_t ( view ) ,
     base ( _base )
@@ -760,25 +762,14 @@ public:
 
   // array allocating fresh memory. The array is now in sole possesion
   // of the memory, and unless it's copied the memory is released when
-  // the array is destructed. this is only allowed for trivially
-  // destructible T.
+  // the array is destructed.
 
   array_t ( const shape_type & _shape )
   : base_t ( nullptr ,
              make_strides ( _shape ) ,
              _shape ) ,
-    // base ( new T [ _shape.prod() ] ) // <<< problematic
-    base ( nullptr )
+    base ( new T [ _shape.prod() ] )
   {
-    static_assert ( std::is_trivially_destructible < T > :: value ) ;
-
-    // when allocating vc_simd_type with new[], deallocation fails.
-    // so now I use the std::allocator, and since it's 'allocate'
-    // member is not static, I need an object. So I can't initialize
-    // 'base' before entering the scope of this c'tor.
-
-    static std::allocator < T > alloc ;
-    base.reset ( alloc.allocate ( _shape.prod() ) ) ;
     origin = base.get() ;
   }
 
