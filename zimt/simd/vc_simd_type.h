@@ -347,7 +347,6 @@ struct vc_simd_type
   friend std::ostream & operator<< ( std::ostream & osr ,
                                      vc_simd_type it )
   {
-    osr << "*******" << std::endl ;
     osr << it.to_base() ;
     return osr ;
   }

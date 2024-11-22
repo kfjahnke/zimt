@@ -54,7 +54,9 @@
 
 #include <zimt/zimt.h>
 #include <iomanip>
-#define VSIZE 8
+#include <chrono>
+
+#define VSIZE zimt::simd_traits < double > :: default_size
 
 // we use a functor 'crunch' which does a bit of arithmetic.
 
@@ -67,9 +69,6 @@ struct crunch
   typedef zimt::unary_functor < zimt::xel_t < T , N > ,
                                 zimt::xel_t < T , N > ,
                                 L > base_t ;
-  using typename base_t::in_v ;
-  using typename base_t::out_v ;
-
   typedef zimt::xel_t < double , N > score_t ;
   score_t score ;
 
@@ -100,15 +99,23 @@ struct crunch
   // These two versions only differ in how the 'score' is updated.
   // Note that the score is in double precision - 1e9 values are
   // already large enough to be problematic in SP double.
-  // Note also that - at least for now - we can't code the eval
-  // member functions as templates (which is commonly done in
-  // vspline) because the signature test fails to detect the
-  // capped eval overload if the capped eval is coded as a template.
-  // For zimt code this should be less of an issue, because there
-  // is no scalar eval overload, so there is no reason not to pass
-  // in_v and out_v expressis verbis.
+  // Note that the 'eval' member function templates will be
+  // instatiated for *simdized* arguments (in_v and out_v of
+  // zimt::unary_functor) when the 'crunch' functor is used
+  // with zimt::process. We might have used in_v and out_v
+  // instead and coded an ordinary function instead of a template.
+  // This is a matter of taste. For simple functionality, when
+  // the simdized code does not differ from scalar code, using
+  // templates has the advantage of providing a scalar version
+  // 'for free' - but this is really only useful if the functor
+  // is used in a scalar context. In vspline, this was done
+  // regularly after peeling was done - zimt::process now operates
+  // 'fully simdized' and packages the 'leftover' values into a
+  // SIMD data type, which is processed with the capped eval variant,
+  // if that is present.
 
-  void eval ( const in_v & i , out_v & o , const std::size_t & cap )
+  template < typename I , typename O >
+  void eval ( const I & i , O & o , const std::size_t & cap )
   {
     _eval ( i , o ) ;
     for ( int ch = 0 ; ch < N ; ch++ )
@@ -118,7 +125,8 @@ struct crunch
     }
   }
 
-  void eval ( const in_v & i , out_v & o )
+  template < typename I , typename O >
+  void eval ( const I & i , O & o )
   {
     _eval ( i , o ) ;
     for ( int ch = 0 ; ch < N ; ch++ )
@@ -189,12 +197,22 @@ int main ( int argc , char * argv[] )
   // now we're ready to go!
 
   zimt::xel_t < std::size_t , 3 > shape { 999 , 1011 , 1013 } ;
+
+  auto t_start = std::chrono::system_clock::now();
+
   zimt::process ( shape ,
                   l ,
                   act_t ( yield ) ,
                   zimt::discard_result < double , 3 , 3 , VSIZE > () ,
                   bill
                 ) ;
+
+  auto t_end = std::chrono::system_clock::now();
+
+  std::cout << "zimt::process took "
+            << std::chrono::duration_cast<std::chrono::milliseconds>
+                 ( t_end - t_start ) . count()
+       << " ms" << std::endl ;
 
   // here's the final result over ca. 1e9 pixels:
 

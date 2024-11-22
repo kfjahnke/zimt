@@ -43,7 +43,8 @@
     This is a port from vspline/poles.h
 
     The contents of this file below the comments can be generated
-    using bootstrap.cc
+    using bootstrap.cc, which is part of the vspline library, please
+    see https://bitbucket.org/kfj/vspline/src/master/bootstrap.cc
 
     both the precalculated basis function values and the prefilter poles
     can be generated in arbitrary precision, so the constants below are

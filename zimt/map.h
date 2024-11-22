@@ -1,17 +1,16 @@
 /************************************************************************/
 /*                                                                      */
-/*    zimt - a set of generic tools for creation and evaluation      */
-/*              of uniform b-splines                                    */
+/*    zimt - abstraction layer for SIMD programming                     */
 /*                                                                      */
-/*            Copyright 2015 - 2023 by Kay F. Jahnke                    */
+/*            Copyright 2024 by Kay F. Jahnke                           */
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
-/*    https://bitbucket.org/kfj/zimt                                 */
+/*    https://github.com/kfjahnke/zimt                                  */
 /*                                                                      */
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
-/*    kfjahnke+zimt@gmail.com                                        */
+/*    kfjahnke+zimt@gmail.com                                           */
 /*                                                                      */
 /*    Permission is hereby granted, free of charge, to any person       */
 /*    obtaining a copy of this software and associated documentation    */
@@ -40,7 +39,9 @@
 /*! \file map.h
 
     \brief code to handle out-of-bounds coordinates.
-    
+
+    This is a port from the vspline library
+
     Incoming coordinates may not be inside the range which can be evaluated
     by a functor. There is no one correct way of dealing with out-of-bounds
     coordinates, so I provide a few common ways of doing it.

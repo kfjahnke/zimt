@@ -40,6 +40,8 @@
 
     \brief defines class bspline
 
+  This is a port from the vspline library
+
   class bspline is an object to contain a b-spline's coefficients and some
   metadata in one handy package. It also provides easy access to b-spline
   prefiltering. The idea is that user code establishes a bspline object

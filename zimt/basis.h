@@ -1,17 +1,16 @@
 /************************************************************************/
 /*                                                                      */
-/*    zimt - a set of generic tools for creation and evaluation      */
-/*              of uniform b-splines                                    */
+/*    zimt - abstraction layer for SIMD programming                     */
 /*                                                                      */
-/*            Copyright 2015 - 2023 by Kay F. Jahnke                    */
+/*            Copyright 2024 by Kay F. Jahnke                           */
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
-/*    https://bitbucket.org/kfj/zimt                                 */
+/*    https://github.com/kfjahnke/zimt                                  */
 /*                                                                      */
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
-/*    kfjahnke+zimt@gmail.com                                        */
+/*    kfjahnke+zimt@gmail.com                                           */
 /*                                                                      */
 /*    Permission is hereby granted, free of charge, to any person       */
 /*    obtaining a copy of this software and associated documentation    */
@@ -42,6 +41,8 @@
     \brief Code to calculate the value of the B-spline basis function
     and it's derivatives.
 
+    This is a port from the vspline library.
+
     This file begins with some collateral code used to 'split' coordinates
     into an integral part and a small real remainder. This split is used
     in b-spline evaluation and fits thematically with the remainder of the
@@ -64,9 +65,6 @@
     for a discussion of the b-spline basis function, have a look at
     http://www.cs.mtu.edu/~shene/COURSES/cs3621/NOTES/spline/B-spline/bspline-basis.html
 */
-
-// #ifndef VSPLINE_BASIS_H
-// #define VSPLINE_BASIS_H
 
 #if defined(ZIMT_BASIS_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_BASIS_H

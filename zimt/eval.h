@@ -1,17 +1,16 @@
 /************************************************************************/
 /*                                                                      */
-/*    zimt - a set of generic tools for creation and evaluation      */
-/*              of uniform b-splines                                    */
+/*    zimt - abstraction layer for SIMD programming                     */
 /*                                                                      */
-/*            Copyright 2015 - 2023 by Kay F. Jahnke                    */
+/*            Copyright 2024 by Kay F. Jahnke                           */
 /*                                                                      */
 /*    The git repository for this software is at                        */
 /*                                                                      */
-/*    https://bitbucket.org/kfj/zimt                                 */
+/*    https://github.com/kfjahnke/zimt                                  */
 /*                                                                      */
 /*    Please direct questions, bug reports, and contributions to        */
 /*                                                                      */
-/*    kfjahnke+zimt@gmail.com                                        */
+/*    kfjahnke+zimt@gmail.com                                           */
 /*                                                                      */
 /*    Permission is hereby granted, free of charge, to any person       */
 /*    obtaining a copy of this software and associated documentation    */
@@ -40,6 +39,8 @@
 /*! \file eval.h
 
     \brief code to evaluate uniform b-splines
+
+    This is a port from the vspline lbrary
 
     This body of code contains class evaluator and auxilliary classes which are
     needed for it's smooth operation.

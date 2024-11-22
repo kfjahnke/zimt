@@ -162,13 +162,13 @@ On my system I get this output:
 
     payload: target = AVX2
 
-If you were to run a.out on another system, you might get different output, depending on the CPU's best supported SIMD ISA.
+If you were to run this a.out on another system, you might get different output, depending on the CPU's best supported SIMD ISA. The code should run on all x86-type CPUs and pick the best available SIMD ISA for the current CPU. Beyond x86, if you compile the code on a different CPU architecture - let's say ARM - you'd get the equivalent: a program dispatching to the best available SIMD instruction set for the given ARM-based CPU executing the code. zimt is meant to allow this for all CPU architectures which highway supports, but I haven't been able to test this, lacking the hardware.
 
 ## Bingo!
 
-We can now dispatch to SIMD-ISA-specific code without having written a single line of SIMD_ISA-specific code!
+We can now dispatch to SIMD-ISA-specific code without having written a single line of SIMD_ISA-specific code, and we can do so on several CPU architectures by simply compiling the same code on a machine with a given architecture.
 
-You may argue that we need a fair bit of scaffolding for something which seems trivial, but think twice: highway analyzes *at run-time* which CPU your program runs on. It has already stashed binary variants for each SIMD ISA which might possibly occur, and now it picks the appropriate variant and calls into it via it's dispatch mechanism. That is highly sophisticated and involved code, of which you can remain blissfully unware! And inside the scaffolding can go many more functions which are set up the same way, so you don't have to 'erect' scaffolding for each function. What you do have to do at this level is repeat the 'HWY_EXPORT' invocation to register your _payload function with highway, and provide the implementation of 'payload' (the externally visible one) which invokes HWY_DYNAMIC_DISPATCH.
+You may argue that we need a fair bit of scaffolding for something which seems trivial, but think twice: highway analyzes *at run-time* which CPU your program runs on. It can do this on several CPU architectures. It has already stashed binary variants for each SIMD ISA which might possibly occur for a given architecture, and now it picks the appropriate variant and calls into it via it's dispatch mechanism. That is highly sophisticated and involved code, of which you can remain blissfully unware! And inside the scaffolding can go many more functions which are set up the same way, so you don't have to 'erect' scaffolding for each function. What you do have to do at this level is repeat the 'HWY_EXPORT' invocation to register your _payload function with highway, and provide the implementation of 'payload' (the externally visible one) which invokes HWY_DYNAMIC_DISPATCH.
 
 ## Artistry
 

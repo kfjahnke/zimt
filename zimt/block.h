@@ -39,7 +39,7 @@
 
 /*! \file block.h
 
-    \brief tightly packed nD container type based on std::vector
+    \brief tightly packed nD container types
 */
 
 #ifndef ZIMT_BLOCK_H
