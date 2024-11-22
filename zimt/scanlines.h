@@ -48,8 +48,15 @@
 
 #include "tiles.h"
 
-namespace zimt
-{
+#if defined(ZIMT_SCANLINES_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_SCANLINES_H
+    #undef ZIMT_SCANLINES_H
+  #else
+    #define ZIMT_SCANLINES_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 template < typename T , std::size_t N >
 struct line_store_t
@@ -217,4 +224,7 @@ struct square_store_t
 
 } ;
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
+
+#endif // sentinel

@@ -76,14 +76,19 @@
 
 */
 
-#ifndef ZIMT_CONVOLVE_H
-#define ZIMT_CONVOLVE_H
-
 #include "common.h"
 #include "filter.h"
 #include "extrapolate.h"
 
-namespace zimt {
+#if defined(ZIMT_CONVOLVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_CONVOLVE_H
+    #undef ZIMT_CONVOLVE_H
+  #else
+    #define ZIMT_CONVOLVE_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// fir_filter_specs holds the parameters for a filter performing
 /// a convolution along a single axis. In zimt, the place where
@@ -98,12 +103,12 @@ namespace zimt {
   
 struct fir_filter_specs
 {
-  zimt::bc_code bc ;     // boundary conditions
+  bc_code bc ;     // boundary conditions
   int ksize ;               // kernel size
   int headroom ;            // part of kernel 'to the left'
   const xlf_type * kernel ; // pointer to kernel values
   
-  fir_filter_specs ( zimt::bc_code _bc ,
+  fir_filter_specs ( bc_code _bc ,
                      int _ksize ,
                      int _headroom ,
                      const xlf_type * _kernel )
@@ -143,8 +148,8 @@ struct fir_filter
 
   static const bool is_single_pass { true } ;
   
-  typedef zimt::view_t < 1 , in_type > in_buffer_type ;
-  typedef zimt::view_t < 1 , out_type > out_buffer_type ;
+  typedef view_t < 1 , in_type > in_buffer_type ;
+  typedef view_t < 1 , out_type > out_buffer_type ;
   typedef _math_type math_type ;
   
   // we put all state data into a single area of memory called 'reactor'.
@@ -159,27 +164,27 @@ struct fir_filter
   // TODO: investigate
   
   using allocator_t
-  = typename zimt::allocator_traits < math_type > :: type ;
+  = typename allocator_traits < math_type > :: type ;
 
-  // zimt::array_t < 1 , math_type , allocator_t > reactor ;
-  zimt::array_t < 1 , math_type > reactor ;
-  zimt::view_t < 1 , math_type > circular_buffer ;
-  zimt::view_t < 1 , math_type > kernel_values ;
-  zimt::view_t < 1 , math_type > tail_buffer ;
+  // array_t < 1 , math_type , allocator_t > reactor ;
+  array_t < 1 , math_type > reactor ;
+  view_t < 1 , math_type > circular_buffer ;
+  view_t < 1 , math_type > kernel_values ;
+  view_t < 1 , math_type > tail_buffer ;
     
 
   fir_filter ( const fir_filter_specs & specs )
   : fir_filter_specs ( specs ) ,
-    reactor ( zimt::xel_t<std::size_t,1> ( specs.ksize * 4 ) )
+    reactor ( xel_t<std::size_t,1> ( specs.ksize * 4 ) )
   {
     circular_buffer = reactor.window
-      ( zimt::xel_t<std::size_t,1> ( 0 ) , zimt::xel_t<std::size_t,1> ( ksize ) ) ;
+      ( xel_t<std::size_t,1> ( 0 ) , xel_t<std::size_t,1> ( ksize ) ) ;
                                           
     kernel_values = reactor.window
-      ( zimt::xel_t<std::size_t,1> ( ksize ) , zimt::xel_t<std::size_t,1> ( ksize * 3 ) ) ;
+      ( xel_t<std::size_t,1> ( ksize ) , xel_t<std::size_t,1> ( ksize * 3 ) ) ;
 
     tail_buffer = reactor.window
-      ( zimt::xel_t<std::size_t,1> ( ksize * 3 ) , zimt::xel_t<std::size_t,1> ( ksize * 4 ) ) ;
+      ( xel_t<std::size_t,1> ( ksize * 3 ) , xel_t<std::size_t,1> ( ksize * 4 ) ) ;
 
     for ( int i = 0 ; i < ksize ; i++ )
       kernel_values [ i ] = kernel_values [ i + ksize ] = kernel [ i ] ;
@@ -391,7 +396,7 @@ template < template < typename , size_t > class _vtype ,
            size_t _vsize >
 struct convolution_filter
 : public buffer_handling < _vtype , _math_ele_type , _vsize > ,
-  public zimt::fir_filter < _vtype < _math_ele_type , _vsize > >
+  public fir_filter < _vtype < _math_ele_type , _vsize > >
 {
   // provide this type for queries
   
@@ -409,11 +414,11 @@ struct convolution_filter
   // instances of class convolve hold the buffer as state:
   
 //   using allocator_t
-//   = typename zimt::allocator_traits < vtype > :: type ;
+//   = typename allocator_traits < vtype > :: type ;
 //   
-//   typedef zimt::array_t < 1 ,  vtype , allocator_t > buffer_type ;
-  typedef zimt::array_t < 1 ,  vtype > buffer_type ;
-  typedef zimt::view_t < 1 ,  vtype > buffer_view_type ;
+//   typedef array_t < 1 ,  vtype , allocator_t > buffer_type ;
+  typedef array_t < 1 ,  vtype > buffer_type ;
+  typedef view_t < 1 ,  vtype > buffer_view_type ;
   
   buffer_type buffer ;
 
@@ -425,7 +430,7 @@ struct convolution_filter
   // the data inside the buffer:
   
   typedef _vtype < _math_ele_type , _vsize > simdized_math_type ;
-  typedef zimt::fir_filter < simdized_math_type > filter_type ;
+  typedef fir_filter < simdized_math_type > filter_type ;
   using filter_type::solve ;
   using filter_type::headroom ;
   
@@ -466,10 +471,10 @@ struct convolution_filter
   template < typename in_type ,
              typename out_type = in_type ,
              typename math_type = out_type >
-  static zimt::fir_filter < in_type , out_type , math_type >
+  static fir_filter < in_type , out_type , math_type >
          get_raw_filter ( const fir_filter_specs & specs )
   {
-    return zimt::fir_filter < in_type , out_type , math_type >
+    return fir_filter < in_type , out_type , math_type >
            ( specs ) ;
   }
   
@@ -498,10 +503,10 @@ struct convolution_filter
 /// example: let's say you have data in 'image' and want to convolve in-place
 /// with [ 1 , 2 , 1 ], using mirror boundary conditions. Then call:
 ///
-///   zimt::convolution_filter
+///   convolution_filter
 ///    ( image ,
 ///      image ,
-///      { zimt::MIRROR , zimt::MIRROR } ,
+///      { MIRROR , MIRROR } ,
 ///      { 1 , 2 , 1 } ,
 ///      1 ) ;
 
@@ -512,18 +517,18 @@ template < std::size_t dimension ,
            typename math_ele_type =
                     ET < PROMOTE ( in_value_type , out_value_type ) > ,
            size_t vsize =
-                  zimt::vector_traits < math_ele_type > :: size
+                  vector_traits < math_ele_type > :: size
          >
 void convolve (
                  const
-                 zimt::view_t
+                 view_t
                    < dimension ,
                      in_value_type > & input ,
-                 zimt::view_t
+                 view_t
                    < dimension ,
                      out_value_type > & output ,
-                 zimt::xel_t < bc_code , dimension > bcv ,
-                 std::vector < zimt::xlf_type > kv ,
+                 xel_t < bc_code , dimension > bcv ,
+                 std::vector < xlf_type > kv ,
                  int headroom ,
                  int axis = -1 , // -1: apply along all axes
                  int njobs = default_njobs )
@@ -547,30 +552,29 @@ void convolve (
     return ;
   }
   
-  zimt::xlf_type kernel [ ksize ] ;
+  std::vector < xlf_type > kernel ( ksize ) ;
   for ( int i = 0 ; i < ksize ; i++ )
     kernel[i] = kv[i] ;
   
-  typedef typename zimt::convolution_filter
-                            < zimt::simdized_type ,
-                              math_ele_type ,
-                              vsize
-                            > filter_type ;
+  typedef convolution_filter < simdized_type ,
+                               math_ele_type ,
+                               vsize
+                             > filter_type ;
 
   if ( axis == -1 )
   {
     // user has passed -1 for 'axis', apply the same filter along all axes
 
-    std::vector < zimt::fir_filter_specs > vspecs ;
+    std::vector < fir_filter_specs > vspecs ;
   
     for ( int axis = 0 ; axis < dimension ; axis++ )
     {
       vspecs.push_back 
-        ( zimt::fir_filter_specs
-          ( bcv [ axis ] , ksize , headroom , kernel ) ) ;
+        ( fir_filter_specs
+          ( bcv [ axis ] , ksize , headroom , kernel.data() ) ) ;
     }
  
-    zimt::filter
+    filter
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , vspecs , njobs ) ;
   }
@@ -580,14 +584,15 @@ void convolve (
 
     assert ( axis >=0 && axis < dimension ) ;
 
-    zimt::filter
+    filter
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , axis ,
-      zimt::fir_filter_specs ( bcv [ axis ] , ksize , headroom , kernel ) ,
+      fir_filter_specs ( bcv [ axis ] , ksize , headroom , kernel.data() ) ,
       njobs ) ;
   }
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // ZIMT_CONVOLVE_H
+#endif // sentinel

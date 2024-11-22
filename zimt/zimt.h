@@ -45,10 +45,4 @@
     same base name as the library itself.
 */
 
-#ifndef ZIMT_INCLUDED
-
 #include "transform.h"
-
-#define ZIMT_INCLUDED
-#endif
-

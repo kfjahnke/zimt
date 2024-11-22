@@ -119,6 +119,6 @@ int main ( int argc , char * argv[] )
     zimt::process ( shape , gc , act , tp , bill ) ;
   }
 
-  std::cout << load_count << " load operations" << std::endl ;
-  std::cout << store_count << " store operations" << std::endl ;
+  std::cout << zimt::load_count << " load operations" << std::endl ;
+  std::cout << zimt::store_count << " store operations" << std::endl ;
 }

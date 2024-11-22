@@ -54,10 +54,15 @@
 
 */
 
-#ifndef ZIMT_PUT_H
+#if defined(ZIMT_PUT_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_PUT_H
+    #undef ZIMT_PUT_H
+  #else
+    #define ZIMT_PUT_H
+  #endif
 
-namespace zimt
-{
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 // class storer disposes of the results of calling the 'act'
 // functor by storing the data to a view/array.
@@ -65,11 +70,11 @@ namespace zimt
 template < typename T ,    // elementary/fundamental type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct storer
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   const std::size_t d ;
@@ -135,11 +140,11 @@ struct storer
 template < typename T ,    // elementary/fundamental type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct split_t
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   typedef std::array < zimt::view_t < D , T > , N > trg_t ;
@@ -210,11 +215,11 @@ struct split_t
 template < typename T ,    // elementary/fundamental type
            std::size_t N , // number of channels
            std::size_t D , // dimension of the view/array
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct vstorer
 {
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
 
   // type of coordinate passed by the caller (zimt::process)
 
@@ -341,7 +346,7 @@ class grok_put_t
   // we need some of the grokkee's types
 
   typedef zimt::xel_t < T , N > value_t ;
-  typedef zimt::simdized_type < value_t , L > value_v ;
+  typedef simdized_type < value_t , L > value_v ;
   typedef zimt::xel_t < long , D > crd_t ;
 
   // grok_put_t holds three std::functions:
@@ -430,7 +435,7 @@ grok_put_t < T , N , D , L > grok_put
   return grok_put_t < T , N , D , L > ( grokkee ) ;
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#define ZIMT_PUT_H
-#endif
+#endif // sentinel

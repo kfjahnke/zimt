@@ -40,23 +40,72 @@
 
     \brief SIMD type using small loops
 
-    zimt can use Vc for explicit vectorization, and at the time of
-    this writing, this is usually the best option. But Vc is not available
-    everywhere, or it's use may be unwanted. To help with such situations,
-    zimt defines it's own 'SIMD' type, which is implemented as a simple
-    C vector and small loops operating on it. If these constructs are
-    compiled with compilers capable of autovectorization (and with the
-    relevent flags activating use of SIMD instruction sets like AVX)
-    the resulting code will oftentimes be 'proper' SIMD code, because
-    the small loops are presented so that the compiler can easily recognize
-    them as potential clients of loop vectorization. I call this technique
-    'goading': By presenting the data flow in deliberately vector-friendly
-    format, the compiler is more likely to 'get it'.
+    zimt can use highway for explicit vectorization, and at the time of
+    this writing, this is usually the best option. But highway is not
+    available everywhere, or it's use may be unwanted. To help with such
+    situations, zimt defines it's own 'SIMD' type, which is implemented
+    as a simple    C vector and small loops operating on it. If these
+    constructs are compiled with compilers capable of autovectorization
+    (and with the relevant flags activating use of SIMD instruction sets
+    like AVX2) the resulting code will oftentimes be 'proper' SIMD code,
+    because the small loops are presented so that the compiler can easily
+    recognize them as potential clients of loop vectorization. I call this
+    technique 'goading': By presenting the data flow in deliberately
+    vector-friendly format, the compiler is more likely to 'get it'.
+    Of course, to emit SIMD-ISA-specific binary from auto-vectorized
+    code, the compiler will need to be instructed to do so - by default,
+    it would only allow for a very moderate level of SIMD - like SSE2
+    in i86 CPUs - so as not to produce instructions which older CPUs
+    can't execute. This produces what I call the 'SIMD dilemma': if
+    programmers want SIMD binary, their code may not run on older CPUs,
+    and if they make binary to run everywhere, it won't exploit newer
+    CPUs. To deal with this dilemma, the 'done thing' is to provide
+    binary variants for each CPU which is likely to run the code and
+    dispatch to the right version at runtime after detecting which CPU
+    is currently being used. This can be done 'manually' (currently I
+    do so in lux), but this is quite verbose and requires additional
+    'external' code (in cmake, for linking) to work out properly.
+    highway provides an automatic mechanism, which is very sophisticated
+    and not very intrusive - it only requires that code using it carries
+    a special sentinel and lends itself to being re-included several
+    times by highway's foreach_target mechanism. My initial implementation
+    of zimt did not use this mechanism, but I am changing zimt to allow
+    it's use, and in fact I will work towards making it the default,
+    because it works so well. The disadvantage is bloat and longer
+    turnaround time, so zimt code is made to run without highway's
+    foreach_target mechanism - the switch only requires a single
+    #define which can be supplied during compilation. This can be used
+    to work the code until it's bug-free and functional with quick
+    turnaround, adding the multi-SIMD-ISA dispatch later on when
+    approaching deployment.
+
+    highway's foreach_target mechanism will work with any 'client'
+    code - the code doesn't have to use highway's functions or data
+    types at all. In this header, we define a data type which offers
+    the 'standard' SIMD interface of 'simdized' zimt objects, but
+    does rely on a C array and small loops - and autovectorization.
+    These types can benefit greatly from highway's foreach_target
+    mechanism, because with the appropriate internal dispatch, the
+    compiler's autovectorization can actually emit specific SIMD
+    binary instructions for every supported SIMD ISA. So when using
+    gen_simd_type, #defining MULTI_SIMD_ISA makes sense and results
+    in a binary which automagically adapts to the host CPU. But using
+    hwy_simd_type will usually perform better, because it uses
+    explicit vectorization, in contrast to relying on autovectorization.
+    Most code will therefore use hwy_simd_type, but using gen_simd_type
+    instead can provide a reference to compare the highway-derived
+    code to, to see if autovectorization may be just as good - or,
+    unexpectedly, even better for a given task. gen_simd_type also
+    has slightly larger scope (the number of lanes doesn't have to
+    be a power of two) and serves as fallback for lane types which
+    highway or the other SIMD back-ends won't handle.
 
     class template gen_simd_type is designed to provide an interface similar
     to Vc::SimdArray, to be able to use it as a drop-in replacement.
     It aims to provide those SIMD capabilities which are actually used by
-    zimt and is *not* a complete replacement for Vc::SimdArray.
+    zimt and is *not* a complete replacement for Vc::SimdArray, but
+    this is where it originated (I had to preserve a large-ish body of
+    Vc-based code and I also like Vc's object-oriented approach).
 
     Wherever possible, the code is as simple as possible, avoiding frills
     and trickery which might keep the compiler from recognizing potentially
@@ -68,8 +117,8 @@
     filtering is very fast, while code involving b-spline evaluation
     shows a speed penalty, since vectorized b-spline evaluation (as coded
     in zimt) relies massively on gather operations of a kind which seem
-    not to be auto-vectorized into binary gather commands - this is my guess,
-    I have not investigated the binary closely.
+    not to be auto-vectorized into binary gather commands - this is my
+    guess, I have not investigated the binary closely.
 
     The code presented here adds some memory access functions which are
     not present in Vc::SimdArray, namely strided load/store operations
@@ -85,9 +134,7 @@
     loop unrolling, catering for deficient compilers and using vigra's
     sophisticated type promotion mechanism. zimt::gen_simd_type on the other
     hand is stripped down to the bare essentials, to make the code as simple
-    as possible, in the hope that 'goading' will indeed work. It replaces
-    zimt's previous SIMD type, zimt::simd_tv, which was derived
-    from vigra::TinyVector.
+    as possible, in the hope that 'goading' will indeed work.
 
     One word of warning: the lack of type promotion requires you to pick
     a value_type of sufficient precision and capacity for the intended
@@ -100,36 +147,65 @@
     of the given value_type which a register of the intended vector ISA
     will contain.
 
-    zimt uses TinyVectors of SIMD data types, but their operations are
-    coded with loops over the TinyVector's elements throughout zimt's
+    zimt uses zimt::vec_t of SIMD data types, but their operations are
+    coded with loops over the vec_t's elements throughout zimt's
     code base. In zimt's opt directory, you can find 'xel_of_vector.h',
     which can provide overloads for all operator functions involving
-    TinyVectors of zimt::gen_simd_type - or, more generally, small
+    xel_t of zimt::gen_simd_type - or, more generally, small
     aggregates of vector data. Please see this header's comments for
-    more detailed information.
+    more detailed information. This is work in progress, using
+    xel_t of zimt SIMD data types should evolve to work 'out of the
+    box' without the need for additional headers, so you may not
+    need this header at all.
 
     Note also that throughout zimt, there is almost no explicit use of
     zimt::gen_simd_type. zimt picks appropriate SIMD data types with
-    mechanisms 'one level up', coded in vector.h. vector.h checks if use
-    of Vc is possible and whether Vc can vectorize a given type, and
-    produces a 'simdized type', which you mustn't confuse with a gen_simd_type.
+    mechanisms 'one level up', coded in vector.h.
 */
 
-#ifndef GEN_SIMD_TYPE_H
-#define GEN_SIMD_TYPE_H
+// in a hwy context, what's the point of providing gen_simd_type?
+// Even if gen_simd_type does not actually use any of the highway SIMD code
+// 'proper', highway's foreach_target mechanism will 'roll out' the code to
+// a set of 'incarnations' which use specific SIMD ISAs - all which highway
+// supports for the given CPU. Then highway can use dynamic dispatch to
+// route to the incarnation which *fits the CPU the code is run on*.
+// So on every machine, we'll run the machine code which would have been
+// produced by compiling with the 'normal' gen_simd_type.h and the compiler
+// flags for the current CPU's SIMD ISA. Since gen_simd_type is quite
+// 'transparent', as long as the code is 'boring' enough (so that it
+// autovectorizes properly), we'll see SIMD benefits, rather than having to
+// contend ourselves with some lowest common denominator by omitting SIMD
+// ISA-specific compiler flags or risking illegal instructions by allowing
+// a specific SIMD ISA for the binary which the current CPU may not compute.
+// In fact highway's foreach_target mechanism can be used to leverage
+// autovectorization properly, internalizing all the hard CPU-checking and
+// dispatching, even if no actual highway SIMD code is used, so it's a
+// reasonably painless first step towards vectorizing a program which does
+// not use zimt or highway SIMD: having autovectorized code for the CPU
+// running the program is definitely a step up from autovectorized code
+// only for one specific SIMD ISA fixed at compile time. But note that
+// using highway's foreach_target mechanism also requires #defining
+// MULTI_SIMD_ISA and linking with libhwy.´
+
+#if defined(GEN_SIMD_TYPE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef GEN_SIMD_TYPE_H
+    #undef GEN_SIMD_TYPE_H
+  #else
+    #define GEN_SIMD_TYPE_H
+  #endif
 
 #include <iostream>
 #include <initializer_list>
-#include "simd_tag.h"
 #include "../common.h"
+#include "simd_tag.h"
 
-// we'll include some headers with repetetive definitions where
-// we use 'XEL' for the types which are elaborated
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
-#define XEL gen_simd_type
+// namespace hn = hwy::HWY_NAMESPACE ;
 
-namespace simd
-{
+// using namespace simd ;
+
 /// class gen_simd_type serves as fallback type to provide SIMD semantics
 /// without explicit SIMD code. It can be used throughout when use of
 /// the SIMD 'backends' is unwanted, or to 'fill the gap' where some
@@ -168,6 +244,8 @@ using typename tag_t::value_type ;
 using tag_t::vsize ;
 using tag_t::backend ;
 
+#define XEL gen_simd_type
+
 #include "vector_mask.h"
 #include "vector_common.h"
 
@@ -182,7 +260,7 @@ gen_simd_type ( const X < U , N > & rhs )
 // binary operators (used to be in xel_inner.h)
 
 #define INTEGRAL_ONLY \
-  static_assert ( std::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \
@@ -362,33 +440,33 @@ void scatter ( value_type * const p_trg ,
 // 'step' apart - in units of T. Might also be done with goading, the
 // loop should autovectorize.
 
-  void rgather ( const value_type * const & p_src ,
-                 const std::size_t & step )
+void rgather ( const value_type * const & p_src ,
+                const std::size_t & step )
+{
+  if ( step == 1 )
   {
-    if ( step == 1 )
-    {
-      load ( p_src ) ;
-    }
-    else
-    {
-      auto indexes = IndexesFrom ( 0 , step ) ;
-      gather ( p_src , indexes ) ;
-    }
+    load ( p_src ) ;
   }
+  else
+  {
+    auto indexes = IndexesFrom ( 0 , step ) ;
+    gather ( p_src , indexes ) ;
+  }
+}
 
-  void rscatter ( value_type * const & p_trg ,
-                  const std::size_t & step ) const
+void rscatter ( value_type * const & p_trg ,
+                const std::size_t & step ) const
+{
+  if ( step == 1 )
   {
-    if ( step == 1 )
-    {
-      store ( p_trg ) ;
-    }
-    else
-    {
-      auto indexes = IndexesFrom ( 0 , step ) ;
-      scatter ( p_trg , indexes ) ;
-    }
+    store ( p_trg ) ;
   }
+  else
+  {
+    auto indexes = IndexesFrom ( 0 , step ) ;
+    scatter ( p_trg , indexes ) ;
+  }
+}
 
 // use 'indexes' to perform a gather from the data held in '(*this)'
 // and return the result of the gather operation.
@@ -493,18 +571,17 @@ bool none_of ( gen_simd_type < P , vsize > arg )
   return result ;
 }
 
-} ;
-
 #undef XEL
+
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
 namespace zimt
 {
-
   template < typename T , size_t N >
-  struct is_integral < simd::gen_simd_type < T , N > >
+  struct is_integral < ZIMT_ENV::gen_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
-
 } ;
 
 #endif // #define GEN_SIMD_TYPE_H

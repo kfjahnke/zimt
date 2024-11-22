@@ -54,7 +54,7 @@
     with 'normal' functions taking input as argument and returning output
     as return values.
 
-    A zimt::unary_functor processes 'simdized' arguments. In vspline,
+    A unary_functor processes 'simdized' arguments. In vspline,
     where the code saw it's first iteration, I used what I call 'bimodal'
     functors which had one simdized and one scalar overload, so that
     they could process scalar arguments as well. In the vspline design,
@@ -75,7 +75,7 @@
     arrives at the point where stuffing happens. If no 'capped' overload
     exists, processing is routed to the 'uncapped' eval.
 
-    zimt::unary_functors are made to process SIMD vectors of fundamentals
+    unary_functors are made to process SIMD vectors of fundamentals
     and 'simdized' 'xel' data. A xel is a small homogeneous aggregate of
     fundamentals, like a pixel or a voxel, hence the 'xel'. Given a xel
     of N fundamentals of type T (zimt::xel_t < T , N >), it's 'simdized'
@@ -83,7 +83,7 @@
     between the 'naked' SIMD vector and the single-channel xel, and the
     code accepts and processes both as equivalent.
 
-    To parametrize a zimt::unary_functor, you don't need to explicitly
+    To parametrize a unary_functor, you don't need to explicitly
     specify the simdized arguments to 'eval', because they can be generated
     form the scalar form of the xel data. All that is needed is the type of
     the fundamental types of input and output, the respective channel counts,
@@ -100,38 +100,53 @@
     - the number of fundamentals (float, int etc.) in a vector, _vsize
     
     The vectorized argument and result type are deduced from IN, OUT and
-    _vsize by querying zimt::vector_traits.
+    _vsize by querying vector_traits.
 
     IN and OUT can be fundamental types or zimt::xel_t of fundamentals,
     and _vsize (or, in zimt, oftentimes L) is the vector lane count,
     which should be a small-ish power of two, like 16.
 
-    So, typical zimt::unary_functor instatiations would be
+    So, typical unary_functor instatiations would be
 
-    zimt::unary_functor < int , float , 16 >
-    zimt::unary_functor < zimt::xel_t<float,2> , zimt::xel_t<float,3> , 8 >
-    zimt::unary_functor < zimt::xel_t < int , 2 > , double >
+    unary_functor < int , float , 16 >
+    unary_functor < zimt::xel_t<float,2> , zimt::xel_t<float,3> , 8 >
+    unary_functor < zimt::xel_t < int , 2 > , double >
     etc.
 
-    And the instatiated zimt::unary_functor has the type system which
+    And the instatiated unary_functor has the type system which
     is needed to work with zimt::transform. zimt::process is a bit more
     'low-level' than zimt::transform and requires all arguments to be
-    zimt::xel_t. Use zimt::vs_adapter to adapt zimt::unary_functors with
+    zimt::xel_t. Use zimt::vs_adapter to adapt unary_functors with
     fundamentals as IN or OUT; this will create a compatible functor
     which uses zimt::xel_t < T , 1 > instead of the fundamentals.
 */
 
-#ifndef ZIMT_UNARY_FUNCTOR_H
-#define ZIMT_UNARY_FUNCTOR_H
+// array.h is used only for yield_type, which might be moved to
+// a different header. But it's an SIMD-ISA-independent header
+// anyway, and will be included only once. array.h does in turn
+// include xel.h, so we can use zimt::xel_t.
+// The code 'proper' of this header needs to be coded separately
+// for each SIMD ISA, though, so we start with the usual sentinel
+// construct to make the code manageable by foreach_target.h
+
+#include "array.h"
+
+#if defined(ZIMT_UNARY_FUNCTOR_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_UNARY_FUNCTOR_H
+    #undef ZIMT_UNARY_FUNCTOR_H
+  #else
+    #define ZIMT_UNARY_FUNCTOR_H
+  #endif
 
 #include "common.h"
 #include "vector.h"
 
-namespace zimt {
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
-/// we derive all zimt::unary_functors from this empty class, to have
+/// we derive all unary_functors from this empty class, to have
 /// a common base type for all of them. This enables us to easily check if
-/// a type is a zimt::unary_functor without having to wrangle with
+/// a type is a unary_functor without having to wrangle with
 /// unary_functor's template arguments.
  
 template < size_t _vsize >
@@ -141,7 +156,7 @@ struct unary_functor_tag { } ;
 /// system of types for concrete unary functors derived from it.
 /// If vectorization isn't used, this is trivial, but with
 /// vectorization in use, we get vectorized types derived from plain
-/// IN and OUT via query of zimt::vector_traits.
+/// IN and OUT via query of vector_traits.
 ///
 /// class unary_functor itself does not provide operator(). It is expected
 /// that the derived classes provide evaluation capability in the form
@@ -151,7 +166,7 @@ struct unary_functor_tag { } ;
 /// reference. eval's return type is void.
 ///
 /// The type system used in unary_functor is taken from
-/// zimt::vector_traits, additionally prefixing the types with in_
+/// vector_traits, additionally prefixing the types with in_
 /// and out_, for input and output types. The other elements of the
 /// type names are the same as in vector_traits.
 
@@ -160,7 +175,7 @@ struct unary_functor_tag { } ;
 
 template < typename IN ,       // argument or input type
            typename OUT = IN , // result type
-           size_t _vsize = zimt::vector_traits < IN > :: size
+           size_t _vsize = vector_traits < IN > :: size
          >
 struct unary_functor
 : public unary_functor_tag < _vsize >
@@ -169,12 +184,12 @@ struct unary_functor
 
   // number of fundamentals in simdized data.
 
-  enum { vsize = _vsize } ;
+  static const std::size_t vsize = _vsize ;
 
   // number of dimensions. This may well be different for IN and OUT.
 
-  enum { dim_in = zimt::vector_traits < IN > :: dimension } ;
-  enum { dim_out = zimt::vector_traits < OUT > :: dimension } ;
+  static const std::size_t dim_in = vector_traits < IN > :: dimension ;
+  static const std::size_t dim_out = vector_traits < OUT > :: dimension ;
   
   // typedefs for incoming (argument) and outgoing (result) type. These two types
   // are non-vectorized types, like zimt::xel_t < float , 2 >. Since such types
@@ -184,11 +199,11 @@ struct unary_functor
   typedef IN in_type ;
   typedef OUT out_type ;
   
-  // elementary types of same. we rely on zimt::vector_traits to provide
+  // elementary types of same. we rely on vector_traits to provide
   // these types.
   
-  typedef typename zimt::vector_traits < IN > :: ele_type in_ele_type ;
-  typedef typename zimt::vector_traits < OUT > :: ele_type out_ele_type ;
+  typedef typename vector_traits < IN > :: ele_type in_ele_type ;
+  typedef typename vector_traits < OUT > :: ele_type out_ele_type ;
   
   // 'synthetic' types for input and output. These are always TinyVectors,
   // possibly of only one element, of the elementary type of in_type/out_type.
@@ -210,7 +225,7 @@ struct unary_functor
   /// which is used for coefficients and results. this is fixed via
   /// the traits class vector_traits (in vector.h). Note how we derive
   /// this type using vsize from the template argument, not what
-  /// zimt::vector_traits deems appropriate for ele_type - though
+  /// vector_traits deems appropriate for ele_type - though
   /// both numbers will be the same in most cases.
   
   typedef typename vector_traits < IN , vsize > :: ele_v in_ele_v ;
@@ -223,7 +238,7 @@ struct unary_functor
   typedef typename vector_traits < IN , vsize > :: nd_ele_v in_nd_ele_v ;
   typedef typename vector_traits < OUT , vsize > :: nd_ele_v out_nd_ele_v ;
   
-  /// vectorized in_type and out_type. zimt::vector_traits supplies these
+  /// vectorized in_type and out_type. vector_traits supplies these
   /// types so that multidimensional/multichannel data come as zimt::xel_ts,
   /// while 'singular' data won't be made into TinyVectors of one element.
   
@@ -236,12 +251,12 @@ struct unary_functor
 
 } ;
 
-/// vs_adapter wraps a zimt::unary_functor to produce a functor which is
+/// vs_adapter wraps a unary_functor to produce a functor which is
 /// compatible with the wielding code. This is necessary, because zimt's
 /// unary_functors take 'naked' arguments if the data are single-channel,
 /// while the wielding code always passes xel_t. The operation of this
 /// wrapper class should not have a run-time effect; it's simply converting
-/// references. Note here that zimt::unary_functor is just an empty
+/// references. Note here that unary_functor is just an empty
 /// shell with a bunch of type declarations and constants: it's there
 /// as a base class for user code functors, to provide a uniform
 /// interface and to facilitate the coding of the 'simdized xel'
@@ -309,47 +324,6 @@ struct vs_adapter
         reinterpret_cast < typename inner_type::out_v & > ( out ) ) ;
   }
 
-// private:
-//
-//   // To detect if a unary functor has a capped eval overload, I use code
-//   // adapted from from Valentin Milea's anser to
-//   // https://stackoverflow.com/questions/87372/check-if-a-class-has-a-member-function-of-a-given-signature
-//   // when providing a capped eval overload of your eval function, please
-//   // note that it will only be recognized if one of the three signatures
-//   // tested below is matched precisely.
-//
-//   template < class C >
-//   class has_capped_eval_t
-//   {
-//       typedef typename C::in_v in_v ;
-//       typedef typename C::out_v out_v ;
-//
-//       // we allow the cap to be passed as const&, &, and by value,
-//       // the remainder of the signature is 'as usual'
-//
-//       template < class T , class cap_t >
-//       static std::true_type testSignature
-//         (void (T::*)(const in_v&, out_v&, const cap_t&));
-//
-//       template < class T , class cap_t >
-//       static std::true_type testSignature
-//         (void (T::*)(const in_v&, out_v&, cap_t&));
-//
-//       template < class T , class cap_t >
-//       static std::true_type testSignature
-//         (void (T::*)(const in_v&, out_v&, cap_t));
-//
-//       template <class T>
-//       static decltype(testSignature(&T::eval)) test(std::nullptr_t);
-//
-//       template <class T>
-//       static std::false_type test(...);
-//
-//   public:
-//       using type = decltype(test<C>(nullptr));
-//       static const bool value = type::value;
-//   };
-
   // does inner_type have a capped eval function? If so, the adapter
   // will dispatch to it, otherwise it will call eval without cap.
   // Most of the time, inner_type won't have a capped variant - this
@@ -405,7 +379,7 @@ public:
 /// class chain_type is a helper class to pass one unary functor's
 /// result as argument to another one. We rely on T1 and T2 to
 /// provide a few of the standard types used in unary functors.
-/// Typically, T1 and T2 will both be zimt::unary_functors, but
+/// Typically, T1 and T2 will both be unary_functors, but
 /// the type requirements could also be fulfilled 'manually'.
 /// Internally, the functors are wrapped in vs_adapters, to
 /// provide a capped eval overload if T1 or T2 don't provide one.
@@ -415,15 +389,15 @@ public:
 template < typename T1 ,
            typename T2 >
 struct chain_type
-: public zimt::unary_functor < typename T1::in_type ,
+: public unary_functor < typename T1::in_type ,
                                typename T2::out_type ,
                                T1::vsize >
 {
   // definition of base_type
 
-  enum { vsize = T1::vsize } ;
+  static const std::size_t vsize = T1::vsize ;
 
-  typedef zimt::unary_functor < typename T1::in_type ,
+  typedef unary_functor < typename T1::in_type ,
                                 typename T2::out_type ,
                                 vsize > base_type ;
 
@@ -499,10 +473,10 @@ struct chain_type
 /// two unary_functors.
 
 template < class T1 , class T2 >
-zimt::chain_type < T1 , T2 >
+chain_type < T1 , T2 >
 chain ( const T1 & t1 , const T2 & t2 )
 {
-  return zimt::chain_type < T1 , T2 > ( t1 , t2 ) ;
+  return chain_type < T1 , T2 > ( t1 , t2 ) ;
 }
 
 /// using operator overloading, we can exploit operator+'s semantics
@@ -515,19 +489,19 @@ template < typename T1 ,
            typename enable = typename
              std::enable_if
              <    std::is_base_of
-                  < zimt::unary_functor_tag < T2::vsize > ,
+                  < unary_functor_tag < T2::vsize > ,
                     T1
                   > :: value
                && std::is_base_of
-                  < zimt::unary_functor_tag < T1::vsize > ,
+                  < unary_functor_tag < T1::vsize > ,
                     T2
                   > :: value
              > :: type
          >
-zimt::chain_type < T1 , T2 >
+chain_type < T1 , T2 >
 operator+ ( const T1 & t1 , const T2 & t2 )
 {
-  return zimt::chain ( t1 , t2 ) ;
+  return chain ( t1 , t2 ) ;
 }
 
 /// class grok_type is a helper class wrapping a unary_functor
@@ -544,11 +518,11 @@ operator+ ( const T1 & t1 , const T2 & t2 )
 /// which simply delegates to std::functions, may optimize better at
 /// times than a more complex functor in the 'grokkee'.
 ///
-/// Performance aside, 'grokking' a zimt::unary_functor produces a
+/// Performance aside, 'grokking' a unary_functor produces a
 /// simple, consistent type that can hold *any* unary_functor with the
 /// given input type, output type and lane count, so it allows to hold
 /// and use a variety of (intrinsically differently typed) functors at
-/// runtime via a common handle which is a zimt::unary_functor itself
+/// runtime via a common handle which is a unary_functor itself
 /// and can be passed to zimt::process and the functions of the
 /// transform family.
 /// With unary_functors being first-class, copyable objects, this also
@@ -591,13 +565,13 @@ operator+ ( const T1 & t1 , const T2 & t2 )
 
 template < typename IN ,       // argument or input type
            typename OUT = IN , // result type
-           size_t _vsize = zimt::vector_traits < IN > :: size
+           size_t _vsize = vector_traits < IN > :: size
          >
 struct grok_type
 : private grok_t ,
-  public zimt::unary_functor < IN , OUT , _vsize >
+  public unary_functor < IN , OUT , _vsize >
 {
-  typedef zimt::unary_functor < IN , OUT , _vsize > base_type ;
+  typedef unary_functor < IN , OUT , _vsize > base_type ;
 
   using base_type::vsize ;
   using base_type::dim_in ;
@@ -649,13 +623,13 @@ public:
   
   /// constructor from 'grokkee' using lambda expressions
   /// to initialize the std::functions above. we enable this if
-  /// grokkee_type is a zimt::unary_functor. We may relax the
+  /// grokkee_type is a unary_functor. We may relax the
   /// requirement and accept anything that 'fits'.
 
   template < class grokkee_type ,
              typename std::enable_if
               < std::is_base_of
-                < zimt::unary_functor_tag < vsize > ,
+                < unary_functor_tag < vsize > ,
                   grokkee_type
                 > :: value ,
                 int
@@ -732,6 +706,14 @@ public:
     _v_ev ( p_context , i , o ) ;
   }
 
+  void eval ( const in_type & i , out_type & o )
+  {
+    in_v iv ( i ) ;
+    out_v ov ;
+    eval ( iv , ov ) ;
+    o = ov[0] ;
+  }
+
   // capped evaluation function template
 
   void eval ( const in_v & i , out_v & o , const std::size_t & cap )
@@ -741,20 +723,20 @@ public:
 } ;
 
 /// grok() is the corresponding factory function, wrapping grokkee
-/// in a zimt::grok_type. Because the grok_type object is quite a
+/// in a grok_type. Because the grok_type object is quite a
 /// mouthful, this nice-to-have: due to ATD, if you have some
-/// zimt::unary_functor f, all you need is "auto g = zimt::grok(f);"
+/// unary_functor f, all you need is "auto g = zimt::grok(f);"
 /// The resulting functor g can then be used instead of f, filling
-/// the same syntactic slot, since it's a zimt::unary_functor itself,
+/// the same syntactic slot, since it's a unary_functor itself,
 /// with the same signature.
 
 template < class grokkee_type >
-zimt::grok_type < typename grokkee_type::in_type ,
+grok_type < typename grokkee_type::in_type ,
                   typename grokkee_type::out_type ,
                   grokkee_type::vsize >
 grok ( grokkee_type grokkee )
 {
-  return zimt::grok_type < typename grokkee_type::in_type ,
+  return grok_type < typename grokkee_type::in_type ,
                            typename grokkee_type::out_type ,
                            grokkee_type::vsize >
                   ( grokkee ) ;
@@ -771,15 +753,14 @@ grok ( grokkee_type grokkee )
 template < class _in_type ,
            class _out_type = _in_type ,
            class _math_type = _in_type ,
-           size_t _vsize = zimt::vector_traits < _in_type > :: vsize >
+           size_t _vsize = vector_traits < _in_type > :: vsize >
 struct amplify_type
-: public zimt::unary_functor < _in_type , _out_type , _vsize >
+: public unary_functor < _in_type , _out_type , _vsize >
 {
-  typedef typename
-    zimt::unary_functor < _in_type , _out_type , _vsize > base_type ;
+  typedef unary_functor < _in_type , _out_type , _vsize > base_type ;
   
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
   
   // TODO: might assert common dimensionality
   
@@ -794,11 +775,11 @@ struct amplify_type
   
   // typedef typename vigra::ExpandElementResult < math_type > :: type
   //   math_ele_type ;
-  typedef typename math_type::value_type math_ele_type ;
+  typedef typename get_ele_t < math_type > :: type math_ele_type ;
 
   typedef zimt::xel_t < math_ele_type , dimension > math_nd_ele_type ;
   
-  typedef typename zimt::vector_traits < math_ele_type , vsize > :: type
+  typedef typename vector_traits < math_ele_type , vsize > :: type
     math_ele_v ;
   
   const math_type factor ;
@@ -839,7 +820,7 @@ struct amplify_type
     // and perform the application of the factor element-wise
 
     for ( int i = 0 ; i < dimension ; i++ )
-      zimt::assign ( _out[i] , math_ele_v ( _in[i] ) * _factor[i] ) ;
+      assign ( _out[i] , math_ele_v ( _in[i] ) * _factor[i] ) ;
   }
 
 } ;
@@ -853,15 +834,14 @@ struct amplify_type
 /// coordinates, which are normally in reverse order of vigra coordinates
 
 template < typename _in_type ,
-           size_t _vsize = zimt::vector_traits < _in_type > :: vsize >
+           size_t _vsize = vector_traits < _in_type > :: vsize >
 struct flip
-: public zimt::unary_functor < _in_type , _in_type , _vsize >
+: public unary_functor < _in_type , _in_type , _vsize >
 {
-  typedef typename zimt::unary_functor
-                     < _in_type , _in_type , _vsize > base_type ;
+  typedef unary_functor < _in_type , _in_type , _vsize > base_type ;
                      
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
   
   using typename base_type::in_type ;
   using typename base_type::out_type ;
@@ -908,7 +888,7 @@ struct flip
       = reinterpret_cast < out_nd_ele_v & > ( out ) ;
     
     for ( int e = 0 ; e < dimension ; e++ )
-      zimt::assign ( _out [ e ] , _in [ dimension - e - 1 ] ) ;
+      assign ( _out [ e ] , _in [ dimension - e - 1 ] ) ;
   }
   
 } ;
@@ -924,7 +904,7 @@ struct flip
 
 template < typename crd_t ,
            typename data_t ,
-           size_t _vsize = zimt::vector_traits < data_t > :: size ,
+           size_t _vsize = vector_traits < data_t > :: size ,
            class enable = void
          >
 struct yield_type
@@ -953,9 +933,9 @@ struct yield_type
                           data_t ,
                          _vsize > base_type ;
 
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
-  enum { channels = base_type::dim_out } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
+  static const std::size_t channels = base_type::dim_out ;
   using typename base_type::in_type ;
   using typename base_type::out_type ;
   using typename base_type::in_ele_type ;
@@ -1089,9 +1069,9 @@ struct yield_type
                           data_t ,
                          _vsize > base_type ;
 
-  enum { vsize = _vsize } ;
-  enum { dimension = base_type::dim_in } ;
-  enum { channels = base_type::dim_out } ;
+  static const std::size_t vsize = _vsize ;
+  static const std::size_t dimension = base_type::dim_in ;
+  static const std::size_t channels = base_type::dim_out ;
   using typename base_type::in_type ;
   using typename base_type::out_type ;
   using typename base_type::in_ele_type ;
@@ -1173,7 +1153,7 @@ public:
 
 } ;
 
-/// class uf_adapter 'bends' a unary functor to a zimt::unary_functor
+/// class uf_adapter 'bends' a unary functor to a unary_functor
 /// handling fundamentals or xel_t arguments. For now this is mainly
 /// to adapt vspline code and it blindly assumes that the arguments
 /// are binary-compatible.
@@ -1361,9 +1341,9 @@ public:
 // put_t object.
 
 template < typename T , std::size_t N ,
-           std::size_t L = zimt::vector_traits < T > :: vsize >
+           std::size_t L = vector_traits < T > :: vsize >
 struct pass_through
-: public zimt::unary_functor < zimt::xel_t < T , N > ,
+: public unary_functor < zimt::xel_t < T , N > ,
                                zimt::xel_t < T , N > ,
                                L >
 {
@@ -1374,17 +1354,39 @@ struct pass_through
   }
 } ;
 
+static bool once = true ;
+
+template < typename T , std::size_t N ,
+           std::size_t L = vector_traits < T > :: vsize >
+struct echo
+: public unary_functor < zimt::xel_t < T , N > ,
+                         zimt::xel_t < T , N > ,
+                         L >
+{
+  template < typename I , typename O >
+  void eval ( const I & i , O & o , const std::size_t cap = 0 )
+  {
+    if ( once )
+    {
+      std::cout << i << std::endl ;
+      // once = false ;
+    }
+    o = i ;
+  }
+} ;
+
 // factory function to 'wrap' a functor 'inner' in a uf_adapter
 
 template < typename W >
-zimt::uf_adapter < W >
+uf_adapter < W >
 uf_adapt ( const W & inner )
 {
-  auto adapted = zimt::uf_adapter < W > ( inner ) ;
+  auto adapted = uf_adapter < W > ( inner ) ;
   return adapted ;
 }
 
-} ; // end of namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
 #endif // ZIMT_UNARY_FUNCTOR_H
 

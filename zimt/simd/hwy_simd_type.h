@@ -84,31 +84,59 @@
     SIMD code rather than towards the goading implementation.
 */
 
-#ifndef HWY_SIMD_TYPE_H
-#define HWY_SIMD_TYPE_H
+// For this adapted version of hwy_simd_type.h, we use a sentinel
+// construct which works with highway's foreach_target.h. This ensures
+// that the code is used once per target SIMD ISA. It's the equivalent
+// of the simple sentinel #ifdef HWY_SIMD_TYPE_H in the single-ISA
+// version. But this will work just the same outside the foraech_target
+// context: then, HWY_TARGET_TOGGLE is never defined. Hence, the first
+// conditional evaluates true on first inclusion of the header (both
+// macros are undefined), the next (nested) conditional evaluates false,
+// so the else-case #defines the sentinel (HWY_SIMD_TYPE_H in this case).
+// On subsequent inclusions outside the foreach_target context,
+// HWY_TARGET_TOGGLE is still false, but now the sentinel is defined,
+// hence the conditional evaluates to false (one term is defined, the
+// other isn't), so the entire code in the header down to the closing
+// #endif of the sentinel construct is ignored. So this 'augmentd'
+// include guard works in both contexts.
+
+#if defined(HWY_SIMD_TYPE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef HWY_SIMD_TYPE_H
+    #undef HWY_SIMD_TYPE_H
+  #else
+    #define HWY_SIMD_TYPE_H
+  #endif
 
 #include <iostream>
 #include <functional>
 #include <type_traits>
 #include <assert.h>
-
-#include "gen_simd_type.h"
+#include "../common.h"
+#include "simd_tag.h"
 
 #include <hwy/highway.h>
 #include <hwy/contrib/math/math-inl.h>
 #include <hwy/aligned_allocator.h>
 #include <hwy/print-inl.h>
-#ifndef HWY_HAVE_ATAN2
-#include "hwy_atan2.h"
-#endif
 
 HWY_BEFORE_NAMESPACE();
 
-namespace HWY_NAMESPACE {
+// this macro places the code following it into either namespace zimt
+// or zimt::HWY_NAMESPACE - depending on whether MULTI_SIMD_ISA is
+// #defined or not. See it's definition in common.h.
+
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
+// We'll call into highway code, which is in a SIMD-ISA-specific
+// nested namespace inside the hwy namespace. If we're working
+// within the foreach_target mechanism, this header is re-included
+// several times (via the code which includes it) and with each
+// pass, HWY_NAMESPACE will be different. Without using the
+// foreach_target mechanism, we will only have the one SIMD-ISA-
+// specific namespace which is fixed by the SIMD ISA chosen at
+// compile time by passing specific compiler flags (or none).
 
 namespace hn = hwy::HWY_NAMESPACE ;
-
-using namespace simd ;
 
 /// mask type for simd_t. This is a type which holds a set of masks
 /// stored in uint8_t, as the highway mask storing function provides.
@@ -134,11 +162,7 @@ using namespace simd ;
 /// So the recommendation for users is to avoid 'friction' by avoiding
 /// mixing differently-sized types, but with the given paradigm, this
 /// is a matter of performance tuning rather than imposing constraints
-/// on code structure. Some of the 'friction' might be mitigated by
-/// additional code using highway's up- and down-scaling routines,
-/// but for now the code rather uses 'goading' with small loops over
-/// the backing memory, relying on the compiler to handle this
-/// efficiently.
+/// on code structure.
 
 template < typename D , std::size_t _vsize >
 struct HWY_ALIGN mchunk_t
@@ -544,7 +568,7 @@ bool none_of ( const mchunk_t<D,N> & arg )
 /// small-ish sets of fundamentals which are stored in a POD C vector.
 /// This implementation uses highway to code the loops more efficiently.
 /// It mimicks Vc::SimdArray, just like gen_simd_type does, and
-/// The code is derived from zimt::simd_array, changing the workhorse
+/// The code is derived from gen_simd_type, changing the workhorse
 /// code from simple loops to the use of highway functions.
 /// The resulting type, with it's 'container-typical' interface, slots
 /// in well with the higher-level constructs used in zimt/lux and,
@@ -569,6 +593,24 @@ bool none_of ( const mchunk_t<D,N> & arg )
 /// benefit from allowing partially filled simd_t via a smaller vsize,
 /// which is feasible because simd_t uses highway vectors with
 /// CappedTag.
+/// I have noticed that code using zimt's hwy_simd_type at times
+/// outperforms equivalent code using highway SIMD data types directly.
+/// I suspect this is due to the fact that hwy_simd_type usually maps
+/// to several hardware SIMD regiters, and processing a datum held in
+/// a hwy_simd_type therfore performs the same operation repeatedly,
+/// once for each register-sized part. This can 'mask latency': the
+/// CPU does need some set-up time to execute certain instructions,
+/// and processing them entirely may require several cycles. If the
+/// same instruction is repeated, the set-up is no longer required,
+/// because the CPU is already set up to perform the specific task.
+/// And if the CPU uses internal pipelining, the next instruction can
+/// already begin while the previous one hasn't concluded. Both effects
+/// result in speedier execution, explaining observed performance gains
+/// when using hwy_simd_type vs. 'plain' highway data types. This
+/// potential gain goes one way, while the additional register pressure
+/// due to the larger data aggregates goes the other way. Users can
+/// try and find a 'sweet spot' by re-compiling their code with different
+/// vsize - the defaults will try and pick a 'reasonable' value.
 
 // forward declaration of class template simd_t
 
@@ -750,44 +792,6 @@ void convert ( const simd_t < T , vsize > & src ,
   convert ( l_src , trg ) ;
 }
 
-// conversion to and from gen_simd_type of equal T
-
-template < typename T , std::size_t vsize >
-void convert ( const gen_simd_type < T , vsize > & src ,
-                     simd_t < T , vsize > & trg )
-{
-  src.store ( trg.data() ) ;
-}
-
-template < typename T , std::size_t vsize >
-void convert ( const simd_t < T , vsize > & src ,
-                     gen_simd_type < T , vsize > & trg )
-{
-  trg.load ( src.data() ) ;
-}
-
-// conversion to and from gen_simd_type of different T
-// This uses goading, because we can't be sure that src_t can be
-// handled by highway.
-
-template < typename src_t , typename trg_t , std::size_t vsize >
-void convert ( const gen_simd_type < src_t , vsize > & src ,
-                     simd_t < trg_t , vsize > & trg )
-{
-  auto p_trg = trg.data() ;
-  for ( std::size_t i = 0 ; i < vsize ; i++ )
-    p_trg[i] = src[i] ;
-}
-
-template < typename src_t , typename trg_t , std::size_t vsize >
-void convert ( const simd_t < src_t , vsize > & src ,
-                gen_simd_type < trg_t , vsize > & trg )
-{
-  auto p_src = src.data() ;
-  for ( std::size_t i = 0 ; i < vsize ; i++ )
-    trg[i] = p_src[i] ;
-}
-
 // now comes the template class simd_t which implements the core
 // of the functionality, the SIMD data type 'standing in' for
 // gen_simd_type when USE_HWY is defined.
@@ -930,7 +934,9 @@ public:
   // And to avoid the vector types 'leaking out'. If user code wants
   // to use the vectorized interface, it should do so via yield and
   // take, as does the code inside this class.
-
+  // Note how we use highway's *aligned* load and store functions:
+  // we have defined the 'backing' memory to be aligned (HWY_ALIGN)
+  // to appropriate addresses.
 
   vec_t yield ( const std::size_t & i ) const
   {
@@ -966,9 +972,9 @@ public:
   // functions and applied to the constituent vectors, using the
   // access functions yield and take.
   // broadcast functions ending in plain _f are scalar functions and
-  // they are rolled out over the array of value_type, 'inner'. value_typehis type of
-  // operation may well be recognized by the optimizer and result
-  // in 'proper' SIMD code.
+  // they are rolled out over the array of value_type, 'inner'.
+  // This type of operation may well be recognized by the optimizer
+  // and result in 'proper' SIMD code.
   // In all cases, *this is the receiving end of the operation and
   // contains the result of the repeated execution of the function
   // passed to 'broadcast'.
@@ -1105,34 +1111,8 @@ public:
     return *this ;
   }
 
-  // assignment from a gen_simd_type on the rhs
-
-  template < typename U >
-  simd_t & operator= ( const gen_simd_type < U , vsize > & rhs )
-  {
-    convert ( rhs , *this ) ;
-    return *this ;
-  }
-
-  // conversion to a gen_simd_type
-  // TODO: is this ever called?
-
-  template < typename U >
-  operator gen_simd_type < U , vsize > ()
-  {
-    gen_simd_type < U , vsize > result ;
-    convert ( *this , result ) ;
-    return result ;
-  }
-
   template < typename U >
   simd_t ( const simd_t < U , vsize > & rhs )
-  {
-    *this = rhs ;
-  }
-
-  template < typename U >
-  simd_t ( const gen_simd_type < U , vsize > & rhs )
   {
     *this = rhs ;
   }
@@ -1263,7 +1243,7 @@ public:
     static const auto floor
       = std::numeric_limits < index_ele_type > :: min() ;
 
-    assert ( start + ( vsize - 1 ) * step >= floor ) ;
+    assert ( index_ele_type ( start + ( vsize - 1 ) * step ) >= floor ) ;
 
     return ( index_type::iota() * step + start ) ;
   }
@@ -1504,29 +1484,21 @@ public:
   BROADCAST_HWY_FUNC(sin,Sin)
   BROADCAST_HWY_FUNC(cos,Cos)
 
-  // hn function not (yet) available for tan, rolling out to sin/cos
+  // hn function not (yet) available for tan, rolling out to sincos
 
-//   BROADCAST_HWY_FUNC(tan,Tan)
-  
   friend simd_t tan ( const simd_t & arg )
   {
     simd_t result ;
     for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += arg.L() )
-      result.take ( i ,
-                    hn::Div ( hn::Sin ( D() , arg.yield ( i ) ) ,
-                              hn::Cos ( D() , arg.yield ( i ) ) ) ) ;
+    {
+      vec_t xx = arg.yield ( i ) ;
+      vec_t ss , cc ;
+      hn::SinCos ( D() , xx , ss , cc ) ;
+      result.take ( i , hn::Div ( ss , cc ) ) ;
+    }
     return result ;
   }
   
-  // goading version
-
-//   friend simd_t tan ( simd_t arg )
-//   {
-//     static const mod_f f = [](const T & x)
-//       { return T ( std::tan ( x ) ) ; } ;
-//     return arg.broadcast ( f ) ;
-//   }
-
   BROADCAST_HWY_FUNC(asin,Asin)
   BROADCAST_HWY_FUNC(acos,Acos)
   BROADCAST_HWY_FUNC(atan,Atan)
@@ -1564,10 +1536,10 @@ public:
     }
 
   BROADCAST_HWY_FUNC2(atan2,Atan2)
+  BROADCAST_HWY_FUNC2(min,Min)
+  BROADCAST_HWY_FUNC2(max,Max)
 
   // no hwy function available for pow
-
-  // BROADCAST_HWY_FUNC2(pow,Pow)
 
   friend simd_t pow ( const simd_t & base , const simd_t & exponent )
   {
@@ -1608,7 +1580,7 @@ public:
   // TODO: might relax constraints by using 'std::is_convertible'
 
   #define INTEGRAL_ONLY \
-    static_assert ( std::is_integral < value_type > :: value , \
+    static_assert ( is_integral < value_type > :: value , \
                     "this operation is only allowed for integral types" ) ;
 
   // augmented assignment with a chunk as rhs and with a T as rhs.
@@ -2007,95 +1979,166 @@ public:
   }
 } ;
 
-} ; // namespace HWY_NAMESPACE
+// for highway data, vspline needs an allocator, which is in turn
+// required by vigra::MultiArray to allocate vector-aligned storage.
+// Initially I coded the allocation using aligned_alloc, but this
+// function is not available on msys2, so I'm now using highway
+// functions.
+
+template < typename T >
+struct simd_allocator
+: public std::allocator < T >
+{
+  typedef std::allocator < T > base_t ;
+  using typename base_t::pointer ;
+  pointer allocate ( std::size_t n )
+  {
+    return (pointer) hwy::AllocateAlignedBytes
+      ( n * sizeof(T) , nullptr , nullptr ) ;
+  }
+  void deallocate ( T* p , std::size_t n )
+  {
+    hwy::FreeAlignedBytes ( p , nullptr , nullptr ) ;
+  }
+  using base_t::base_t ;
+} ;
+
+// for the time being, highway can interleave 2, 3, and 4-channel
+// data. We route the code with overloads, because there is no
+// generalized code for an arbitrary number of channels.
+// code de/interleaving xel data with more than four channels will
+// be routed to one of the templates in xel.h, using gather/scatter
+
+template < typename T , std::size_t vsz >
+void interleave ( const xel_t < simd_t < T , vsz > , 2 > & src ,
+                        xel_t < T , 2 > * const & trg )
+{
+  typedef typename simd_t < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved2 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 2 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void interleave ( const xel_t < simd_t < T , vsz > , 3 > & src ,
+                        xel_t < T , 3 > * const & trg )
+{
+  typedef typename simd_t < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved3 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        src[2].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 3 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void interleave ( const xel_t < simd_t < T , vsz > , 4 > & src ,
+                        xel_t < T , 4 > * const & trg )
+{
+  typedef typename simd_t < T , vsz > :: D D ;
+  T * p_trg = (T*) trg ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += src[0].L() )
+  {
+    StoreInterleaved4 ( src[0].yield ( i ) ,
+                        src[1].yield ( i ) ,
+                        src[2].yield ( i ) ,
+                        src[3].yield ( i ) ,
+                        D() ,
+                        p_trg ) ;
+    p_trg += 4 * src[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const xel_t < T , 2 > * const & src ,
+                          xel_t < simd_t < T , vsz > , 2 > & trg )
+{
+  typedef typename simd_t < T , vsz > :: vec_t vec_t ;
+  typedef  typename simd_t < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved2 ( D() , p_src , c0 , c1 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    p_src += 2 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const xel_t < T , 3 > * const & src ,
+                          xel_t < simd_t < T , vsz > , 3 > & trg )
+{
+  typedef typename simd_t < T , vsz > :: vec_t vec_t ;
+  typedef  typename simd_t < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 , c2 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved3 ( D() , p_src , c0 , c1 , c2 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    trg[2].take ( i , c2 ) ;
+    p_src += 3 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t vsz >
+void deinterleave ( const xel_t < T , 4 > * const & src ,
+                          xel_t < simd_t < T , vsz > , 4 > & trg )
+{
+  typedef typename simd_t < T , vsz > :: vec_t vec_t ;
+  typedef  typename simd_t < T , vsz > :: D D ;
+  const T * p_src = (const T*) src ;
+  vec_t c0 , c1 , c2 , c3 ;
+  for ( std::size_t n = 0 , i = 0 ; n < vsz ; ++i , n += trg[0].L() )
+  {
+    LoadInterleaved4 ( D() , p_src , c0 , c1 , c2 , c3 ) ;
+    trg[0].take ( i , c0 ) ;
+    trg[1].take ( i , c1 ) ;
+    trg[2].take ( i , c2 ) ;
+    trg[3].take ( i , c3 ) ;
+    p_src += 4 * trg[0].L() ;
+  }
+}
+
+template < typename T , std::size_t SZ >
+using hwy_simd_type = simd_t < T , SZ > ;
+
+END_ZIMT_SIMD_NAMESPACE
 
 HWY_AFTER_NAMESPACE();  // at file scope
 
-namespace simd
+// all SIMD data are deemed integral if their value_type is.
+
+namespace zimt
 {
-  template < typename T , std::size_t N >
-  using hwy_simd_type = HWY_NAMESPACE::simd_t < T , N > ;
-} ;
-
-#ifndef HWY_SIMD_ALLOCATOR
-#define HWY_SIMD_ALLOCATOR
-
-namespace simd
-{
-  // for highway data, vspline needs an allocator, which is in turn
-  // required by vigra::MultiArray to allocate vector-aligned storage.
-  // Initially I coded the allocation using aligned_alloc, but this
-  // function is not available on msys2, so I'm now using highway
-  // functions.
-
-  template < typename T >
-  struct simd_allocator
-  : public std::allocator < T >
-  {
-    typedef std::allocator < T > base_t ;
-    using typename base_t::pointer ;
-    pointer allocate ( std::size_t n )
-    {
-      return (pointer) hwy::AllocateAlignedBytes
-        ( n * sizeof(T) , nullptr , nullptr ) ;
-    }
-    void deallocate ( T* p , std::size_t n )
-    {
-      hwy::FreeAlignedBytes ( p , nullptr , nullptr ) ;
-    }
-    using base_t::base_t ;
-  } ;
-
-  template < typename T , std::size_t N >
-  struct allocator_traits < hwy_simd_type < T , N > >
-  {
-    typedef simd_allocator < hwy_simd_type < T , N > > type ;
-  } ;
-} ;
+  template < typename T , size_t N >
+  struct is_integral < ZIMT_ENV::hwy_simd_type < T , N > >
+  : public std::is_integral < T >
+  { } ;
+}
 
 namespace std
 {
   template < typename T , std::size_t N >
-  struct allocator_traits < simd::hwy_simd_type < T , N > >
+  struct allocator_traits < ZIMT_ENV::simd_t < T , N > >
   {
-    typedef simd::simd_allocator
-              < simd::hwy_simd_type < T , N > > allocator_type ;
+    typedef ZIMT_ENV::simd_allocator
+              < ZIMT_ENV::simd_t < T , N > > allocator_type ;
   } ;
-} ;
-
-#endif // HWY_SIMD_ALLOCATOR
-
-#ifndef ZIMT_VECTOR_NBYTES
-
-// this is tentative, but an informed guess, because the data handled
-// by the rendering code are single precision float or int at most,
-// but the smallest data are unsigned char.
-// A full hardware vector of unsigned char amounts to HWY_MAX_BYTES
-// lanes (one lane <=> one byte), and a full hwy_simd_type of float
-// needs four times as many bytes (one lane <=> four bytes), hence
-// the choice of 4*HWY_MAX_BYTES.
-// But TODO for very large HWY_MAX_BYTES this may become very large,
-// and HWY_MAX_BYTES is a loose upper bound, so it may well exceed
-// what the current CPU actually needs. This may become a problem
-// with, e.g. SVE.
-
-#define ZIMT_VECTOR_NBYTES (4*HWY_MAX_BYTES)
-
-#endif
-
-// export the free mask reduction functions into the zimt namespace
-
-namespace zimt
-{
-  using HWY_NAMESPACE::all_of ;
-  using HWY_NAMESPACE::any_of ;
-  using HWY_NAMESPACE::none_of ;
-
-  template < typename T , size_t N >
-  struct is_integral < simd::hwy_simd_type < T , N > >
-  : public std::is_integral < T >
-  { } ;
-
 } ;
 
 #endif // #define HWY_SIMD_TYPE_H

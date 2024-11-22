@@ -142,15 +142,23 @@
 
 */
 
-#ifndef VSPLINE_BSPLINE_H
-#define VSPLINE_BSPLINE_H
+// #ifndef VSPLINE_BSPLINE_H
+// #define VSPLINE_BSPLINE_H
 
 #include <limits>
 
 #include "prefilter.h"
 #include "brace.h"
 
-namespace zimt {
+#if defined(VSPLINE_BSPLINE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef VSPLINE_BSPLINE_H
+    #undef VSPLINE_BSPLINE_H
+  #else
+    #define VSPLINE_BSPLINE_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// struct bspline is the object in zimt holding b-spline coefficients.
 /// In a way, the b-spline 'is' it's coefficients, since it is totally
@@ -229,7 +237,7 @@ struct bspline_base
   {
     xlf_type limit = 0.0L ;
     
-    if ( bc == zimt::REFLECT || bc == zimt::PERIODIC )
+    if ( bc == REFLECT || bc == PERIODIC )
       limit = -0.5L ;
     
     return limit ;
@@ -259,9 +267,9 @@ struct bspline_base
   {
     xlf_type limit = extent - 1 ;
     
-    if ( bc == zimt::REFLECT || bc == zimt::PERIODIC )
+    if ( bc == REFLECT || bc == PERIODIC )
       limit += 0.5L ;
-    // else if ( bc == zimt::PERIODIC )
+    // else if ( bc == PERIODIC )
     //   limit += 1.0L ;
     
     return limit ;
@@ -271,10 +279,10 @@ struct bspline_base
   {
     xlf_type limit = core_shape [ axis ] - 1 ;
     
-    if (    bcv [ axis ] == zimt::REFLECT
-         || bcv [ axis ] == zimt::PERIODIC )
+    if (    bcv [ axis ] == REFLECT
+         || bcv [ axis ] == PERIODIC )
       limit += 0.5L ;
-    // else if ( bcv [ axis ] == zimt::PERIODIC )
+    // else if ( bcv [ axis ] == PERIODIC )
     //   limit += 1.0L ;
     
     return limit ;
@@ -320,7 +328,7 @@ struct bspline_base
       // close to dangerous terrain: an infinitesimal undershoot
       // would already produce an out-of-bounds access.
       
-      if ( bcv[d] == zimt::REFLECT )
+      if ( bcv[d] == REFLECT )
       {
         left_brace[d] ++ ;
       }
@@ -349,7 +357,7 @@ struct bspline_base
       // which is cutting it too fine if we're putting the lower
       // limit at 0.5 as well.
 
-      if ( bcv[d] == zimt::PERIODIC && ( ! ( spline_degree & 1 ) ) )
+      if ( bcv[d] == PERIODIC && ( ! ( spline_degree & 1 ) ) )
       {
         left_brace[d]++ ;
       }
@@ -380,7 +388,7 @@ struct bspline_base
       // but we'd also be cutting it very fine. Again we stay
       // on the side of caution.
       
-      if ( bcv[d] == zimt::REFLECT )
+      if ( bcv[d] == REFLECT )
       {
         if ( ! ( spline_degree & 1 ) )
           right_brace[d] ++ ;
@@ -414,7 +422,7 @@ struct bspline_base
       // bounds checking and index manipulations, we must provide
       // an extra coefficient.
       
-      if ( bcv[d] == zimt::PERIODIC )
+      if ( bcv[d] == PERIODIC )
       {
         right_brace[d]++ ;
       }
@@ -452,7 +460,7 @@ struct bspline_base
 
   template < typename = std::enable_if < _dimension == 1 > >
   static long get_container_shape ( int spline_degree ,
-                                    zimt::bc_code bc ,
+                                    bc_code bc ,
                                     long core_shape ,
                                     int headroom
                                   )
@@ -891,19 +899,17 @@ public:
   /// holds no record of the 'boost' being applied. When evaluating a
   /// spline with boosted coefficients, user code will have to provide
   /// code to attenuate the resulting signal back into the original
-  /// range; for an easy way of doing so, see zimt::amplify_type,
-  /// which is a type derived from zimt::unary_functor providing
+  /// range; for an easy way of doing so, see amplify_type,
+  /// which is a type derived from unary_functor providing
   /// multiplication with a factor. There is an example of it's application
   /// in the context of an integer-valued spline in int_spline.cc.
   
   template < class math_ele_type
-// TODO:
-//               = typename vigra::NumericTraits < ele_type > :: RealPromote ,
-               = float ,
+               = REAL_EQUIV ( ele_type ) ,
              size_t vsize
-               = zimt::vector_traits<math_ele_type>::size >
-  void prefilter ( zimt::xlf_type boost = zimt::xlf_type ( 1 ) ,
-                   int njobs = zimt::default_njobs )
+               = vector_traits<math_ele_type>::size >
+  void prefilter ( xlf_type boost = xlf_type ( 1 ) ,
+                   int njobs = default_njobs )
   {
     // we assume data are already in 'core' and we operate in-place
     // prefilter first, passing in BC codes to pick out the appropriate functions to
@@ -911,7 +917,7 @@ public:
     // note how, just as in brace(), the whole frame is filled, which may be more
     // than is strictly needed by the evaluator.
     
-    zimt::prefilter < dimension ,
+    ZIMT_ENV::prefilter < dimension ,
                          value_type ,
                          value_type ,
                          math_ele_type ,
@@ -941,16 +947,11 @@ public:
 
   template < typename T ,
              typename math_ele_type
-                = float ,
-              // TODO:
-               // = typename vigra::NumericTraits
-               //            < typename vigra::PromoteTraits
-               //                       < ele_type , ET<T> > :: Promote
-               //            > :: RealPromote ,
-             size_t vsize = zimt::vector_traits<math_ele_type>::size >
+               = REAL_EQUIV ( ele_type ) ,
+             size_t vsize = vector_traits<math_ele_type>::size >
   void prefilter ( const view_t < dimension , T > & data ,
-                   zimt::xlf_type boost = zimt::xlf_type ( 1 ) ,
-                   int njobs = zimt::default_njobs
+                   xlf_type boost = xlf_type ( 1 ) ,
+                   int njobs = default_njobs
                  )
   {
     // if the user has passed in data, they have to have precisely the shape
@@ -961,7 +962,7 @@ public:
     // will be overwritten with the (prefiltered) data passed in via 'data'.
     // Whatever data have been in the core will be overwritten.
     
-    if ( data.shape() != core.shape() )
+    if ( data.shape != core.shape )
       throw shape_mismatch
         ( "when passing data to prefilter, they have to have precisely the core's shape" ) ;
 
@@ -970,11 +971,11 @@ public:
     // note how, just as in brace(), the whole frame is filled, which may be more
     // than is strictly needed by the evaluator.
     
-    zimt::prefilter < dimension ,
-                         T ,
-                         value_type ,
-                         math_ele_type ,
-                         vsize >
+    ZIMT_ENV::prefilter < dimension ,
+                          T ,
+                          value_type ,
+                          math_ele_type ,
+                          vsize >
                         ( data ,
                           core ,
                           bcv ,
@@ -1023,13 +1024,19 @@ public:
 
     shape_type new_left_brace = get_left_brace_size ( new_degree , bcv ) ;
     shape_type new_right_brace = get_right_brace_size ( new_degree , bcv ) ;
-    if (    allLessEqual ( new_left_brace , left_frame )
-         && allLessEqual ( new_right_brace , right_frame ) )
+    for ( std::size_t i = 0 ; i < dimension ; i++ )
     {
-      return true ;
+      if (    new_left_brace[i] > left_frame[i]
+           || new_right_brace[i] > right_frame[i] )
+        return false ;
     }
+    // if (    allLessEqual ( new_left_brace , left_frame )
+    //      && allLessEqual ( new_right_brace , right_frame ) )
+    // {
+    //   return true ;
+    // }
 
-    return false ;
+    return true ;
   }
   
   /// shift() actually changes the interpretation of the data. The data
@@ -1059,15 +1066,15 @@ public:
     osr << "dimension:................... " << bsp.dimension << std::endl ;
     osr << "degree:...................... " << bsp.spline_degree << std::endl ;
     osr << "boundary conditions:......... " ;
-    for ( auto bc : bsp.bcv )
-      osr << " " << bc_name [ bc ] ;
+    for ( std::size_t i = 0 ; i < bsp.dimension ; i++ )
+      osr << " " << bc_name [ bsp.bcv[i] ] ;
     osr << std::endl ;
-    osr << "shape of container array:.... " << bsp.container.shape() << std::endl ;
-    osr << "shape of core:............... " << bsp.core.shape() << std::endl ;
+    osr << "shape of container array:.... " << bsp.container.shape << std::endl ;
+    osr << "shape of core:............... " << bsp.core.shape << std::endl ;
     osr << "left frame:.................. " << bsp.left_frame << std::endl ;
     osr << "right frame:................. " << bsp.right_frame << std::endl ;
     osr << "ownership of data:........... "  ;
-    osr << ( bsp._p_coeffs->hasData()
+    osr << ( bsp._p_coeffs->origin
              ? "bspline object owns data"
              : "data are owned externally" ) << std::endl ;
     osr << "container base adress:....... " << bsp.container.data() << std::endl ;
@@ -1085,7 +1092,7 @@ public:
 
 template < class spline_type , typename rc_type >
 using bspl_coordinate_type
-= zimt::canonical_type < rc_type , spline_type::dimension > ;
+= canonical_type < rc_type , spline_type::dimension > ;
       
 /// using declaration for a bspline's value type
 
@@ -1093,6 +1100,7 @@ template < class spline_type >
 using bspl_value_type
 = typename spline_type::value_type ;
 
-} ; // end of namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // VSPLINE_BSPLINE_H
+#endif // sentinel

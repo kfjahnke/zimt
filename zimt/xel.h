@@ -42,6 +42,13 @@
     \brief arithmetic container type
 */
 
+// zimt::xel_t is a 'classic' header - it doesn't have any code which
+// varies with the SIMD ISA. So we use a normal sentinel construct.
+// If code managed by foreach_target.h uses xel_t, that's no problem:
+// the first inclusion establishes xel_t and it's capabilities,
+// subsequent incarnations use the established definitions whose
+// repeated definition is prevented by the sentinel.
+
 #ifndef ZIMT_XEL_T_H
 #define ZIMT_XEL_T_H
 
@@ -51,7 +58,7 @@
 #include <iostream>
 #include <initializer_list>
 #include "common.h"
-#include "vector.h"
+#include "simd/simd_tag.h"
 
 #define XEL xel_t
 
@@ -60,15 +67,15 @@
 
 namespace zimt
 {
+template < typename T , std::size_t N >
+struct xel_t ;
+
 // all xel data are deemed integral if their value_type is.
-  
+
 template < typename T , size_t N >
 struct is_integral < xel_t < T , N > >
 : public is_integral < T >
 { } ;
-
-template < typename T , std::size_t N >
-struct xel_t ;
 
 // 'form' is a traits class used to abstract from the concrete
 // 'atomic' type held by a xel_t construct, to help with the
@@ -178,7 +185,7 @@ struct xel_t
 // values, both with 'C semantics' type promotion.
 
 #define INTEGRAL_ONLY \
-  static_assert ( zimt::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \
@@ -344,7 +351,7 @@ xel_t < value_type , nch + 1 > widen ( const value_type & by ,
 // vector code for scalar values as well.
 
 #define INTEGRAL_ONLY \
-  static_assert ( std::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \
@@ -417,8 +424,8 @@ bool none_of ( bool condition )
 }
 
 // next we have code which will only be present for xel_t of some
-// SIMD data type, like zimt::simd_type or zimt::vc_simd_type.
-// For such types, value_type will inherit from simd_flag, so we
+// SIMD data type, like hwy_simd_type or gen_simd_type. For such
+// types, value_type will inherit from simd_flag, so we
 // can use enable_if to produce the code if appropriate.
 
 template < typename = std::enable_if
@@ -544,25 +551,27 @@ void stuff ( std::size_t cap )
   }
 }
 
-// capped bunch. TODO: rewrite using masks
+// capped bunch.
 
 template < typename = std::enable_if
   < std::is_base_of < simd_flag , value_type > :: value > >
-void bunch ( const xel_t < ET < value_type > , nch > * src ,
+void bunch ( const xel_t < ET < value_type > , nch > * _src ,
              std::size_t stride ,
              std::size_t cap ,
              bool _stuff = false )
 {
-  for ( std::size_t e = 0 ; e < cap ; e++ )
+  auto indexes = value_type::IndexesFromZero() ;
+  auto mask = ! ( indexes < int(cap) ) ;
+  indexes ( mask ) = int ( cap - 1 ) ;
+  indexes *= ( stride * nch ) ;
+  const ET<value_type> * src = (const ET<value_type>*) _src ;
+
+  for ( std::size_t ch = 0 ; ch < nch ; ch++ , src++ )
   {
-    for ( std::size_t ch = 0 ; ch < nch ; ch++ )
-    {
-      (*this)[ch][e] = src [ e * stride ] [ ch ] ;
-    }
-  }
-  if ( _stuff )
-  {
-    stuff ( cap ) ;
+    // stuffs automatically, because indexes for lane nr. cap
+    // and larger are set to cap-1, so gather a valid datum.
+
+    (*this)[ch] . gather ( src , indexes ) ;
   }
 }
 
@@ -642,32 +651,6 @@ T norm ( const zimt::xel_t < T , D > & v )
 }
 
 } ; // end of namespace zimt
-
-#undef XEL
-
-// when Vc or highway are available, we have specialized
-// de/interleaving code which we can route to now that we have
-// the complete type definition for zimt::xel_t
-
-#define XEL zimt::xel_t
-
-#ifdef USE_VC
-#include "simd/vc_interleave.h"
-namespace zimt
-{
-  using simd::interleave ;
-  using simd::deinterleave ;
-} ;
-#endif
-
-#ifdef USE_HWY
-#include "simd/hwy_interleave.h"
-namespace zimt
-{
-  using simd::interleave ;
-  using simd::deinterleave ;
-} ;
-#endif
 
 #undef XEL
 

@@ -60,7 +60,7 @@
 // creating a cubemap with openEXR's exrenvmap utility and feeding
 // it to this program, but the result shows that the format is not
 // understood. So, for now, input must be a lat/lon environment map,
-// a.k.a full spherical. Note also that the full spherical image which
+// a.k.a. full spherical. Note also that the full spherical image which
 // this program expects should be uniformly sampled in a particular way:
 // if the image is h pixels high and w = 2 * h pixels wide, then the
 // image center, coinciding with the view straight ahead, is at
@@ -76,7 +76,7 @@
 // lookup via OIIO's 'environment' function comes out as one would
 // expect with this scheme.
 
-#include <array>
+#include <memory>
 
 #include <zimt/zimt.h>
 
@@ -121,7 +121,7 @@ T norm ( const C < T , N > & x )
 struct lookup_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  TextureSystem * ts ;
+  std::shared_ptr<TextureSystem> ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -150,10 +150,10 @@ struct lookup_t
   // increasing the line. Note also that the 'canonical' image
   // coordinates increase from the image's top to it's bottom, while
   // the spatial y axis in IMath points upward, so you may notice
-  // signs changes on the y axis in the code. The image's x axis and
+  // sign changes on the y axis in the code. The image's x axis and
   // the IMath x axis coincide.
 
-  lookup_t ( TextureSystem * _ts ,
+  lookup_t ( std::shared_ptr<TextureSystem> _ts ,
              TextureOptBatch & _batch_options ,
              TextureSystem::TextureHandle * _th ,
              const std::array < v3_t , 2 > & _step )
@@ -209,7 +209,7 @@ struct lookup_t
     // the purpose of a SIMDized interface. But if OIIO comes round to
     // providing proper SIMD code, we're already there and this program
     // will immediately exploit it.
-    // Not also that the zimt::process 'driver' code which calls the
+    // Note also that the zimt::process 'driver' code which calls the
     // 'act' functor repeatedly is multithreaded: there will be several
     // worker threads which cooperate to get through all the lookups
     // neded for the entire target image. All of the parcelling of
@@ -289,7 +289,7 @@ struct lookup_t
 struct laplace_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  TextureSystem * ts ;
+  std::shared_ptr<TextureSystem> ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -297,12 +297,12 @@ struct laplace_t
   const float laplace1 ;
   const float laplace2 ;
 
-  lookup_t ( TextureSystem * _ts ,
-             TextureOptBatch & _batch_options ,
-             TextureSystem::TextureHandle * _th ,
-             const std::array < v3_t , 2 > & _step ,
-             const float & _laplace1 = 1.0f ,
-             const float & _laplace2 = 1.0f )
+  laplace_t ( std::shared_ptr<TextureSystem> _ts ,
+              TextureOptBatch & _batch_options ,
+              TextureSystem::TextureHandle * _th ,
+              const std::array < v3_t , 2 > & _step ,
+              const float & _laplace1 = 1.0f ,
+              const float & _laplace2 = 1.0f )
   : ts ( _ts ) ,
     batch_options ( _batch_options ) ,
     th ( _th ) ,
@@ -441,7 +441,7 @@ int main ( int argc , char * argv[] )
             << " roll: " << roll << std::endl ;
   std::cout << "output: " << output << std::endl ;
 
-  // move to radians, reverse yaw and pitch (we might accept the
+  // move to radians, reverse yaw and pitch. We might accept the
   // values unchanged, but I accept angles in panotools convention
   // to make the program easily comparable to the equivalent
   // operation done with lux or software using libpano, like the
@@ -502,7 +502,7 @@ int main ( int argc , char * argv[] )
 
   // now we set up the TextureSystem, which is really simple.
 
-  auto * ts = TextureSystem::create() ; 
+  auto ts = TextureSystem::create() ; 
 
   // The options for the lookup determine the quality of the output
   // and the time it takes to compute it. Switching MipMapping off

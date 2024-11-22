@@ -49,16 +49,12 @@
 
 */
 
-#ifndef ZIMT_SIMD_H // sentinel
-
-namespace simd
-{
-template < typename T >
-struct allocator_traits
-{
-  typedef std::allocator < T > type ;
-} ;
-} ;
+#if defined(ZIMT_SIMD_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_SIMD_H
+    #undef ZIMT_SIMD_H
+  #else
+    #define ZIMT_SIMD_H
+  #endif
 
 // we have two back-ends which can provide data types for the entire
 // range zimt intends to cover: arbitrary fundamentals and any number
@@ -105,33 +101,24 @@ struct allocator_traits
 
 #endif
 
-namespace zimt
-{
-using namespace simd ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
-#ifdef USE_STDSIMD
+static const std::size_t ZIMT_VECTOR_NBYTES
 
-template < typename U , std::size_t M >
-using gen_simd_type = std_simd_type < U , M > ;
+// TODO: with some payloads, 4 * HWY_MAX_BYTES seems better. It may
+// have to do with some instructions needing-set up and having several
+// in sequence hiding latency. In any case, the constant provided here
+// is only used to generate the lane number for a simdized type if the
+// user doesn't ask for a specific one.
 
-#endif
-
-#ifndef ZIMT_VECTOR_NBYTES
-
-#if defined USE_VC
-
-#define ZIMT_VECTOR_NBYTES (2*sizeof(Vc::Vector<float>))
-
+#if defined USE_HWY
+  = 2 * HWY_MAX_BYTES ;
 #else
-
-// note that hwy_simd_type.h #defines this value already, so with
-// the hwy back-end, the lane count depends on the value used there,
-// currently four hardware vectors' worth.
-
-#define ZIMT_VECTOR_NBYTES 64
-
-#endif
-
+  #if defined USE_VC
+    = (2*sizeof(Vc::Vector<float>)) ;
+  #else
+    = 64 ;
+  #endif
 #endif
 
 /// traits class simd_traits provides three traits:
@@ -153,7 +140,7 @@ struct simd_traits
   template < size_t sz > using type =
     typename std::conditional < sz == 1 ,
                                 T ,
-                                gen_simd_type < T , sz >
+                                ZIMT_ENV::gen_simd_type < T , sz >
                               > :: type ;
 
   static const size_t hsize = 0 ;
@@ -172,18 +159,11 @@ struct simd_traits
 
 #if defined USE_VC
 
-template < typename T , std::size_t N >
-struct allocator_traits < vc_simd_type < T , N > >
-{
-  typedef Vc::Allocator < vc_simd_type < T , N > >
-    type ;
-} ;
-
-// in Vc ML discussion M. Kretz states that the set of types Vc can vectorize
-// (with 1.3) is consistent throughout all ABIs, so we can just list the
-// acceptable types without having to take the ABI into account.
-// So, for these types we specialize 'simd_traits', resulting in the use of
-// the appropriate Vc::SimdArray.
+// in Vc ML discussion M. Kretz states that the set of types Vc can
+// vectorize (with 1.3) is consistent throughout all ABIs, so we can
+// just list the acceptable types without having to take the ABI into
+// account. So, for these types we specialize 'simd_traits', resulting
+// in the use of the appropriate Vc::SimdArray.
 
 #define VC_SIMD(T) \
 template<> struct simd_traits<T> \
@@ -228,7 +208,7 @@ template<> struct simd_traits<T> \
                typename std::conditional \
                < ( sz & ( sz - 1 ) ) == 0 , \
                  hwy_simd_type < T , sz > , \
-                 zimt::gen_simd_type < T , sz > \
+                 gen_simd_type < T , sz > \
                > :: type \
              > :: type ; \
   enum { default_size =   sizeof ( T ) > ZIMT_VECTOR_NBYTES \
@@ -249,9 +229,8 @@ HWY_SIMD(unsigned char)
 
 #undef HWY_SIMD
 
-#endif
+#endif // defined USE_HWY
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
 
-#define ZIMT_SIMD_H
-#endif
+#endif // for sentinel

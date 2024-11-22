@@ -59,17 +59,21 @@
 
 */
 
-#ifndef ZIMT_RECURSIVE_H
-#define ZIMT_RECURSIVE_H
-
 #include <limits>
 #include "common.h"
 #include "filter.h"
 
-namespace zimt {
+#if defined(ZIMT_CONVOLVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_CONVOLVE_H
+    #undef ZIMT_CONVOLVE_H
+  #else
+    #define ZIMT_CONVOLVE_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 using namespace std ;
-using namespace zimt ;
 
 /// overall_gain is a helper routine:
 /// Simply executing the filtering code by itself will attenuate the signal. Here
@@ -126,13 +130,13 @@ static xlf_type overall_gain ( const int & nbpoles ,
 
 struct iir_filter_specs
 {
-  zimt::bc_code bc ;
+  bc_code bc ;
   int npoles ;
   const xlf_type * pole ;
   xlf_type tolerance ;
   xlf_type boost ;
   
-  iir_filter_specs ( zimt::bc_code _bc ,
+  iir_filter_specs ( bc_code _bc ,
                      int _npoles ,
                      const xlf_type * _pole ,
                      xlf_type _tolerance ,
@@ -158,8 +162,8 @@ class iir_filter
 {
   typedef _math_type math_type ;
   
-  typedef zimt::view_t < 1 , in_type > in_buffer_type ;
-  typedef zimt::view_t < 1 , out_type > out_buffer_type ;
+  typedef view_t < 1 , in_type > in_buffer_type ;
+  typedef view_t < 1 , out_type > out_buffer_type ;
   
   /// typedef the fully qualified type for brevity, to make the typedefs below
   /// more legible
@@ -807,7 +811,7 @@ public:
   // cumulating the gain for all axes. This may perform slightly worse, but
   // is more stable numerically and simplifies the code.
   
-  gain = boost * zimt::overall_gain ( npoles , pole ) ;
+  gain = boost * overall_gain ( npoles , pole ) ;
   _p_solve = & filter_type::solve_gain_inlined ;
 
   // while the forward/backward IIR iir_filter in the solve_... routines is the same for all
@@ -853,7 +857,7 @@ public:
   }
   else
   {
-    throw not_supported ( "boundary condition not supported by zimt::filter" ) ;
+    throw not_supported ( "boundary condition not supported by filter" ) ;
   }
 }
 
@@ -873,10 +877,10 @@ public:
 template < template < typename , size_t > class _vtype ,
            typename _math_ele_type ,
            size_t _vsize =
-             zimt::vector_traits<_math_ele_type>::size >
+             vector_traits<_math_ele_type>::size >
 struct recursive_filter
 : public buffer_handling < _vtype , _math_ele_type , _vsize > ,
-  public zimt::iir_filter < _vtype < _math_ele_type , _vsize > >
+  public iir_filter < _vtype < _math_ele_type , _vsize > >
 {
   // provide this type for queries
   
@@ -892,13 +896,13 @@ struct recursive_filter
 
   // instances of class recursive_filter hold the buffer:
   
-  zimt::array_t < 1 , vtype > buffer ;
+  array_t < 1 , vtype > buffer ;
 
   // the filter's 'solve' routine has the workhorse code to filter
   // the data inside the buffer:
   
   typedef _vtype < _math_ele_type , _vsize > simdized_math_type ;
-  typedef zimt::iir_filter < simdized_math_type > filter_type ;
+  typedef iir_filter < simdized_math_type > filter_type ;
   using filter_type::solve ;
   
   // by defining arg_type, we allow code to infer what type of
@@ -937,10 +941,10 @@ struct recursive_filter
   template < typename in_type ,
              typename out_type = in_type ,
              typename math_type = out_type >
-  static zimt::iir_filter < in_type , out_type , math_type >
+  static iir_filter < in_type , out_type , math_type >
          get_raw_filter ( const iir_filter_specs & specs )
   {
-    return zimt::iir_filter < in_type , out_type , math_type >
+    return iir_filter < in_type , out_type , math_type >
            ( specs ) ;
   }
   
@@ -991,18 +995,18 @@ template < std::size_t dimension ,
            typename math_ele_type =
                     ET < PROMOTE ( in_value_type , out_value_type ) > ,
            size_t vsize =
-                  zimt::vector_traits < math_ele_type > :: size
+                  vector_traits < math_ele_type > :: size
          >
 void forward_backward_recursive_filter (
                  const
-                 zimt::view_t
+                 view_t
                    < dimension ,
                      in_value_type > & input ,
-                 zimt::view_t
+                 view_t
                    < dimension ,
                      out_value_type > & output ,
-                 zimt::xel_t < bc_code , dimension > bcv ,
-                 std::vector < zimt::xlf_type > pv ,
+                 xel_t < bc_code , dimension > bcv ,
+                 std::vector < xlf_type > poles ,
                  xlf_type tolerance = -1 ,
                  xlf_type boost = xlf_type ( 1 ) ,
                  int axis = -1 , // -1: apply along all axes
@@ -1015,7 +1019,7 @@ void forward_backward_recursive_filter (
   if ( tolerance < 0 )
     tolerance = std::numeric_limits < math_ele_type > :: epsilon() ;
 
-  int npoles = pv.size() ;
+  int npoles = poles.size() ;
   
   if ( npoles < 1 )
   {
@@ -1033,15 +1037,10 @@ void forward_backward_recursive_filter (
   }
   
 
-  zimt::xlf_type poles [ npoles ] ;
-  for ( int i = 0 ; i < npoles ; i++ )
-    poles[i] = pv[i] ;
-  
-  typedef typename zimt::recursive_filter
-                            < zimt::simdized_type ,
-                              math_ele_type ,
-                              vsize
-                            > filter_type ;
+  typedef recursive_filter < simdized_type ,
+                             math_ele_type ,
+                             vsize
+                           > filter_type ;
 
   // now call the 'wielding' code in filter.h
 
@@ -1049,7 +1048,7 @@ void forward_backward_recursive_filter (
   {
     // user has passed -1 for 'axis', apply the same filter along all axes
 
-    std::vector < zimt::iir_filter_specs > vspecs ;
+    std::vector < iir_filter_specs > vspecs ;
 
     // package the arguments to the filter; one set of arguments
     // per axis of the data
@@ -1057,8 +1056,8 @@ void forward_backward_recursive_filter (
     for ( int axis = 0 ; axis < dimension ; axis++ )
     {
       vspecs.push_back
-        ( zimt::iir_filter_specs
-          ( bcv [ axis ] , npoles , poles , tolerance , 1 ) ) ;
+        ( iir_filter_specs
+          ( bcv [ axis ] , npoles , poles.data() , tolerance , 1 ) ) ;
     }
 
     // 'boost' is only applied to dimension 0, since it is meant to
@@ -1066,7 +1065,7 @@ void forward_backward_recursive_filter (
 
     vspecs [ 0 ] . boost = boost ;
     
-    zimt::filter
+    filter
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , vspecs , njobs ) ;
   }
@@ -1076,15 +1075,16 @@ void forward_backward_recursive_filter (
 
     assert ( axis >=0 && axis < dimension ) ;
 
-    zimt::filter
+    filter
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , axis ,
-      zimt::iir_filter_specs (
-        bcv [ axis ] , npoles , poles , tolerance , boost ) ,
+      iir_filter_specs (
+        bcv [ axis ] , npoles , poles.data() , tolerance , boost ) ,
       njobs ) ;
   }
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // ZIMT_RECURSIVE_H
+#endif // sentinel

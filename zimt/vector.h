@@ -41,13 +41,18 @@
     \brief code for horizontal vectorization in zimt
 */
     
-#ifndef ZIMT_VECTOR_H
-#define ZIMT_VECTOR_H
+#if defined(ZIMT_VECTOR_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_VECTOR_H
+    #undef ZIMT_VECTOR_H
+  #else
+    #define ZIMT_VECTOR_H
+  #endif
 
 #include "simd.h"
 
-namespace zimt
-{
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
 /// with the definition of 'simd_traits', we can proceed to implement
 /// 'vector_traits':
 /// struct vector_traits is a traits class fixing the types used for
@@ -218,7 +223,7 @@ void assign ( zimt::xel_t < T , N > & t ,
               const zimt::xel_t < U , N > & u )
 {
   for ( int i = 0 ; i < N ; i++ )
-    zimt::assign ( t [ i ] , u [ i ] ) ;
+    assign ( t [ i ] , u [ i ] ) ;
 }
 
 // conditional assignment as a free function. This is helpful to code
@@ -235,13 +240,14 @@ void assign_if ( VT1 & target ,
 
 template < typename T >
 void assign_if ( T & target ,
-            const bool & predicate ,
-            const T & source )
+                 const bool & predicate ,
+                 const T & source )
 {
   if ( predicate )
     target = source ;
 }
 
-} ; // end of namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // #ifndef ZIMT_VECTOR_H
+#endif // for sentinel

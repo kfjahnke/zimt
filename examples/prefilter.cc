@@ -43,29 +43,29 @@
 /// This is a port of the vspline example program prefilter.cc
 ///
 /// zimt has some code which isn't useful only for b-splines.
-/// One example is the application of a filter to a MultiArrayView.
+/// One example is the application of a digital filter to an array.
 /// With zimt's multithreaded SIMD code, this is done efficiently.
 /// This example program will apply an n-pole forward/backward
-/// recursive filter with the given pole values along the horizontal
-/// and vertical. You can pass an arbitrarily long sequence of pole
-/// values after an image file name, but bear in mind that some pole
-/// values can lead to infinite results.
+/// recursive filter using a the prefilter poles of a b-spline
+/// of a given degree. This is the operation which is needed to
+/// convert a b-spline's knot point values to b-spline coefficients.
 ///
 /// compile with:
 /// ./examples.sh prefilter.cc
 ///
-/// invoke passing an image file and the pole values. the result
-/// will be written to 'prefilter.tif'
-///
-/// positive pole values will blur the image. Don't exceed 1.0.
-/// Negative values will sharpen the image. blurring with a single
-/// positive pole value close to 1.0 is a very efficient way to affect
-/// a strong blur quickly.
-///
-/// TODO: compare the result of this filter with a standard gaussian
+/// invoke passing an image file and the spline degree. the result
+/// will be written to 'prefilter.tif'. Note that vigraimpex will
+/// compress the resulting values into the output format's dynamic
+/// range, so if you look at the result, it will - with rising spline
+/// degree - approach some shade of middle grey, because the few very
+/// large result values (where high frequencies appear in the input)
+/// will determine the range, while most result values are nearer the
+/// incoming knot point values.
+
 
 #include <iostream>
 #include <stdlib.h>
+#include <chrono>
 
 #include <zimt/zimt_vigra.h>
 #include <zimt/prefilter.h>
@@ -84,7 +84,7 @@ typedef zimt::array_t < 2 , pixel_type > target_type ;
 
 int main ( int argc , char * argv[] )
 {
-  if ( argc < 2 )
+  if ( argc < 3 )
   {
     std::cerr << "pass a colour image file as argument," << std::endl ;
     std::cerr << "followed by the spline degree" << std::endl ;
@@ -107,6 +107,11 @@ int main ( int argc , char * argv[] )
 
   vigra::importImage ( imageInfo , zimt::to_vigra ( a ) ) ;
 
+  // we want to time the operation
+
+  std::chrono::system_clock::time_point start
+    = std::chrono::system_clock::now() ;
+
   // apply the filter
 
   zimt::prefilter
@@ -116,6 +121,14 @@ int main ( int argc , char * argv[] )
      degree ) ;
 
   // store the result with vigra impex
+
+  std::chrono::system_clock::time_point end
+    = std::chrono::system_clock::now() ;
+
+  std::cout << "prefilter took "
+            << std::chrono::duration_cast<std::chrono::milliseconds>
+                ( end - start ) . count()
+            << " ms" << std::endl ;
 
   vigra::ImageExportInfo eximageInfo ( "prefilter.tif" );
   

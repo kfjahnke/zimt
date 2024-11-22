@@ -96,7 +96,7 @@ T norm ( const C < T , N > & x )
 struct lookup_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  TextureSystem * ts ;
+  std::shared_ptr<TextureSystem> ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -128,7 +128,7 @@ struct lookup_t
   // signs changes on the y axis in the code. The image's x axis and
   // the IMath x axis coincide.
 
-  lookup_t ( TextureSystem * _ts ,
+  lookup_t ( std::shared_ptr<TextureSystem> _ts ,
              TextureOptBatch & _batch_options ,
              TextureSystem::TextureHandle * _th ,
              const std::array < v3_t , 2 > & _step )
@@ -276,7 +276,7 @@ void rotate ( v3_t & v , const Imath::Quatf & q )
   v = to_zimt ( toImath ( v ) * q ) ;
 }
 
-void extract ( TextureSystem * ts ,
+void extract ( std::shared_ptr<TextureSystem> ts ,
                TextureSystem::TextureHandle * th ,
                int w , int h ,
                float v , float yaw , float pitch , float roll ,
@@ -399,7 +399,7 @@ int main ( int argc , char * argv[] )
 
   // now we set up the TextureSystem, which is really simple.
 
-  TextureSystem * ts = TextureSystem::create() ; 
+  std::shared_ptr<TextureSystem> ts = TextureSystem::create() ; 
 
   // we're only dealing with one environment here, let's get
   // it's handle to speed up access further down the line

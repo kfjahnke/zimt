@@ -102,6 +102,7 @@ void second()
   // what we expect.
 
   zimt::bill_t bill ;
+  // bill.njobs = 1 ;
 
   // the initializers for the 'notional' shape of this run are
   // written as differences to show how they come to be: it's the
@@ -127,11 +128,13 @@ void second()
   // we set up the three functors for the call to zimt::process
 
   zimt::tile_loader < short , 2 , 2 > tl ( tile_source , bill ) ;
-  zimt::pass_through < short , 2 > act ;
+  // zimt::pass_through < short , 2 > act ;
+  zimt::echo < short , 2 > act ;
   zimt::storer < short , 2 , 2 > tp ( target , bill ) ;
 
   // and go!
 
+  std::cout << "call process" << std::endl ;
   zimt::process ( shape , tl , act , tp , bill ) ;
 
   // for the doublecheck, we set up a coordinate iterator and
@@ -140,6 +143,7 @@ void second()
   zimt::mcs_t < 2 > mcs ( shape ) ;
   zimt::xel_t < short , 2 > offset { 17 , 23 } ;
 
+  std::cout << "check result" << std::endl ;
   for ( std::size_t i = 0 ; i < shape.prod() ; i++ )
   {
     auto crd = mcs() ;

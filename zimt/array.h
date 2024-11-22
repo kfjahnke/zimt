@@ -83,6 +83,7 @@
 #include <cstring>
 
 #ifndef ZIMT_ARRAY_H
+#define ZIMT_ARRAY_H
 
 namespace zimt
 {
@@ -334,17 +335,52 @@ struct view_t
     return origin [ offset ( crd ) ] ;
   }
 
-  template < typename index_type >
-  const T & operator[] ( const index_type & crd ) const
+  // we set up a 'lure' for calls to operator[] with integral indices
+  // but prevent it's use for other than 1D arrays with a static
+  // assertion. This is to block such 1D indices form being converted
+  // to index_type, which is not wanted: if you were using a[3] on a
+  // 2D array, this would convert to a[(3,3)].
+  // vigra::MultiArrayView allows such indexing, but interprets the
+  // index as an iterator. In zimt, this has to be done explicitly.
+  // On the other hand, if the array is indeed 1D, indexing with an
+  // integral fundamental is most effective, saving the offset
+  // calculation.
+
+  template < typename E ,
+             typename = typename std::enable_if
+               <    std::is_fundamental < E > :: value
+                 && std::is_integral < E > :: value
+               > :: type
+            >
+  const T & operator[] ( const E & crd ) const
   {
-    return origin [ offset ( crd ) ] ;
+    static_assert ( D == 1 , "use fundamental indexes only for 1D arrays" ) ;
+    return origin [ crd ] ;
   }
 
-  template < typename index_type >
-  T & operator[] ( const index_type & crd )
+  template < typename E ,
+             typename = typename std::enable_if
+               <    std::is_fundamental < E > :: value
+                 && std::is_integral < E > :: value
+               > :: type
+            >
+  T & operator[] ( const E & crd )
   {
-    return origin [ offset ( crd ) ] ;
+    static_assert ( D == 1 , "use fundamental indexes only for 1D arrays" ) ;
+    return origin [ crd ] ;
   }
+
+//   template < typename index_type >
+//   const T & operator[] ( const index_type & crd ) const
+//   {
+//     return origin [ offset ( crd ) ] ;
+//   }
+//   
+//   template < typename index_type >
+//   T & operator[] ( const index_type & crd )
+//   {
+//     return origin [ offset ( crd ) ] ;
+//   }
 
   // 'peek' function giving access to the view's origin
 
@@ -412,13 +448,8 @@ private:
   // now the slicing operation. it creates a subdimensional view
   // coinciding with a window with dimension d having extent 1.
   // If 'this' view already is 1D, the only dimension left is
-  // dimension 0, and the only meaningful argument 'k' is zero.
-  // This is not enforced - it's assumed that no sane code will
-  // attempt to slice 1D views - but the 1D case is handled
-  // saparately and returns the same view.
-  // TODO: might consider a 1D view a 2D view with extent 1
-  // in the second axis. Then, d could be 0 or 1, and k would
-  // be meaningful.
+  // dimension 0. The returned slice is a 1D view with only one
+  // element - the one at position k.
 
   slice_t _slice ( std::size_t d , long k , std::false_type ) const
   {
@@ -439,7 +470,7 @@ private:
 
   slice_t _slice ( std::size_t d , long k , std::true_type ) const
   {
-    return slice_t ( origin , strides , 1 ) ; // shape ) ;
+    return slice_t ( origin + k * strides [ 0 ] , 1 , 1 ) ;
   }
 
 public:
@@ -674,9 +705,11 @@ public:
 
   // add a shared_ptr to the data the view is 'based on', meaning that
   // the chunk of memory the shared_ptr points to envelopes the data
-  // the view refers to.
+  // the view refers to. Note the template argument 'T[]' - initially
+  // I used plain T, but that did not work for non-trivial types T.
+  // Using T[] instead, all seems well.
 
-  std::shared_ptr < T > base ;
+  std::shared_ptr < T[] > base ;
 
   using typename base_t::value_type ;
   using typename base_t::shape_type ;
@@ -693,7 +726,7 @@ public:
   // in, and if the array is destroyed, the memory is only released
   // if this was the last copy of the shared_ptr in circulation
 
-  array_t ( std::shared_ptr < T > _base ,
+  array_t ( std::shared_ptr < T[] > _base ,
             const shape_type & _shape )
   : base_t ( _base.get() ,
              make_strides ( _shape ) ,
@@ -703,7 +736,7 @@ public:
 
   // array based on a shared_ptr and a view
 
-  array_t ( std::shared_ptr < T > _base ,
+  array_t ( std::shared_ptr < T[] > _base ,
             const base_t & view )
   : base_t ( view ) ,
     base ( _base )
@@ -729,8 +762,7 @@ public:
 
   // array allocating fresh memory. The array is now in sole possesion
   // of the memory, and unless it's copied the memory is released when
-  // the array is destructed. this is only allowed for trivially
-  // destructible T.
+  // the array is destructed.
 
   array_t ( const shape_type & _shape )
   : base_t ( nullptr ,
@@ -738,7 +770,6 @@ public:
              _shape ) ,
     base ( new T [ _shape.prod() ] )
   {
-    static_assert ( std::is_trivially_destructible < T > :: value ) ;
     origin = base.get() ;
   }
 
@@ -805,6 +836,5 @@ array_t < D + 1 , T > get_vector_buffer
 
 } ;
 
-#define ZIMT_ARRAY_H
 #endif
 

@@ -48,9 +48,18 @@
     
     - exceptions used throughout zimt
     
-    It includes zimt/vector.h which defines zimt's use of
-    vectorization (meaning SIMD operation) and associated types and code. 
+    - helper macros to place SIMD-ISA-specific code in either
+      namespace zimt (for single-SIMD-ISA TUs) or in a nested
+      namespace zimt/HWY_NAMESPACE for use of highway's
+      foreach_target mechanism to contain code for several
+      SIMD ISAs in a single TU - see the comments before the
+      macro definitions BEGIN_ZIMT_SIMD_NAMESPACE etc. near
+      the end of the file.
+
 */
+
+// This header irself has no SIMD-ISA-specific code, so we can
+// use a simple sentinel:
 
 #ifndef ZIMT_COMMON
 #define ZIMT_COMMON
@@ -65,6 +74,11 @@
 
 namespace zimt
 {
+  // the definition of boundary conditions is placed here to be
+  // available for all zimt code, but it's specifically for the
+  // signal processing functionality originating in vspline,
+  // which I now pull into zimt bit by bit.
+
   typedef enum { 
     MIRROR ,    // mirror on the bounds, so that f(-x) == f(x)
     PERIODIC,   // periodic boundary conditions
@@ -102,7 +116,11 @@ namespace zimt
 
   // forward declaration of xel_t
 
-  template < typename T , std::size_t > struct xel_t ;
+  template < typename T , std::size_t N > struct xel_t ;
+
+  // UnsuitableTypeForExpandElements is a legacy symbol originating
+  // in vigra - I use it here in the same way, but it's bulky and
+  // camel case, so I may change it.
 
   class UnsuitableTypeForExpandElements { } ;
 
@@ -173,7 +191,8 @@ using ET =
 typename zimt::get_ele_t < T > :: type ;
 
 /// produce a std::integral_constant from the size obtained from
-/// zimt's get_ele_t mechanism
+/// zimt's get_ele_t mechanism. Note that it yields the size in
+/// units of the elementary type, not in bytes.
 
 template < typename T >
 using EN =
@@ -266,6 +285,13 @@ typename std::conditional \
                         + std::declval < B > () ) \
            > :: type
 
+#define REAL_EQUIV(A)  \
+typename std::conditional \
+           < sizeof(A) <= 4 , \
+             float , \
+             double \
+           > :: type
+
 /// zimt creates views/arrays of vectorized types. As long as
 /// the vectorized types are Vc::SimdArray or zimt::simd_type, using
 /// std::allocator is fine, but when using other types, using a specific
@@ -320,9 +346,10 @@ struct not_supported
   : std::invalid_argument ( msg ) { }  ;
 } ;
 
-/// out_of_bounds is thrown by mapping mode REJECT for out-of-bounds coordinates
-/// this exception is left without a message, it only has a very specific application,
-/// and there it may be thrown often, so we don't want anything slowing it down.
+/// out_of_bounds is thrown by mapping mode REJECT for out-of-bounds
+/// coordinates. This exception is left without a message, it only has
+/// a very specific application, and there it may be thrown often,
+/// so we don't want anything slowing it down.
 
 struct out_of_bounds
 {
@@ -340,7 +367,10 @@ struct numeric_overflow
 
 // grok_t is the base class used to 'grok' functors. It uses
 // 'C style' type erasure for the 'grokkee', but handles the
-// grokkee with type-safe code.
+// grokkee with type-safe code. Note that this base class does
+// not address any of the functional aspects, which are the
+// actual reason to use 'grokking' - but it provides a foundation
+// which all derived grok types will rely on.
 
 struct grok_t
 {
@@ -451,6 +481,127 @@ protected:
   }
 } ;
 
+// Inside namespace zimt, we want 'using' declarations for functions
+// from the std namespace which we broadcast to xel_t and simdized
+// types, in order to allow us to formulate the 'roll-out' using the
+// function's name without qualifier and still getting the std one.
+// If these functions have definitions inside namespace zimt for
+// arguments of xel_t or simdized_type, they can be used as well
+// inside namespace zimt without qualifier. With this trick we can
+// write the BROADCAST_STD_FUNC macro in vector_common.h without
+// qualifiers for the math functions and get the right outcome for
+// xel_t and simdized types alike - and also for xel_t of simdized
+// types, and xel_t of these...
+
+using std::abs ;
+using std::trunc ;
+using std::round ;
+using std::floor ;
+using std::ceil ;
+using std::log ;
+using std::exp ;
+using std::sqrt ;
+using std::sin ;
+using std::cos ;
+using std::tan ;
+using std::asin ;
+using std::acos ;
+using std::atan ;
+using std::atan2 ;
+using std::pow ;
+using std::fma ;
+
+using std::min ;
+using std::max ;
+
 } ; // end of namespace zimt
+
+// to use highway's foreach_target mechanism, a nested namespace
+// named HWY_NAMESPACE is introduced into namespace zimt.
+// HWY_NAMESPACE is a macro defined by highway, and the
+// corresponding SIMD-ISA-specific highway code resides in
+// hwy/HWY_NAMESPACE. Code which varies with the SIMD ISA is
+// placed into the nested HWY_NAMESPACE namespace in zimt. The
+// following macros route to use of foreach_target-compatible
+// code or 'plain' zimt code where all SIMD code uses only a
+// single ISA specified via the compiler flags. The foreach_target
+// mechanism is like an outermost loop going through the SIMD ISAs
+// one after the other and (re-)translating the entire body of
+// ISA-specific code in each iteration. ZIMT_ENV is set to
+// either the nested ISA-specific namespace or plain zimt, to
+// facilitate writing code which may or may not use the
+// multi-SIMD-ISA mechanism. If MULTI_SIMD_ISA is not defined,
+// there is no re-translation, and no need to use a nested
+// namespace, but I still put the code into a nested namespace
+// 'zsimd' to have it at the same nesting level, which makes it
+// easier to integrate with multi-SIMD-ISA code.
+
+#ifdef MULTI_SIMD_ISA
+
+  #define ZIMT_SIMD_ISA HWY_NAMESPACE
+  #define ZIMT_ONCE HWY_ONCE
+
+#else
+
+  #define ZIMT_SIMD_ISA zsimd
+  #define ZIMT_ONCE true
+
+  #define HWY_BEFORE_NAMESPACE()
+  #define HWY_AFTER_NAMESPACE()
+
+#endif
+
+// the BEGIN_NAMESPACE and END_NAMESPACE macros enclose code living
+// in a nested namespace inside 'OUTER_NAMESPACE'. The nesting is
+// done in the same way: inside highway, OUTER_NAMESPACE would be
+// 'hwy', inside zimt it would be 'zimt', and in a concrete project
+// it might be 'project'. The nested namespace has a using declaration
+// for namespace 'zimt' which 'pulls in' zimt code which isn't
+// SIMD-ISA-specific. Then, the nested namespace under zimt is
+// made available under the name 'zimt'. This sequence of declarations
+// results in both the SIMD-ISA-specific and the other names being
+// accessible via a zimt:: prefix - so here, inside the nested
+// namespace of OUTER_NAMESPACE, we can access all zimt code with
+// the plain zimt::prefix - this makes it easier for the user who
+// should not need to be aware of whether zimt symbols stem from
+// 'true' zimt or the current nested namespace.
+// If, on the other hand, MULTI_SIMD_ISA is not defined, the nested
+// namespace's symbols are pulled into the 'plain' zimt namespace.
+// In both cases, client code can use a simple zimt:: qualifier,
+// only it's designation differs: for MULTI_SIMD_ISA builds, it
+// refers to all of 'plain' zimt and the currently processed nested
+// namespace - N_AVX2 etc. - and for other builds it refers to all
+// of plain zimt and the only nested namespace, namely zsimd.
+
+#ifdef MULTI_SIMD_ISA
+
+#define BEGIN_ZIMT_SIMD_NAMESPACE(OUTER_NAMESPACE) \
+  namespace OUTER_NAMESPACE { \
+    namespace ZIMT_SIMD_ISA { \
+      using namespace zimt ; \
+      namespace zimt = zimt::ZIMT_SIMD_ISA ;
+
+#define END_ZIMT_SIMD_NAMESPACE \
+    } ; \
+  } ;
+
+#else
+  
+#define BEGIN_ZIMT_SIMD_NAMESPACE(OUTER_NAMESPACE) \
+  namespace OUTER_NAMESPACE { \
+    namespace ZIMT_SIMD_ISA { \
+      using namespace zimt ;
+
+#define END_ZIMT_SIMD_NAMESPACE \
+    } ; \
+  } ; \
+namespace zimt { using namespace zimt::zsimd ; } ;
+
+#endif
+
+
+// just a shorthand.
+
+#define ZIMT_ENV zimt::ZIMT_SIMD_ISA
 
 #endif // ZIMT_COMMON

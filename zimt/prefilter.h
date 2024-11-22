@@ -83,18 +83,27 @@
     [CIT2000] Interpolation Revisited by Philippe Thévenaz, Member,IEEE, Thierry Blu, Member, IEEE, and Michael Unser, Fellow, IEEE in IEEE TRANSACTIONS ON MEDICAL IMAGING, VOL. 19, NO. 7, JULY 2000,
 */
 
-#ifndef ZIMT_PREFILTER_H
-#define ZIMT_PREFILTER_H
+// #ifndef ZIMT_PREFILTER_H
+// #define ZIMT_PREFILTER_H
 
 #include <limits>
+
 #include "common.h"
 #include "poles.h"
 #include "recursive.h"
 
-namespace zimt {
+#if defined(ZIMT_PREFILTER_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_PREFILTER_H
+    #undef ZIMT_PREFILTER_H
+  #else
+    #define ZIMT_PREFILTER_H
+  #endif
+
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 using namespace std ;
-using namespace zimt ;
+// using namespace zimt ;
 
 /// 'prefilter' handles b-spline prefiltering for the whole range of
 /// acceptable input and output. It combines two bodies of code to
@@ -119,16 +128,16 @@ template < std::size_t dimension ,
            typename math_ele_type =
                     ET < PROMOTE ( in_value_type , out_value_type ) > ,
            size_t vsize =
-                  zimt::vector_traits < math_ele_type > :: size
+                  vector_traits < math_ele_type > :: size
          >
 void prefilter ( const
-                 zimt::view_t
+                 view_t
                    < dimension ,
                      in_value_type > & input ,
-                 zimt::view_t
+                 view_t
                    < dimension ,
                      out_value_type > & output ,
-                 zimt::xel_t < bc_code , dimension > bcv ,
+                 xel_t < bc_code , dimension > bcv ,
                  int degree ,
                  xlf_type tolerance
                   = std::numeric_limits < math_ele_type > :: epsilon(),
@@ -150,7 +159,7 @@ void prefilter ( const
     return ;
   }
   
-  std::vector < zimt::iir_filter_specs > vspecs ;
+  std::vector < iir_filter_specs > vspecs ;
   
   // package the arguments to the filter; one set of arguments
   // per axis of the data
@@ -160,7 +169,7 @@ void prefilter ( const
   for ( int axis = 0 ; axis < dimension ; axis++ )
   {
     vspecs.push_back
-      ( zimt::iir_filter_specs
+      ( iir_filter_specs
         ( bcv [ axis ] , degree / 2 , poles , tolerance , 1 ) ) ;
   }
   
@@ -172,21 +181,21 @@ void prefilter ( const
   // KFJ 2018-05-08 with the automatic use of vectorization the
   // distinction whether math_ele_type is 'vectorizable' or not
   // is no longer needed: simdized_type will be a Vc::SimdArray
-  // if possible, a zimt::simd_type otherwise.
+  // if possible, a simd_type otherwise.
   
-  typedef typename zimt::recursive_filter
-                            < zimt::simdized_type ,
-                              math_ele_type ,
-                              vsize
-                            > filter_type ;
+  typedef recursive_filter < simdized_type ,
+                             math_ele_type ,
+                             vsize
+                           > filter_type ;
 
   // now call the 'wielding' code in filter.h
 
-    zimt::filter
+    filter
     < in_value_type , out_value_type , dimension , filter_type > 
     ( input , output , vspecs ) ;
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // ZIMT_PREFILTER_H
+#endif // sentinel

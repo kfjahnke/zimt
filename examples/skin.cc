@@ -84,7 +84,7 @@
 // optimizer, but it's safer not to rely on that and exploit any
 // coding simplifications which arise from linear processing
 // explicitly. At the put_t end of processing, the same holds
-// tre. It would be feasible to let the act functor handle, e.g.,
+// true. It would be feasible to let the act functor handle, e.g.,
 // data storage, but, to stick with the 3D example, the act functor
 // would need to generate a target address to write data to from
 // all three components of the coordinate, whereas a put_t object
@@ -218,8 +218,6 @@ int main ( int argc , char * argv[] )
 {
   std::cout << std::fixed << std::showpoint
             << std::setprecision(1) ;
-
-  // let's start with a simple 1D linspace.
 
   zimt::bill_t bill ;
 

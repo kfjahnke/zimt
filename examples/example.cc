@@ -328,7 +328,7 @@ void test ( zimt::bill_t bill )
 
   for ( int k = 0 ; k < 1000 ; k++ )
   {
-    assert ( v3 [ mci [ k ] ] == data [ 0 ] ) ;
+    assert ( v3 [ mci [ k ] ] == data [ k ] ) ;
   }
 
   // next, we try an 'index-based transform'. this function feeds

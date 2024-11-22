@@ -75,10 +75,6 @@ void test ( std::size_t a ,
 
   typedef std::array < zimt::view_t < 1 , int > , 3 > grid_t ;
 
-  // TODO: write an overload for 1D arrays accepting a 'naked' size
-
-  typedef zimt::xel_t < std::size_t , 1 > extent_t ;
-
   // set up the per-axis values
 
   axis_t ax ( x ) ;
