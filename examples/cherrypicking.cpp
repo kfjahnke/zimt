@@ -36,6 +36,8 @@
 /*                                                                      */
 /************************************************************************/
 
+// TODO: broken, needs fixing
+
 // This example demonstrates 'cherrypicking': Here, we use std::simd as
 // the standard backend, but implement four functors calculating atan2
 // of a 2D float coordinate: one using std::simd, and one using Vc.
@@ -49,7 +51,7 @@
 // atan2 up by a fair amount if we delegate to Vc's superior implementation.
 //
 // note that you can't use examples.sh for this file. compile like this:
-// g++ -Ofast -std=c++17 -march=native -ocherrypicking cherrypicking.cpp -lVc
+// g++ -O3 -std=c++17 -march=native -ocherrypicking cherrypicking.cpp -lVc
 
 #include <memory>
 #include <assert.h>

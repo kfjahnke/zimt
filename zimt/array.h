@@ -280,6 +280,13 @@ struct view_t
     shape ( _shape )
     { }
 
+  view_t ( value_type * const _origin ,
+           const shape_type & _shape )
+  : origin ( _origin ) ,
+    strides ( make_strides ( _shape ) ) ,
+    shape ( _shape )
+    { }
+
   // special case producing a 'fake view' with invalid origin and
   // strides, and only a valid shape
 

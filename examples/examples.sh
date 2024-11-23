@@ -60,7 +60,18 @@ do
   for compiler in clang++ g++
   do
 
-    common_flags="-O3 -std=gnu++17 -march=native -mavx2 -march=haswell -mpclmul -maes -Wno-deprecated-declarations"
+    # for most compilations
+    # TODO: compiling with -std=c++11 fails with g++
+
+    common_flags="-O3 -std=gnu++17 -march=native -mavx2 -march=haswell -mpclmul -maes"
+
+    # for compilations with multi-SIMD-ISA internal dispatching
+
+    msa_flags="-O3 -std=gnu++17"
+
+    # for compilations with std::simd
+
+    stds_flags="-O3 -std=gnu++17 -march=native -mavx2 -march=haswell -mpclmul -maes"
 
     # compile without explicit SIMD code
 
@@ -81,10 +92,8 @@ do
 
     if [[ "$build_for_std_simd" != "" ]]
     then
-      common_flags="-O3 -std=c++17 -march=native"
-
-      echo $compiler -DUSE_STDSIMD $common_flags -ostds_${body}_$compiler $f $link_libs
-      $compiler -DUSE_STDSIMD $common_flags -ostds_${body}_$compiler $f $link_libs
+      echo $compiler -DUSE_STDSIMD $stds_flags -ostds_${body}_$compiler $f $link_libs
+      $compiler -DUSE_STDSIMD $stds_flags -ostds_${body}_$compiler $f $link_libs
     fi
 
     # if grep finds 'dispatch_base' in the .cc file, we assume it's a multi-SIMD-ISA
@@ -92,13 +101,11 @@ do
 
     if [[ $(grep dispatch_base $f) != "" ]]
     then
-        common_flags="-O3 -std=gnu++17 -Wno-deprecated-declarations"
+        echo $compiler -DUSE_HWY $msa_flags -ohwy_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
+        $compiler -DUSE_HWY $msa_flags -ohwy_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
 
-        echo $compiler -DUSE_HWY $common_flags -ohwy_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
-        $compiler -DUSE_HWY $common_flags -ohwy_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
-
-        echo $compiler $common_flags -ogd_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
-        $compiler $common_flags -ogd_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
+        echo $compiler $msa_flags -ogd_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
+        $compiler $msa_flags -ogd_msa_${body}_$compiler $f -DMULTI_SIMD_ISA $link_libs -lhwy -I.
     fi
 
   done

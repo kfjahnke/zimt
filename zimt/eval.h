@@ -40,7 +40,7 @@
 
     \brief code to evaluate uniform b-splines
 
-    This is a port from the vspline lbrary
+    This is a port from the vspline library
 
     This body of code contains class evaluator and auxilliary classes which are
     needed for it's smooth operation.
@@ -138,6 +138,7 @@
 #include "bspline.h"
 #include "unary_functor.h"
 #include "map.h"
+#include "block.h"
 
 // #if HWY_ONCE
 
@@ -575,8 +576,7 @@ private:
   /// adding successive offsets to cf_ebase, we do the addition in the constructor
   /// and save the offsetted pointers.
   
-  array_t < 1 , std::ptrdiff_t > cf_offsets ;
-  array_t < 1 , const cf_ele_type * > cf_pointers ;
+  block_t < 1 , const cf_ele_type * > cf_pointers ;
   
 public:
 
@@ -655,7 +655,8 @@ public:
     wgt ( _wgt ) ,
     even_spline_degree ( ! ( _spline_degree & 1 ) ) ,
     spline_order ( _spline_degree + 1 ) ,
-    window_size ( std::pow ( _spline_degree + 1 , int(dimension) ) )
+    window_size ( std::pow ( _spline_degree + 1 , int(dimension) ) ) ,
+    cf_pointers ( std::pow ( _spline_degree + 1 , int(dimension) ) )
   {
     // The evaluation forms a weighted sum over a window of the coefficient array.
     // The sequence of offsets we calculate here is the set of pointer differences
@@ -713,10 +714,6 @@ public:
     // Luckily this is the exception, and oftentimes access will be to near memory,
     // which is in cache already.
     
-    cf_pointers = array_t < 1 , const cf_ele_type * > ( window_size ) ;
-    cf_offsets = array_t < 1 , std::ptrdiff_t > ( window_size ) ;
-    
-    auto ofs_target = &(cf_offsets[0]) ; // cf_offsets.begin() ;
     auto target = &(cf_pointers[0]) ; // cf_pointers.begin() ;
     
     for ( int i = 0 ; i < window_size ; i++ )
@@ -735,13 +732,8 @@ public:
       // so we can choose which 'flavour' we want 'further down the line'
       
       std::ptrdiff_t offset = ( ( mcs() - spline_degree / 2 ) * cf_estride ).sum() ;
-      *ofs_target = offset ;
+
       *target = cf_ebase + offset ;
-      
-      // increment the iterators
-      
-      // ++mci ;
-      ++ofs_target ;
       ++target ;
     }
   }
@@ -764,7 +756,7 @@ public:
   /// which encodes the generation of the set of weights.
   
   template < typename nd_rc_type , typename weight_type >
-  void obtain_weights ( array_t < 2 , weight_type > & weight ,
+  void obtain_weights ( block_t < 2 , weight_type > & weight ,
                         const nd_rc_type & c ) const
   {
     const auto * ci = &(c[0]) ; // c.cbegin() ;
@@ -773,7 +765,7 @@ public:
   }
 
   template < typename weight_type >
-  void obtain_weights ( array_t < 2 , weight_type > & weight ) const
+  void obtain_weights ( block_t < 2 , weight_type > & weight ) const
   {
     for ( int axis = 0 ; axis < dimension ; ++axis )
       wgt[axis] ( weight.data() + axis * spline_order ) ;
@@ -919,7 +911,7 @@ private:
     inline
     void operator() ( const offset_type & locus ,
                       cf_pointer_iterator & cfp_iter ,
-                      const array_t < 2 , math1_type > & weight ,
+                      const block_t < 2 , math1_type > & weight ,
                       xel_t < math1_type , channels > & sum
                     ) const
     {
@@ -994,7 +986,7 @@ private:
     inline
     void operator() ( const offset_type & locus ,
                       cf_pointer_iterator & cfp_iter ,
-                      const array_t < 2 , math1_type > & weight ,
+                      const block_t < 2 , math1_type > & weight ,
                       xel_t < math1_type , channels > & sum
                     ) const
     {
@@ -1143,7 +1135,7 @@ public:
   template < class result_type , class math1_type , class offset_type >
   inline
   void eval ( const offset_type& select ,
-              const array_t < 2 , math1_type > & weight ,
+              const block_t < 2 , math1_type > & weight ,
               result_type & result
             ) const
   {
@@ -1244,9 +1236,9 @@ private:
               result_type & result ,
               std::integral_constant < int , arbitrary_spline_degree > ) const
   {
-    // 'weight' is a 2D array_t of math1_type:
+    // 'weight' is a 2D block_t of math1_type:
 
-    array_t < 2 , math1_type >
+    block_t < 2 , math1_type >
       weight ( { std::size_t ( spline_order ) ,
                  std::size_t ( dimension ) } ) ;
 
@@ -1386,7 +1378,7 @@ public:
   {
     typedef vector < math_ele_type , vsize > math_ele_v ;
 
-    array_t < 2 , math_ele_v >
+    block_t < 2 , math_ele_v >
       weight ( { std::size_t ( spline_order ) ,
                  std::size_t ( dimension ) } ) ;
 

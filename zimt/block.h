@@ -63,7 +63,7 @@ namespace zimt
 // Since block_t is only a small wrapper around std::vector and the
 // size is fixed at construction, this type should optimize well.
 
-template < typename T , std::size_t D >
+template < std::size_t D , typename T >
 struct vblock_t
 : protected std::vector < T >
 {
@@ -123,7 +123,10 @@ struct vblock_t
   }
 } ;
 
-template < typename T , std::size_t D >
+// block_t is a view_t with memory attached. It behaves like array_t,
+// but doesn't use the shared_ptr for the memory.
+
+template < std::size_t D , typename T >
 struct block_t
 : public view_t < D , T >
 {
@@ -150,6 +153,21 @@ struct block_t
              make_strides ( _shape ) ,
              _shape )
   { }
+
+  block_t ( const block_t & other )
+  : base_t ( other )
+  {
+    origin = new T [ other.shape.prod() ] ;
+    base_t::copy_data ( other ) ;
+  }
+
+  block_t operator= ( const block_t & other )
+  {
+    base_t::strides = other.strides ;
+    base_t::shape = other.shape ;
+    origin = new T [ other.shape.prod() ] ;
+    base_t::copy_data ( other ) ;
+  }
 
   ~block_t()
   {
