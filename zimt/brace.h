@@ -110,13 +110,18 @@
 // and the width of the core together. These cases can't be handled for all bracing modes
 // and will result in an exception.
 
-#ifndef ZIMT_BRACE_H
-#define ZIMT_BRACE_H
+#if defined(ZIMT_BRACE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_BRACE_H
+    #undef ZIMT_BRACE_H
+  #else
+    #define ZIMT_BRACE_H
+  #endif
 
 #include "common.h"
 #include "array.h"
 
-namespace zimt {
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// class bracer encodes the entire bracing process. Note that contrary
 /// to my initial implementation, class bracer is now used exclusively
@@ -343,6 +348,7 @@ struct bracer
   }
 } ;
 
-} ; // end of namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // ZIMT_BRACE_H
+#endif // sentinel

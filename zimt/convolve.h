@@ -76,16 +76,16 @@
 
 */
 
-#include "common.h"
-#include "filter.h"
-#include "extrapolate.h"
-
 #if defined(ZIMT_CONVOLVE_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_CONVOLVE_H
     #undef ZIMT_CONVOLVE_H
   #else
     #define ZIMT_CONVOLVE_H
   #endif
+
+#include "common.h"
+#include "filter.h"
+#include "extrapolate.h"
 
 HWY_BEFORE_NAMESPACE() ;
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)

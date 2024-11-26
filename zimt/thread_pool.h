@@ -50,6 +50,9 @@
 /// another task. If none is to be had, it goes to sleep, waiting to be woken once
 /// there are new tasks.
 
+#ifndef ZIMT_THREADPOOL_H
+#define ZIMT_THREADPOOL_H
+
 #include <thread>
 #include <mutex>
 #include <queue>
@@ -276,3 +279,4 @@ static thread_pool common_thread_pool ;
 
 } ; // end of namespace zimt_threadpool
 
+#endif

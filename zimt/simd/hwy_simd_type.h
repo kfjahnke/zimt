@@ -1700,8 +1700,7 @@ public:
   { \
     CONSTRAINT \
     simd_t < PROMOTE ( T , RHST ) , vsize > help ( *this ) ; \
-    help OPEQ rhs ; \
-    return help ; \
+    return help OPEQ rhs ; \
   } \
   template < typename RHST , \
              typename = typename std::enable_if \
@@ -1713,8 +1712,7 @@ public:
   { \
     CONSTRAINT \
     simd_t < PROMOTE ( T , RHST ) , vsize > help ( *this ) ; \
-    help OPEQ rhs ; \
-    return help ; \
+    return help OPEQ rhs ; \
   } \
   template < typename LHST , \
              typename = typename std::enable_if \
@@ -1726,8 +1724,7 @@ public:
   { \
     CONSTRAINT \
     simd_t < PROMOTE ( LHST , T ) , vsize > help ( lhs ) ; \
-    help OPEQ rhs ; \
-    return help ; \
+    return help OPEQ rhs ; \
   }
 
   OP_FUNC(operator+,+=,)

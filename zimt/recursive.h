@@ -63,11 +63,11 @@
 #include "common.h"
 #include "filter.h"
 
-#if defined(ZIMT_CONVOLVE_H) == defined(HWY_TARGET_TOGGLE)
-  #ifdef ZIMT_CONVOLVE_H
-    #undef ZIMT_CONVOLVE_H
+#if defined(ZIMT_RECURSIVE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_RECURSIVE_H
+    #undef ZIMT_RECURSIVE_H
   #else
-    #define ZIMT_CONVOLVE_H
+    #define ZIMT_RECURSIVE_H
   #endif
 
 HWY_BEFORE_NAMESPACE() ;

@@ -553,8 +553,6 @@ struct inner_evaluator
 
 private:
   
-  // typedef typename view_t < 1 , const cf_ele_type * > :: const_iterator
-  //   cf_pointer_iterator ;
   typedef const cf_ele_type * const * cf_pointer_iterator ;
   
   /// Initially I was using a template argument for this flag, but it turned out
@@ -714,7 +712,7 @@ public:
     // Luckily this is the exception, and oftentimes access will be to near memory,
     // which is in cache already.
     
-    auto target = &(cf_pointers[0]) ; // cf_pointers.begin() ;
+    auto target = &(cf_pointers[0]) ;
     
     for ( int i = 0 ; i < window_size ; i++ )
     {
@@ -844,7 +842,6 @@ private:
                      std::true_type
                    )
   {
-    // static const size_t sz = index_t::size() ;
     static const size_t sz = get_ele_t < target_t > :: size ;
     for ( int e = 0 ; e < sz ; e++ )
     {
@@ -860,7 +857,6 @@ private:
                      std::false_type
                    )
   {
-    // static const size_t sz = index_t::size() ;
     static const size_t sz = get_ele_t < index_t > :: size ;
     simdized_type < cf_ele_type , sz > help ;
     static const size_t tsz = get_ele_t < target_t > :: size ;
@@ -882,7 +878,6 @@ private:
     const cf_ele_type * const mem ,
     const index_t & indexes )
   {
-    // typedef typename target_t::value_type::value_type target_ele_type ;
     typedef typename get_ele_t < target_t > :: type target_ele_type ;
     
     load ( target , mem , indexes ,
@@ -915,16 +910,13 @@ private:
                       xel_t < math1_type , channels > & sum
                     ) const
     {
-      const math1_type w ( weight [ { 0 , level } ] ) ;
-      
       // recursively call _eval for the next lower level, receiving
       // the result in 'sum', and apply the first weight to it
 
       _eval < level - 1 , math1_type , offset_type >()
             ( locus , cfp_iter , weight , sum ) ;
       
-      for ( int d = 0 ; d < channels ; d++ )
-        sum[d] *= w ;
+      sum *= weight [ { 0 , level } ] ;
 
       // to pick up the result of further recursive calls:
       
@@ -936,22 +928,12 @@ private:
       
       for ( int i = 1 ; i < weight.shape [ 0 ] ; i++ )
       {
-        const math1_type w ( weight [ { i , level } ] ) ;
+        // const math1_type w ( weight [ { i , level } ] ) ;
 
         _eval < level - 1 , math1_type , offset_type >()
               ( locus , cfp_iter , weight , subsum ) ;
         
-      // KFJ 2019-02-12 tentative use of fma
-
-#ifdef USE_FMA
-        for ( int d = 0 ; d < channels ; d++ )
-          sum[d] = fma ( subsum[d] , w , sum[d] ) ;
-#else
-        for ( int d = 0 ; d < channels ; d++ )
-          subsum[d] *= w ;
-
-        sum += subsum ;
-#endif
+        sum += subsum * weight [ { i , level } ];
       }
     }
   } ;
@@ -992,16 +974,9 @@ private:
     {
       typedef xel_t < math1_type , channels > math_type ;
       
-      const math1_type w ( weight [ { 0 , 0 } ] ) ;
-      
-      // initialize 'sum' by 'loading' a coefficient (or a set of
-      // coefficients if we're running vector code) - then apply
-      // the first (set of) weight(s).
-  
       load ( sum , *cfp_iter , locus ) ;
       
-      for ( int d = 0 ; d < channels ; d++ )
-        sum[d] *= w ;
+      sum *= weight [ { 0 , 0 } ] ;
       
       ++cfp_iter ;
 
@@ -1010,23 +985,11 @@ private:
       
       for ( int i = 1 ; i < weight.shape [ 0 ] ; i++ )
       {
-        const math1_type w ( weight [ { i , 0 } ] ) ;
-        
         math_type help ;
         load ( help , *cfp_iter , locus ) ;
         ++cfp_iter ;
 
-      // KFJ 2019-02-12 tentative use of fma
-
-#ifdef USE_FMA
-        for ( int d = 0 ; d < channels ; d++ )
-          sum[d] = fma ( help[d] , w , sum[d] ) ;
-#else
-        for ( int d = 0 ; d < channels ; d++ )
-          help[d] *= w ;
-
-        sum += help ;
-#endif
+         sum += weight [ { i , 0 } ] * help ;
       }
     }
 
@@ -1054,25 +1017,14 @@ private:
       _eval_linear < level - 1 , math1_type , offset_type >()
                    ( locus , cfp_iter , tune , sum ) ;
 
-      for ( int d = 0 ; d < channels ; d++ )
-        sum[d] *= wl ;
+      sum *= wl ;
       
       xel_t < math1_type , channels > subsum ;
       
       _eval_linear < level - 1 , math1_type , offset_type >()
                    ( locus , cfp_iter , tune , subsum ) ;
       
-      // KFJ 2019-02-12 tentative use of fma
-
-#ifdef USE_FMA
-      for ( int d = 0 ; d < channels ; d++ )
-        sum[d] = fma ( subsum[d] , wr , sum[d] ) ;
-#else
-      for ( int d = 0 ; d < channels ; d++ )
-        subsum[d] *= wr ;
-      
-      sum += subsum ;
-#endif
+      sum += ( subsum * wr ) ;
     }  
   } ;
 
@@ -1095,25 +1047,14 @@ private:
       load ( sum , *cfp_iter , locus ) ;
       ++cfp_iter ;
       
-      for ( int d = 0 ; d < channels ; d++ )
-        sum[d] *= wl ;
+      sum *= wl ;
       
       xel_t < math1_type , channels > help ;
       
       load ( help , *cfp_iter , locus ) ;
       ++cfp_iter ;
       
-      // KFJ 2019-02-12 tentative use of fma
-
-#ifdef USE_FMA
-      for ( int d = 0 ; d < channels ; d++ )
-        sum[d] = fma ( help[d] , wr , sum[d] ) ;
-#else
-      for ( int d = 0 ; d < channels ; d++ )
-        help[d] *= wr ;
-      
-      sum += help ;
-#endif
+      sum += ( help * wr ) ;
     }
   } ;
 
@@ -1289,8 +1230,8 @@ public:
   /// evaluation variants, minus the coordinate splitting.
   /// First in line is the overload taking real coordinates:
 
-  template < template < typename , int > class bunch ,
-             template < typename , size_t > class vector ,
+  template < template < typename , std::size_t > class bunch ,
+             template < typename , std::size_t > class vector ,
              size_t vsize >
   inline
   void eval ( const bunch < vector < rc_ele_type , vsize > , dimension >
@@ -1365,8 +1306,8 @@ public:
   /// only the first line of the weight matrix, which is precisely
   /// what obtain_weights would produce with a delta of zero.
 
-  template < template < typename , int > class bunch ,
-             template < typename , size_t > class vector ,
+  template < template < typename , std::size_t > class bunch ,
+             template < typename , std::size_t > class vector ,
              size_t vsize >
   inline
   void ieval ( const bunch < vector < ic_ele_type , vsize > , dimension >
@@ -1400,8 +1341,8 @@ public:
   /// support is so narrow that we needn't consider neighbouring
   /// coefficients
 
-  template < template < typename , int > class bunch ,
-             template < typename , size_t > class vector ,
+  template < template < typename , std::size_t > class bunch ,
+             template < typename , std::size_t > class vector ,
              size_t vsize >
   inline
   void ieval ( const bunch < vector < ic_ele_type , vsize > , dimension >
@@ -1428,8 +1369,8 @@ public:
   /// again, depending on the evaluator's 'specialize' template argument,
   /// to one of two variants of 'ieval', above
 
-  template < template < typename , int > class bunch ,
-             template < typename , size_t > class vector ,
+  template < template < typename , std::size_t > class bunch ,
+             template < typename , std::size_t > class vector ,
              size_t vsize >
   inline
   void eval ( const bunch < vector < ic_ele_type , vsize > , dimension >
@@ -1447,8 +1388,8 @@ public:
 
   /// initial dispatch on whether incoming coordinates are discrete or real
 
-  template < template < typename , int > class bunch ,
-             template < typename , size_t > class vector ,
+  template < template < typename , std::size_t > class bunch ,
+             template < typename , std::size_t > class vector ,
              size_t vsize >
   inline
   void eval ( const bunch < vector < rc_ele_type , vsize > , dimension >
@@ -1481,15 +1422,7 @@ public:
 // type which is clearly not an option with the weights being in [0..1].
 
 template < typename coordinate_type ,
-           typename value_type
-         >
-// using default_math_type =
-// typename NumericTraits
-//   < typename PromoteTraits
-//     < typename get_ele_t < coordinate_type > :: type ,
-//       typename get_ele_t < value_type > :: type
-//     > :: Promote
-//   > :: RealPromote ;
+           typename value_type >
 using default_math_type
   = PROMOTE ( typename get_ele_t < coordinate_type > :: type ,
               typename get_ele_t < value_type > :: type ) ;

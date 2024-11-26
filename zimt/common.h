@@ -58,7 +58,7 @@
 
 */
 
-// This header irself has no SIMD-ISA-specific code, so we can
+// This header itself has no SIMD-ISA-specific code, so we can
 // use a simple sentinel:
 
 #ifndef ZIMT_COMMON

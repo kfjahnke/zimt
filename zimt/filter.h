@@ -83,9 +83,6 @@
 #include <climits>
 #include "zimt.h"
 
-// #ifndef ZIMT_FILTER_H
-// #define ZIMT_FILTER_H
-
 #if defined(ZIMT_FILTER_H) == defined(HWY_TARGET_TOGGLE)
   #ifdef ZIMT_FILTER_H
     #undef ZIMT_FILTER_H

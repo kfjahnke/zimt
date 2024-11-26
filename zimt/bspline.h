@@ -142,19 +142,16 @@
 
 */
 
-// #ifndef VSPLINE_BSPLINE_H
-// #define VSPLINE_BSPLINE_H
-
 #include <limits>
 
 #include "prefilter.h"
 #include "brace.h"
 
-#if defined(VSPLINE_BSPLINE_H) == defined(HWY_TARGET_TOGGLE)
-  #ifdef VSPLINE_BSPLINE_H
-    #undef VSPLINE_BSPLINE_H
+#if defined(ZIMT_BSPLINE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_BSPLINE_H
+    #undef ZIMT_BSPLINE_H
   #else
-    #define VSPLINE_BSPLINE_H
+    #define ZIMT_BSPLINE_H
   #endif
 
 HWY_BEFORE_NAMESPACE() ;

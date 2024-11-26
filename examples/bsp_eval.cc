@@ -333,7 +333,7 @@ struct dispatch
     std::chrono::system_clock::time_point end
       = std::chrono::system_clock::now() ;
 
-    std::cout << TIMES << " runs took "
+    std::cout << TIMES << " runs took:               "
               << std::chrono::duration_cast<std::chrono::milliseconds>
                   ( end - start ) . count()
               << " ms" << std::endl ;
@@ -439,7 +439,7 @@ int main ( int argc , char * argv[] )
 
   // we can get information about the specific dispatch object:
 
-  std::cout << "******** calling payload with "
+  std::cout << "calling payload with "
 #ifdef MULTI_SIMD_ISA
             << "dynamic dispatch" << std::endl ;
 #else
@@ -450,34 +450,37 @@ int main ( int argc , char * argv[] )
 
   int success = dp->payload ( argc , argv ) ;
 
-  std::cout << "******** payload returned " << success << std::endl ;
+  std::cout << std::endl ;
 
-#ifdef MULTI_SIMD_ISA
+// to invoke other variants with explicit calls, uncomment this section
+// (x86 only - other CPU types would need other N_... macros)
 
-  std::cout << "******** calling payloads with successively better ISAs:"
-            << std::endl ;
-
-  std::cout << "******** calling SSE2 payload" << std::endl ;
-  project::N_SSE2::dispatch d3 ;
-  d3.payload ( argc , argv ) ;
-
-  std::cout << "******** calling SSSE3 payload" << std::endl ;
-  project::N_SSSE3::dispatch d4 ;
-  d4.payload ( argc , argv ) ;
-
-  std::cout << "******** calling SSE4 payload" << std::endl ;
-  project::N_SSE4::dispatch d5 ;
-  d5.payload ( argc , argv ) ;
-
-  std::cout << "******** calling AVX2 payload" << std::endl ;
-  project::N_AVX2::dispatch d6 ;
-  d6.payload ( argc , argv ) ;
-
-  std::cout << "******** calling AVX3 payload" << std::endl ;
-  project::N_AVX3::dispatch d7 ;
-  d7.payload ( argc , argv ) ;
-
-#endif
+// #ifdef MULTI_SIMD_ISA
+// 
+//   std::cout << "******** calling payloads with successively better ISAs:"
+//             << std::endl ;
+//   
+//   std::cout << "******** calling SSE2 payload" << std::endl ;
+//   project::N_SSE2::dispatch d3 ;
+//   d3.payload ( argc , argv ) ;
+//   
+//   std::cout << "******** calling SSSE3 payload" << std::endl ;
+//   project::N_SSSE3::dispatch d4 ;
+//   d4.payload ( argc , argv ) ;
+//   
+//   std::cout << "******** calling SSE4 payload" << std::endl ;
+//   project::N_SSE4::dispatch d5 ;
+//   d5.payload ( argc , argv ) ;
+//   
+//   std::cout << "******** calling AVX2 payload" << std::endl ;
+//   project::N_AVX2::dispatch d6 ;
+//   d6.payload ( argc , argv ) ;
+//   
+//   std::cout << "******** calling AVX3 payload" << std::endl ;
+//   project::N_AVX3::dispatch d7 ;
+//   d7.payload ( argc , argv ) ;
+// 
+// #endif
 }
 
 #endif  // ZIMT_ONCE

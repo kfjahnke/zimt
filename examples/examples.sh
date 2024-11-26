@@ -63,7 +63,7 @@ do
     # for most compilations
     # TODO: compiling with -std=c++11 fails with g++
 
-    common_flags="-O3 -std=gnu++17 -march=native -mavx2 -march=haswell -mpclmul -maes"
+    common_flags="-O3 -std=gnu++17 -msse2 -mssse3 -msse4.1 -msse4.2 -mpclmul -maes -mavx -mavx2 -mbmi -mbmi2 -mfma -mf16c"
 
     # for compilations with multi-SIMD-ISA internal dispatching
 
@@ -71,7 +71,7 @@ do
 
     # for compilations with std::simd
 
-    stds_flags="-O3 -std=gnu++17 -march=native -mavx2 -march=haswell -mpclmul -maes"
+    stds_flags="-O3 -std=gnu++17 -msse2 -mssse3 -msse4.1 -msse4.2 -mpclmul -maes -mavx -mavx2 -mbmi -mbmi2 -mfma -mf16c"
 
     # compile without explicit SIMD code
 

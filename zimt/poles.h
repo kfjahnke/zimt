@@ -77,6 +77,7 @@
 #include "common.h" // to have xlf_type and macro XLF()
 
 #ifndef ZIMT_POLES_H
+#define ZIMT_POLES_H
 
 // if 'USE_QUAD' is defined, the literals in poles.h will be interpreted
 // as quad literals (with 'Q' suffix). otherwise, the suffix used will be L
@@ -2001,5 +2002,4 @@ const xlf_type* const precomputed_basis_function_values[] = {
 
 } ; // end of namespace zimt_constants
 
-#define ZIMT_POLES_H
 #endif

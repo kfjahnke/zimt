@@ -68,7 +68,6 @@ int main ( int argc , char * argv[] )
   // a 'zimt standard' source/sink.
 
   zimt::tile_loader < int , 2 , 2 > tl ( tile_source , bill ) ;
-  // zimt::get_crd < int , 2 , 2 > tl ( bill ) ;
   zimt::pass_through < int , 2 > act ;
   zimt::tile_storer < int , 2 , 2 > tp ( tile_drain , bill ) ;
 

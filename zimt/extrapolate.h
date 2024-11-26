@@ -43,13 +43,17 @@
 
 // This is a port from vspline/extrapolate.h
 
-#ifndef ZIMT_EXTRAPOLATE_H
-#define ZIMT_EXTRAPOLATE_H
+#if defined(ZIMT_EXTRAPOLATE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef ZIMT_EXTRAPOLATE_H
+    #undef ZIMT_EXTRAPOLATE_H
+  #else
+    #define ZIMT_EXTRAPOLATE_H
+  #endif
 
 #include "common.h"
 
-namespace zimt
-{
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 /// struct extrapolator is a helper class providing extrapolated
 /// values for a 1D buffer indexed with possibly out-of-range indices.
@@ -225,6 +229,7 @@ struct extrapolator
   }
 } ;
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
-#endif // #define ZIMT_EXTRAPOLATE_H
+#endif // sentinel

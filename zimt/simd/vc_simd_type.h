@@ -49,16 +49,21 @@
 
 */
 
-#ifndef VC_SIMD_TYPE_H
-#define VC_SIMD_TYPE_H
+#if defined(VC_SIMD_TYPE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef VC_SIMD_TYPE_H
+    #undef VC_SIMD_TYPE_H
+  #else
+    #define VC_SIMD_TYPE_H
+  #endif
 
 #include <iostream>
 #include <Vc/Vc>
 
 #include "gen_simd_type.h"
 
-namespace zimt
-{
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
 using ZIMT_SIMD_ISA::gen_simd_type ;
 
 template < typename _value_type ,
@@ -842,12 +847,12 @@ struct vc_simd_type
   }
 } ;
 
-template < typename T , std::size_t N >
-struct allocator_traits < vc_simd_type < T , N > >
-{
-  typedef Vc::Allocator < vc_simd_type < T , N > >
-    type ;
-} ;
+// template < typename T , std::size_t N >
+// struct allocator_traits < vc_simd_type < T , N > >
+// {
+//   typedef Vc::Allocator < vc_simd_type < T , N > >
+//     type ;
+// } ;
 
 namespace detail
 {
@@ -971,14 +976,15 @@ interleave ( const xel_t < vc_simd_type < ele_type , vsz > , chn > & src ,
     ( src , trg , 0 , Vc::make_index_sequence<chn>() ) ;
 }
 
-} ; // namespace zimt
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
 namespace std
 {
   template < typename T , std::size_t N >
-  struct allocator_traits < zimt::vc_simd_type < T , N > >
+  struct allocator_traits < ZIMT_ENV::vc_simd_type < T , N > >
   {
-    typedef Vc::Allocator < zimt::vc_simd_type < T , N > >
+    typedef Vc::Allocator < ZIMT_ENV::vc_simd_type < T , N > >
       allocator_type ;
   } ;
 } ;
@@ -991,4 +997,5 @@ namespace zimt
   : public std::is_integral < T >
   { } ;
 } ;
-#endif // #define VC_SIMD_TYPE_H
+
+#endif // sentinel

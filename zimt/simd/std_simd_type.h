@@ -47,8 +47,13 @@
 
 */
 
-#ifndef ZIMT_STD_SIMD_TYPE_H
-#define ZIMT_STD_SIMD_TYPE_H
+#if defined(STD_SIMD_TYPE_H) == defined(HWY_TARGET_TOGGLE)
+  #ifdef STD_SIMD_TYPE_H
+    #undef STD_SIMD_TYPE_H
+  #else
+    #define STD_SIMD_TYPE_H
+  #endif
+
 
 #include <iostream>
 #include <experimental/simd>
@@ -56,8 +61,9 @@
 #include "simd_tag.h"
 #include "../common.h"
 
-namespace zimt
-{
+HWY_BEFORE_NAMESPACE() ;
+BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
+
 /// class template std_simd_type provides a fixed-size SIMD type.
 /// This implementation of zimt::std_simd_type uses std::simd as
 /// base class. This class is used as a stand-in for gen_simd_type.
@@ -778,16 +784,18 @@ std_simd_type & broadcast ( bin_f f , const std_simd_type & rhs )
 
 } ;
 
-  template < typename T , std::size_t N >
-  using gen_simd_type = std_simd_type < T , N > ;
-} ;
+template < typename T , std::size_t N >
+using gen_simd_type = std_simd_type < T , N > ;
+
+END_ZIMT_SIMD_NAMESPACE
+HWY_AFTER_NAMESPACE() ;
 
 namespace zimt
 {
   template < typename T , size_t N >
-  struct is_integral < zimt::std_simd_type < T , N > >
+  struct is_integral < ZIMT_ENV::std_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
 } ;
 
-#endif // #define ZIMT_SIMD_TYPE_H
+#endif // sentinel

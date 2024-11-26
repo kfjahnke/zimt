@@ -233,4 +233,4 @@ HWY_SIMD(unsigned char)
 
 END_ZIMT_SIMD_NAMESPACE
 
-#endif // for sentinel
+#endif // sentinel
