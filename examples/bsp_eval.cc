@@ -45,13 +45,18 @@
 // a single-ISA binary, fixing the SIMD ISA at compile time by passing
 // appropriate flags to the compiler. This will work with all SIMD
 // back-ends - here, I show the compiler invocations for an AVX2 version.
-// Note the -I. directive to tell the compiler to find files to #include
-// in the current folder as well.
+// Note that - especially when using highway - additional flags may be
+// needed to get a program which actually uses the AVX2 instructions.
+// When highway uses pragmas to set the stage for AVX2 code, it uses
+// all these flags: -msse2 -mssse3 -msse4.1 -msse4.2 -mpclmul -maes
+// -mavx -mavx2 -mbmi -mbmi2 -mfma -mf16c
+// Note also the -I. directive to tell the compiler to find files to
+// #include in the current folder as well.
 
-//   clang++ -mavx2 bsp_eval.ccc -O2 -I. -DUSE_HWY -lhwy
-//   clang++ -mavx2 bsp_eval.ccc -O2 -I. -DUSE_VC -lVc
-//   clang++ -mavx2 bsp_eval.ccc -O2 -I. -DUSE_STDSIMD
-//   clang++ -mavx2 bsp_eval.ccc -O2 -I.
+//   clang++ -mavx2 bsp_eval.ccc -O3 -I. -DUSE_HWY -lhwy
+//   clang++ -mavx2 bsp_eval.ccc -O3 -I. -DUSE_VC -lVc
+//   clang++ -mavx2 bsp_eval.ccc -O3 -I. -DUSE_STDSIMD
+//   clang++ -mavx2 bsp_eval.ccc -O3 -I.
 
 // The second way is to use highway's automatic dispatch to embedded
 // variants of the code running with different ISAs. This requires the
@@ -59,8 +64,8 @@
 // be used for the highway and the 'goading' back-end. Here, no
 // architecture flags are passed to the compiler:
 
-//   clang++ bsp_eval.ccc -O2 -I. -DMULTI_SIMD_ISA -DUSE_HWY -lhwy
-//   clang++ bsp_eval.ccc -O2 -I. -DMULTI_SIMD_ISA -lhwy
+//   clang++ bsp_eval.ccc -O3 -I. -DMULTI_SIMD_ISA -DUSE_HWY -lhwy
+//   clang++ bsp_eval.ccc -O3 -I. -DMULTI_SIMD_ISA -lhwy
 
 // binaries made with the second method will dispatch to what is deemd
 // the best SIMD ISA available on the CPU on which the binary is run.
@@ -69,12 +74,33 @@
 // out-perform single-ISA variants with 'manually' supplied ISA flags,
 // if the set of flags isn't optimal as well. The disadvantage of the
 // multi-SIMD-ISA variants is (much) longer compile time and code size.
+
 // Due to the 'commodification' the source code itself doesn't have
 // to be modified in any way to produce one variant or another.
 // This suggests that during the implementation of a new program a
 // fixed-ISA build can be used to evolve the code with fast turn-around
 // times, adding dispatch capability later on by passing the relevant
 // compiler flags.
+
+// This particular program - evaluating b-splines - shows quite some
+// variation between builds with different back-ends. While, in general,
+// using better SIMD ISAs tend to speed things up, the differences
+// arising from using different back-ends are harder to explain. For
+// example, std::simd comes out surprisingly well for larger spline
+// degrees. My conclusion is that, depending on the given program,
+// there is no ready answer to the question which back-end will produce
+// the best result and that it pays to experiment. Please note that
+// the code to interface with the libraries I employ for the back-ends
+// is entirely mine, so the performance measurements do reflect my
+// use of these libraries, rather than qualities of these libraries.
+// I hope to tweak the interface code to get as much performance out
+// of the back-ends as possible, but this is difficult territory.
+
+// I'll mark code sections which will differ from one example to the
+// next, prefixing with ////////... and postfixing with //-------...
+// You'll notice that there are three four places where you have to
+// change stuff to set up your own program, and all the additions
+// are simple (except for your 'client code', which may be complex).
 
 // if the code is compiled to use the Vc or std::simd back-ends, we
 // can't (yet) use highway's foreach_target mechanism, so we #undef
@@ -85,28 +111,16 @@
 #undef MULTI_SIMD_ISA
 #endif
 
-// I'll mark code sections which will differ from one example to the
-// next, prefixing with ////////... and postfixing with //-------...
-// You'll notice that there are only four places where you have to
-// change stuff to set up your own program, and all the additions
-// are simple (except for your 'client code', which may be complex).
-
-/////////////////////// #include 'regular' headers here:
-
-#include <iostream>
-#include <iomanip>
-#include <vector>
-#include <random>
-#include <chrono>
-
-//--------------------------------------------------------------------
-
 // we define a dispatch base class. All the 'payload' code is called
 // through virtual member functions of this class. In this example,
 // we only have a single payload function. We have to enclose this
 // base class definition in an include guard, because it must not
 // be compiled repeatedly, which happens when highway's foreach_target
-// mechansim is used.
+// mechansim is used. This definition might go to a header file, but
+// it's better placed here, because it holds the declarations of the
+// pure virtual member function(s) used as conduit to the ISA-specific
+// code, and here, in an example, we want to see both these declarations
+// and, later on, the implementations, in the same file.
 
 #ifndef DISPATCH_BASE
 #define DISPATCH_BASE
@@ -152,8 +166,13 @@ struct dispatch_base
 
 #endif // #ifdef MULTI_SIMD_ISA
 
-/////////////////////// #include zimt headers here:
+//////////////// Put the #includes needed for your program here:
 
+#include <iostream>
+#include <iomanip>
+#include <vector>
+#include <random>
+#include <chrono>
 #include "../zimt/eval.h"
 
 //--------------------------------------------------------------------

@@ -236,7 +236,7 @@ BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 // this header we'll introduce simd_type with a 'using' statement
 
 template < typename T , std::size_t N >
-struct gen_simd_type
+struct alignas(16) gen_simd_type
 : public simd_tag < T , N , GOADING >
 {
 typedef simd_tag < T , N , GOADING > tag_t ;

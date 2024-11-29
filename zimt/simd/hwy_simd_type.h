@@ -1010,12 +1010,19 @@ public:
     return *this ;
   }
 
+  // This is code to help 'break out' from zimt's procesing scheme of
+  // processing batches of hardware vectors and to run code processing
+  // individual hardware vectors. The functions to process individual
+  // hardware vectors are passed in as a std::functions. As for the
+  // scalar broadcasts above, we provide three common variants:
+  
   typedef std::function < vec_t() > gen_vf ;
   typedef std::function < vec_t ( const vec_t & ) > mod_vf ;
   typedef std::function < vec_t ( const vec_t & , const vec_t & ) > bin_vf ;
 
-  // broadcast a vector generator function
-  
+  // broadcast a vector generator function. The function is invoked
+  // several times to fill *this with lanes.
+
   simd_t & vbroadcast ( gen_vf f )
   {
     for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
@@ -1023,7 +1030,8 @@ public:
     return *this ;
   }
 
-  // broadcast a vector modulator
+  // broadcast a vector modulator. hardware vectors are extracted from
+  // *this, processed with the function and written back.
 
   simd_t & vbroadcast ( mod_vf f )
   {
@@ -1032,7 +1040,20 @@ public:
     return *this ;
   }
 
-  // broadcast a vector binary function
+  // broadcast a vector modulator function. like above, but using
+  // corresponding hardware vectors extracted from a simd_t argument
+  // passed in as 'rhs' as argument.
+
+  simd_t & vbroadcast ( mod_vf f , const simd_t & rhs )
+  {
+    for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
+      take ( i , f ( rhs.yield ( i ) ) ) ;
+    return *this ;
+  }
+
+  // broadcast a vector binary function. like above, but calling a
+  // binary function with corresponding hardware vectors extracted
+  // from a simd_t argument passed in as 'rhs' as second argument.
 
   simd_t & vbroadcast ( bin_vf f , const simd_t & rhs )
   {

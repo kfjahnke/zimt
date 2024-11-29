@@ -40,6 +40,8 @@
 // given in README.md
 
 #include <zimt/zimt.h>
+#include <zimt/array.h>
+#include <zimt/xel.h>
 
 typedef zimt::xel_t < float , 3 > pixel_t ;
 
