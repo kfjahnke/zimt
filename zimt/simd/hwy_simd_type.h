@@ -1153,13 +1153,7 @@ public:
 
   // implement copysign, isnegative, isfinite, isnan, setQnan, setZero
   // These functions are present in Vc::SimdArray. They are not currently
-  // provided in other simd_t variants, I used them to code a direct
-  // port of Vc's atan2 function.
-  // For lux, this function is performance-critical, so I made several
-  // attempts at porting it. A 'straight' port of the Vc code is possible
-  // with these added functions, but it operates at the simd_t level,
-  // which does not seem to optimize well. So I 'translated' the code
-  // to use highway at the vec_t level - see hwy_atan2.h
+  // provided in other simd_t variants.
 
   static simd_t copysign ( simd_t value ,
                               const simd_t & sign_source )
