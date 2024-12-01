@@ -447,6 +447,7 @@ struct vc_simd_type
 
   // broadcasting functions processing single value_type
 
+  typedef std::function < value_type ( const std::size_t & ) > idx_f ;
   typedef std::function < value_type() > gen_f ;
   typedef std::function < value_type ( const value_type & ) > mod_f ;
   typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
@@ -460,11 +461,29 @@ struct vc_simd_type
     return *this ;
   }
 
+  vc_simd_type & index_broadcast ( idx_f f )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( i ) ;
+    }
+    return *this ;
+  }
+
   vc_simd_type & broadcast ( mod_f f )
   {
     for ( std::size_t i = 0 ; i < size() ; i++ )
     {
       (*this)[i] = f ( (*this)[i] ) ;
+    }
+    return *this ;
+  }
+
+  vc_simd_type & broadcast ( mod_f f , const vc_simd_type & rhs )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( rhs[i] ) ;
     }
     return *this ;
   }
@@ -819,23 +838,22 @@ struct vc_simd_type
   // member functions at_least and at_most. These functions provide the
   // same functionality as max, or min, respectively. Given vc_simd_type X
   // and some threshold Y, X.at_least ( Y ) == max ( X , Y )
-  // Having the functionality as a member function makes it easy to
-  // implement, e.g., min as: min ( X , Y ) { return X.at_most ( Y ) ; }
 
-  #define CLAMP(FNAME,REL) \
-    vc_simd_type FNAME ( const vc_simd_type & threshold ) const \
-    { \
-      return REL ( to_base() , threshold.to_base() ) ; \
-    } \
-    vc_simd_type FNAME ( const value_type & threshold ) const \
-    { \
-      return REL ( to_base() , threshold ) ; \
-    } \
+  vc_simd_type at_least ( const vc_simd_type & threshold ) const
+  {
+    return max ( *this , threshold ) ;
+  }
 
-  CLAMP(at_least,Vc::max)
-  CLAMP(at_most,Vc::min)
+  vc_simd_type at_most ( const vc_simd_type & threshold ) const
+  {
+    return min ( *this , threshold ) ;
+  }
 
-  #undef CLAMP
+  vc_simd_type clamp ( const vc_simd_type & lower ,
+                       const vc_simd_type & upper ) const
+  {
+    return min ( max ( *this , lower ) , upper ) ;
+  }
 
   // sum of vector elements. Note that there is no type promotion; the
   // summation is done to value_type. Caller must make sure that overflow

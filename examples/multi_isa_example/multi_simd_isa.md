@@ -1,6 +1,6 @@
 # The Multi-SIMD-ISA Dilemma
 
-For many years - even decades - CPUs have been supplied with SIMD units. What started out as the MMX instruction set in what now feels like the Dark Ages has involved into highly sophisticated and capable SIMD units like AVX2, which are now available on most x86 CPUs still in use. But the 'better' SIMD ISAs - specifically AVX and better on x86 - are rarely fully exploited, as can be seen by scanning machine code for assembly instructions which are typical for these more advanced SIMD ISAs. This observation is puzzling at first - if the more evolved SIMD units are better than their predecessors, one would expect that they are widely adopted! The answer is simple: inertia, ignorance and tricky access.
+For many years - even decades - CPUs have been supplied with SIMD units. What started out as the MMX instruction set in what now feels like the Dark Ages has evolved into highly sophisticated and capable SIMD units like AVX2, which are now available on most x86 CPUs still in use. But the 'better' SIMD ISAs - specifically AVX and better on x86 - are rarely fully exploited, as can be seen by scanning machine code for assembly instructions which are typical for these more advanced SIMD ISAs. This observation is puzzling at first - if the more evolved SIMD units are better than their predecessors, one would expect that they are widely adopted! The answer is simple: inertia, ignorance and tricky access.
 
 ## ... but it works!
 
@@ -8,7 +8,7 @@ Let's say you have a program which is computationally expensive - something like
 
 ## Let's Try the New ISA
 
-To use a new SIMD ISA, you have to *tell your compiler* - By default, the compiler will pick the lowest-common-denominator SIMD ISA deemed the acceptable minimum, which only fails to run on *very* old CPUs. On x86, this is usually some level of SSE. If you want anything beyond that, you need specific compiler flags, like -mavx2 on gnu and clang compilers. The resulting binary may now contain instructions specific to the chosen SIMD ISA. If your machine actually has this specific SIMD unit, the code will run and should be faster - provided you have optimization on which allows *autovectorization* (usually -O2 does the trick) and there are inner loops which can be autovectorized. But what if the CPU doesn't support the new SIMD ISA? Then your program will terminate with an *Illegal Instruction* error. Obviously, you can't ship code like this without safeguards, so let's think of ways how to deal with this issue.
+To use a new SIMD ISA, you have to *tell your compiler* - By default, the compiler will pick the lowest-common-denominator SIMD ISA deemed the acceptable minimum, which only fails to run on *very* old CPUs. On x86, this is usually some level of SSE. If you want anything beyond that, you need specific compiler flags, like -mavx2 on gnu and clang compilers. The resulting binary may now contain instructions specific to the chosen SIMD ISA. If your machine actually has this specific SIMD unit, the code will run and should be faster - provided you have optimization on which allows *autovectorization* (usually -O3 does the trick) and there are inner loops which can be autovectorized. But what if the CPU doesn't support the new SIMD ISA? Then your program will terminate with an *Illegal Instruction* error. Obviously, you can't ship code like this without safeguards, so let's think of ways how to deal with this issue.
 
 ## Dealing with several SIMD ISAs
 
@@ -30,7 +30,7 @@ With this capability of generating ISA-specific code 'from the inside', it becom
 
 # highway's Dispatch Mechanism
 
-I've already hinted at the way how highway provides access to the ISA-specific code: via nested namespaces. This sounds scary if you don't usually use namespaces much, but it's really quite simple once you get the hang of it. Let's first start out without ISA-specific code, but set up namespaces which we'll later populate with the nested namespaces. We'll start up with highway code in a namespace named 'hwy' (that's where it usually lives) and our own code in a namespace names 'project'. When calling into highway code from our code, we'd *qualify* the access with a hwy:: prefix. This is simple and straightforward - and good practise anyway, keeping our own code in a separate namespace and qualifying use of code from other components with their namespace prefix (or using a 'using' directive to the same effect, which can become obscure).
+I've already hinted at the way how highway provides access to the ISA-specific code: via nested namespaces. This sounds scary if you don't usually use namespaces much, but it's really quite simple once you get the hang of it. Let's first start out without ISA-specific code, but set up namespaces which we'll later populate with the nested namespaces. We'll start up with highway code in a namespace named 'hwy' (that's where it usually lives) and our own code in a namespace named 'project'. When calling into highway code from our code, we'd *qualify* the access with a hwy:: prefix. This is simple and straightforward - and good practise anyway, keeping our own code in a separate namespace and qualifying use of code from other components with their namespace prefix (or using a 'using' directive to the same effect, which can become obscure).
 
 If we want to have several variants of a body of code, we can enclose these variants each into a separate scope. Then we can use the same set of symbols in each of those scopes, and we can introduce a selector to address the symbol set in a specific scope: We use indirection. One way of setting up a scope is a namespace: it's simply a scope with a name. Another way is using classes. Class members share the same scope, and they are distinct from members with the same name in a different scope.
 
@@ -430,8 +430,8 @@ Some zimt headers don't use SIMD, but most do. The ones which do are modified to
     // to be modified in any way to produce one variant or another.
     // This suggests that during the implementation of a new program a
     // fixed-ISA build can be used to evolve the code with fast turn-around
-    // times, adding dispatch capability later on by passing the relevant
-    // compiler flags.
+    // times, adding dispatch capability later by #defining DMULTI_SIMD_ISA
+    // and omitting architecture-specific compiler flags.
 
     // if the code is compiled to use the Vc or std::simd back-ends, we
     // can't (yet) use highway's foreach_target mechanism, so we #undef

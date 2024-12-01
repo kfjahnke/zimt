@@ -931,7 +931,7 @@ public:
   // interface to the 'backing' memory 'as' highway vectors.
   // This is a key function. I have opted to use operator[] for access
   // to individual lanes, in keeping with standard container semantics,
-  // And to avoid the vector types 'leaking out'. If user code wants
+  // and to avoid the vector types 'leaking out'. If user code wants
   // to use the vectorized interface, it should do so via yield and
   // take, as does the code inside this class.
   // Note how we use highway's *aligned* load and store functions:
@@ -979,6 +979,7 @@ public:
   // contains the result of the repeated execution of the function
   // passed to 'broadcast'.
 
+  typedef std::function < value_type ( const std::size_t & ) > idx_f ;
   typedef std::function < value_type() > gen_f ;
   typedef std::function < value_type ( const value_type & ) > mod_f ;
   typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
@@ -992,11 +993,29 @@ public:
     return *this ;
   }
 
+  simd_t & index_broadcast ( idx_f f )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      inner[i] = f ( i ) ;
+    }
+    return *this ;
+  }
+
   simd_t & broadcast ( mod_f f )
   {
     for ( std::size_t i = 0 ; i < size() ; i++ )
     {
       inner[i] = f ( inner[i] ) ;
+    }
+    return *this ;
+  }
+
+  simd_t & broadcast ( mod_f f , const simd_t & rhs )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      inner[i] = f ( rhs.inner[i] ) ;
     }
     return *this ;
   }
@@ -1014,7 +1033,7 @@ public:
   // processing batches of hardware vectors and to run code processing
   // individual hardware vectors. The functions to process individual
   // hardware vectors are passed in as a std::functions. As for the
-  // scalar broadcasts above, we provide three common variants:
+  // scalar broadcasts above, we provide several common variants:
   
   typedef std::function < vec_t() > gen_vf ;
   typedef std::function < vec_t ( const vec_t & ) > mod_vf ;
@@ -1042,7 +1061,7 @@ public:
 
   // broadcast a vector modulator function. like above, but using
   // corresponding hardware vectors extracted from a simd_t argument
-  // passed in as 'rhs' as argument.
+  // passed in as 'rhs' as argument to the modulator function.
 
   simd_t & vbroadcast ( mod_vf f , const simd_t & rhs )
   {
@@ -1551,8 +1570,6 @@ public:
     }
 
   BROADCAST_HWY_FUNC2(atan2,Atan2)
-  BROADCAST_HWY_FUNC2(min,Min)
-  BROADCAST_HWY_FUNC2(max,Max)
 
   // no hwy function available for pow
 
@@ -1568,6 +1585,24 @@ public:
                   ) ;
     return result ;
   }
+
+#undef BROADCAST_HWY_FUNC2
+
+  // hwy Min and Max don't take  D argument
+
+  #define BROADCAST_HWY_FUNC2(FUNC,HFUNC) \
+    friend simd_t FUNC ( const simd_t & arg1 , \
+                         const simd_t & arg2 ) \
+    { \
+      simd_t result ; \
+      for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += arg1.L() ) \
+        result.take ( i , hn::HFUNC ( arg1.yield ( i ) , \
+                                      arg2.yield ( i ) ) ) ; \
+      return result ; \
+    }
+
+  BROADCAST_HWY_FUNC2(min,Min)
+  BROADCAST_HWY_FUNC2(max,Max)
 
 #undef BROADCAST_HWY_FUNC2
 
@@ -1960,23 +1995,26 @@ public:
   // member functions at_least and at_most. These functions provide the
   // same functionality as max, or min, respectively. Given simd_t X
   // and some threshold Y, X.at_least ( Y ) == max ( X , Y )
-  // Having the functionality as a member function makes it easy to
-  // implement, e.g., min as: min ( X , Y ) { return X.at_most ( Y ) ; }
 
-  #define CLAMP(FNAME,REL) \
-    simd_t FNAME ( const T & threshold ) const \
-    { \
-      return (*this) ( *this REL threshold ) = threshold ; \
-    } \
-    simd_t FNAME ( const simd_t & threshold ) const \
-    { \
-      return (*this) ( *this REL threshold ) = threshold ; \
-    }
+  simd_t at_least ( const simd_t & threshold ) const
+  {
+    return max ( *this , threshold ) ;
+  }
 
-  CLAMP(at_least,<)
-  CLAMP(at_most,>)
+  simd_t at_most ( const simd_t & threshold ) const
+  {
+    return min ( *this , threshold ) ;
+  }
 
-  #undef CLAMP
+  simd_t clamp ( const simd_t & lower , const simd_t & upper ) const
+  {
+    simd_t help ;
+    for ( std::size_t n = 0 , i = 0 ; n < vsize ; ++i , n += L() )
+      help.take ( i , hn::Clamp ( yield ( i ) ,
+                                  lower.yield ( i ) ,
+                                  upper.yield ( i ) ) ) ;
+    return help ;
+  }
 
   // sum of vector elements. Note that there is no type promotion; the
   // summation is done to value_type. Caller must make sure that overflow

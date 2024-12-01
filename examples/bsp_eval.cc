@@ -370,10 +370,7 @@ struct dispatch
     {
       auto d = abs ( p1[i] - p2[i] ) ;
       mx = mx.at_least ( d ) ;
-      // mn = mn.at_most ( d ) ;
     }
-
-    // mx = mx.at_least ( - mn ) ;
 
     std::cout << "delta max: " << mx.hmax() << std::endl ;
 

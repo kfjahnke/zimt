@@ -719,23 +719,22 @@ struct std_simd_type
   // member functions at_least and at_most. These functions provide the
   // same functionality as max, or min, respectively. Given std_simd_type X
   // and some threshold Y, X.at_least ( Y ) == max ( X , Y )
-  // Having the functionality as a member function makes it easy to
-  // implement, e.g., min as: min ( X , Y ) { return X.at_most ( Y ) ; }
 
-  #define CLAMP(FNAME,REL) \
-    std_simd_type FNAME ( std_simd_type threshold ) const \
-    { \
-      return REL ( to_base() , threshold.to_base() ) ; \
-    } \
-    std_simd_type FNAME ( value_type threshold ) const \
-    { \
-      return REL ( to_base() , threshold ) ; \
-    } \
+  std_simd_type at_least ( const std_simd_type & threshold ) const
+  {
+    return max ( *this , threshold ) ;
+  }
 
-  CLAMP(at_least,max)
-  CLAMP(at_most,min)
+  std_simd_type at_most ( const std_simd_type & threshold ) const
+  {
+    return min ( *this , threshold ) ;
+  }
 
-  #undef CLAMP
+  std_simd_type clamp ( const std_simd_type & lower ,
+                        const std_simd_type & upper ) const
+  {
+    return min ( max ( *this , lower ) , upper ) ;
+  }
 
   // sum of vector elements. Note that there is no type promotion; the
   // summation is done to value_type. Caller must make sure that overflow
@@ -749,38 +748,57 @@ struct std_simd_type
     return s ;
   }
 
-// broadcasting functions processing single value_type
+  // broadcasting functions processing single value_type
 
-typedef std::function < value_type() > gen_f ;
-typedef std::function < value_type ( const value_type & ) > mod_f ;
-typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
+  typedef std::function < value_type ( const std::size_t & ) > idx_f ;
+  typedef std::function < value_type() > gen_f ;
+  typedef std::function < value_type ( const value_type & ) > mod_f ;
+  typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
 
-std_simd_type & broadcast ( gen_f f )
-{
-  for ( std::size_t i = 0 ; i < size() ; i++ )
+  std_simd_type & broadcast ( gen_f f )
   {
-    (*this)[i] = f() ;
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f() ;
+    }
+    return *this ;
   }
-  return *this ;
-}
 
-std_simd_type & broadcast ( mod_f f )
-{
-  for ( std::size_t i = 0 ; i < size() ; i++ )
+  std_simd_type & index_broadcast ( idx_f f )
   {
-    (*this)[i] = f ( (*this)[i] ) ;
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( i ) ;
+    }
+    return *this ;
   }
-  return *this ;
-}
 
-std_simd_type & broadcast ( bin_f f , const std_simd_type & rhs )
-{
-  for ( std::size_t i = 0 ; i < size() ; i++ )
+  std_simd_type & broadcast ( mod_f f )
   {
-    (*this)[i] = f ( (*this)[i] , rhs[i] ) ;
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( (*this)[i] ) ;
+    }
+    return *this ;
   }
-  return *this ;
-}
+
+  std_simd_type & broadcast ( mod_f f , const std_simd_type & rhs )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( rhs[i] ) ;
+    }
+    return *this ;
+  }
+
+  std_simd_type & broadcast ( bin_f f , const std_simd_type & rhs )
+  {
+    for ( std::size_t i = 0 ; i < size() ; i++ )
+    {
+      (*this)[i] = f ( (*this)[i] , rhs[i] ) ;
+    }
+    return *this ;
+  }
 
 } ;
 

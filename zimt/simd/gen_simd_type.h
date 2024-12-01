@@ -202,10 +202,6 @@
 HWY_BEFORE_NAMESPACE() ;
 BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
-// namespace hn = hwy::HWY_NAMESPACE ;
-
-// using namespace simd ;
-
 /// class gen_simd_type serves as fallback type to provide SIMD semantics
 /// without explicit SIMD code. It can be used throughout when use of
 /// the SIMD 'backends' is unwanted, or to 'fill the gap' where some
@@ -234,6 +230,8 @@ BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 
 // we start out with a class called gen_simd_type for brevity, at the end of
 // this header we'll introduce simd_type with a 'using' statement
+
+// TODO: alignment according to ISA
 
 template < typename T , std::size_t N >
 struct alignas(16) gen_simd_type
@@ -506,6 +504,7 @@ gen_simd_type ( const gen_simd_type < U , vsize > & rhs )
 
 // broadcasting functions processing single value_type
 
+typedef std::function < value_type ( const std::size_t & ) > idx_f ;
 typedef std::function < value_type() > gen_f ;
 typedef std::function < value_type ( const value_type & ) > mod_f ;
 typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
@@ -519,11 +518,29 @@ gen_simd_type & broadcast ( gen_f f )
   return *this ;
 }
 
+gen_simd_type & index_broadcast ( idx_f f )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f ( i ) ;
+  }
+  return *this ;
+}
+
 gen_simd_type & broadcast ( mod_f f )
 {
   for ( std::size_t i = 0 ; i < size() ; i++ )
   {
     (*this)[i] = f ( (*this)[i] ) ;
+  }
+  return *this ;
+}
+
+gen_simd_type & broadcast ( mod_f f , const gen_simd_type & rhs )
+{
+  for ( std::size_t i = 0 ; i < size() ; i++ )
+  {
+    (*this)[i] = f ( rhs[i] ) ;
   }
   return *this ;
 }

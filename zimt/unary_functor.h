@@ -1388,16 +1388,14 @@ uf_adapt ( const W & inner )
 // I think this is promising for 'breaking out' to some other kind of
 // vector code. The incoming in_v is simply stored to a buffer, a second
 // buffer is set up to receive data, 'flat' is called receiving pointers
-// to both buffers (and, optionally, 'cap') and flat does the processing,
+// to both buffers and their sizes. flat does the processing, and
 // finally the second buffer is stored to out_v.
 // If 'flat' does not have side effects (as e.g. reductions do), it can
 // ignore 'cap', because zimt::process will make sure all lanes have data
 // which are taken from valid lanes (e.g. by stuffing). zimt::process does
 // pass cap if the operation is capped, so 'flat' can decide to look at it
 // and honour it by ignoring the last few lanes.
-// 'Going via memory' should be optimized away. For highway and goading
-// front-end code, the implementation is even simpler, because hwy_simd_type
-// and gen_simd_type have a representation as memory available via 'data'.
+// 'Going via memory' should be optimized away.
 
 template < typename T1 , typename T2 , std::size_t L >
 struct flatten
@@ -1407,48 +1405,31 @@ struct flatten
 
   using typename base_t::in_ele_type ;
   using typename base_t::out_ele_type ;
+  using typename base_t::in_ele_v ;
   using base_t::dim_in ;
   using base_t::dim_out ;
 
   typedef std::function
-    < void ( const in_ele_type * , out_ele_type * , int cap ) > flat_f ;
+    < void ( const in_ele_type * , std::size_t ,
+             out_ele_type * , std::size_t ) >
+        flat_f ;
+
   flat_f flat ;
 
   flatten ( flat_f _flat )
   : flat ( _flat )
   { }
 
-#if defined USE_VC || defined USE_STDSIMD
-
-  // Vc and std::simd don't use objects with accessible 'memory backing',
-  // so we set up two buffers for data transfer, which will likely be
-  // optimized away.
-
-  // TODO: adapt alignment to ISA
-
-  alignas(16) in_ele_type in_buffer [ L * dim_in ] ;
-  alignas(16) out_ele_type out_buffer [ L * dim_out ] ;
-
   template < typename I , typename O >
   void eval ( const I & i , O & o , const std::size_t cap = L )
   {
+    alignas(16) in_ele_type in_buffer [ L * dim_in ] ;
+    alignas(16) out_ele_type out_buffer [ L * dim_out ] ;
+
     i.store ( in_buffer ) ;
-    flat ( in_buffer , out_buffer , cap ) ;
+    flat ( in_buffer , cap * dim_in , out_buffer , cap * dim_out ) ;
     o.load ( out_buffer ) ;
   }
-
-#else
-
-  // the goading and highway backend use memory-backed objects, so we
-  // can call 'flat', passing the result of 'data'.
-
-  template < typename I , typename O >
-  void eval ( const I & i , O & o , const std::size_t cap = L )
-  {
-    flat ( i.data() , o.data() , cap ) ;
-  }
-
-#endif
 } ;
 
 END_ZIMT_SIMD_NAMESPACE

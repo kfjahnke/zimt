@@ -352,25 +352,24 @@ OP_FUNC(operator~,~,INTEGRAL_ONLY)
 // member functions at_least and at_most. These functions provide the
 // same functionality as max, or min, respectively. Given XEL X
 // and some threshold Y, X.at_least ( Y ) == max ( X , Y )
-// Having the functionality as a member function makes it easy to
-// implement, e.g., min as: min ( X , Y ) { return X.at_most ( Y ) ; }
 
-#define CLAMP(FNAME,REL) \
-  XEL FNAME ( XEL threshold ) const \
-  { \
-    XEL result ( threshold ) ; \
-    for ( std::size_t i = 0 ; i < N ; i++ ) \
-    { \
-      if ( (*this) [ i ] REL threshold [ i ] ) \
-        result [ i ] = (*this) [ i ] ; \
-    } \
-    return result ; \
-  }
+template < typename U >
+XEL at_least ( const U & threshold ) const
+{
+  return max ( *this , XEL(threshold) ) ;
+}
 
-CLAMP(at_least,>)
-CLAMP(at_most,<)
+template < typename U >
+XEL at_most ( const U & threshold ) const
+{
+  return min ( *this , XEL(threshold) ) ;
+}
 
-#undef CLAMP
+template < typename U , typename V >
+XEL clamp ( const U & lower , const V & upper ) const
+{
+  return min ( max ( *this , XEL(lower) ) , XEL(upper) ) ;
+}
 
 // sum of vector elements. Note that there is no type promotion; the
 // summation is done to value_type. Caller must make sure that overflow
