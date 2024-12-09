@@ -266,6 +266,12 @@ BROADCAST_STD_FUNC3(fma)
 
 #undef BROADCAST_STD_FUNC3
 
+friend void sincos ( const XEL & x , XEL & s , XEL & c )
+{
+  s = sin ( x ) ;
+  c = cos ( x ) ;
+}
+
 // macros used for the parameter 'CONSTRAINT' in the definitions
 // further down. Some operations are only allowed for integral types
 // or boolans. This might be enforced by enable_if, here we use a
@@ -351,7 +357,9 @@ OP_FUNC(operator~,~,INTEGRAL_ONLY)
 
 // member functions at_least and at_most. These functions provide the
 // same functionality as max, or min, respectively. Given XEL X
-// and some threshold Y, X.at_least ( Y ) == max ( X , Y )
+// and some threshold Y, X.at_least ( Y ) == max ( X , Y ). But the
+// thresholds are template arguments, and they are 'pulled up' to XEL,
+// which results in a broader feeding spectrum.
 
 template < typename U >
 XEL at_least ( const U & threshold ) const
