@@ -1745,7 +1745,7 @@ private:
   /// 'synthetic' types, using the templates 'bunch' and 'vector'.
   /// The reinterpreted data are fed to 'inner'.
 
-  template < template < typename , int > class bunch ,
+  template < template < typename , size_t > class bunch ,
              template < typename , size_t > class vector ,
              size_t VSZ ,
              typename in_type ,
