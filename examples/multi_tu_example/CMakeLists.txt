@@ -111,7 +111,7 @@ endif()
 
 # for the test program composed of several ISA-specific TUs,
 # we have the main program disp_to_tu.cc, which does the
-# dispatching, and basic.cc, which has ISA-independent code
+# dispatching, and dispatch.cc, which has ISA-independent code
 
 add_executable(multi_tu driver.cc dispatch.cc)
 
@@ -129,7 +129,7 @@ set_source_files_properties ( dispatch.cc PROPERTIES COMPILE_FLAGS "-O3 -I.." )
 # object files in separate directories, for which we use the
 # same name as the ISA. For this program, each of the object
 # libraries will only contain a single object file made from
-# inset.cc with ISA-specific compilation instructions. Since
+# payload.cc with ISA-specific compilation instructions. Since
 # we're already running a loop over the ISAs, we add a line
 # to tell cmake to link the object file in.
 
