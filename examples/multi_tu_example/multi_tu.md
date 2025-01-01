@@ -392,3 +392,11 @@ Quite a mouthful, not quite complete, but - AFAICT - usable on x86 and ARM. The 
     paylod: target = AVX2
 
 You see how the loop over the ISAs listed for the given CPU family produces separate 'object libraries' - each in their own directory and containing precisely one object each: the ISA-specific object for the given ISA. Since these objects are all added with the 'target_link_libraries' command in the same loop, they are automatically linked to the other TUs, and we get the desired result: the binary 'multi_tu' which dispatches to the ISA-specific 'payload' function, which, in turn, echos the ISA for which it was made. We use highway's HWY_DYNAMIC_DISPATCH to pick the right version, and we're using highway's capability of telling the compiler with #pragmas how to build the ISA-specific code, so we've delegated as much as possible to highway. As I mentioned before, we're left to maintain the build script, as long as there is no way to have it generated or obtain it from elsewhere.
+
+I have elaborated the code in this repository and added a few extras:
+
+- adding 'metadata' to the dispatch objects
+- adding highway-managed objects which foreach_target doesn't usually produce
+- adding 'external' objects which may or may not use highway
+
+You may want to read through the sources to see how it all fits together, I've added ample comments which should help you along.

@@ -36,67 +36,44 @@
 /*                                                                      */
 /************************************************************************/
 
+// example of an 'external' payload - one which isn't managed by highway.
+// Such payloads can be configured arbitrarily - here we merely provide
+// a specific payload routine and a customized dispatch c'tor, and we'll
+// access these from driver.cc when we 'walk through' the ISAs.
+
 #include <iostream>
-#include <vector>
-
-// dispatch.h has the class definition of dispatch_base and the
-// declaration of 'get_dispatch' which yields the dispatch_base
-// pointer at run-time.
-
-#ifndef DISPATCH_BASE
-#define DISPATCH_BASE
-
-struct dispatch_base
-{
-  // the most important member of class dispatch_base is the 'payload'.
-  // Here we only have a single payload function, but in a concrete
-  // program there might be many. Here, in the base class, we declare
-  // the as pure virtual members.
-
-  virtual std::string payload() const = 0 ;
-
-  // firther members in dispatch_base will be populated in the derived
-  // 'dispatch' classes' c'tors to provide metadata: The main program
-  // can glean a dispatch_base pointer and then use this information.
-  
-  std::size_t hwy_target ;
-  std::string hwy_target_name ;
-  std::string hwy_target_str ;
-} ;
-
-// get_dispatch will yield a dispatch_base pointer to the ISA-specific
-// payload code best suited for the CPU currently running the code.
-// The definition of this function is in 'dispatch.cc'.
+#include "dispatch.h"
 
 namespace project
 {
-  // without further specialization, conduit::glean() returns nullptr.
-  // specialized with a HWY_TARGET value, it will yield a dispatch_base
-  // pointer to a dispatch object in the ISA_specific nested namespace;
-  // see also the comments in dispatch.cc.
-
-  template < std::size_t TRG >
-  struct conduit
+  namespace epl_test
   {
-    static dispatch_base * glean ()
+    struct dispatch
+    : public dispatch_base
+      {
+        std::string payload() const
+        {
+          std::string echo = "call to payload in epl_test" ;
+          return echo ;
+        }
+
+        dispatch()
+        {
+          // we use a very high value for hwy_target here, but not
+          // a power of two. The idea is to provide a value which
+          // allows the main program to figure out whether this
+          // variant will execute on the current CPU. see driver.cc
+
+          hwy_target = 0x8000000000000001 ;
+          hwy_target_name = "epl_test: not a highway target!" ;
+        }
+
+      } ;
+
+    const dispatch_base * const _get_dispatch()
     {
-      return nullptr ;
+      static dispatch d ;
+      return &d ;
     }
   } ;
-
-  // these functions serve to provide access to ISA-specific code.
-  // the first one yields a dispatch_base pointer to a dispatch object
-  // in the ISA which highway picks via it's dynamic dispatch. This is
-  // the dispatch pointer you'll typically use. The second one fills a
-  // std::vector of dispatch_base pointers with pointers to available
-  // dispatch objects - one for each ISA. You can use this information
-  // to inspect what's available or use a different ISA to the one which
-  // highway would choose - the dispatch_base pointer also points to
-  // 'metadata' like the HEY_TARGET value for the ISA, to help you
-  // figure out what it's good for.
-
-  extern const dispatch_base * const get_dispatch() ;
-  extern void get_isa_list ( std::vector < const dispatch_base * > & ) ;
 } ;
-
-#endif // for #ifndef DISPATCH_BASE
