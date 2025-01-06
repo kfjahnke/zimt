@@ -58,7 +58,7 @@ namespace project
       {
         // let's do something ISA-specific
       
-        std::cout << "payload: target = "
+        std::cout << "hello from linked-in payload for target "
                   << hwy::TargetName ( HWY_TARGET )
                   << std::endl ;
       }

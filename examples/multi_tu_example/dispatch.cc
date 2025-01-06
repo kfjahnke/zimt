@@ -61,15 +61,8 @@ namespace project
   namespace HWY_NAMESPACE
   {
     // here, we're inside the ISA-specific nested namespace. We declare
-    // dispatch::payload, but it will be only defined in a separate
-    // ISA-specfic TU. We also declare the 'local' _get_dispatch. The
-    // function definition for that will also be in the ISA-specific TU.  
-
-    struct dispatch
-    : public dispatch_base
-    {
-      std::string payload() const ;
-    } ;
+    // _get_dispatch. The function definition for that resides in the
+    // ISA-specific TU.  
 
     const dispatch_base * const _get_dispatch() ;
   } ;

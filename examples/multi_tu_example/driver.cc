@@ -36,18 +36,19 @@
 /*                                                                      */
 /************************************************************************/
 
-// driver.cc is has the 'main' function for the test program multi_tu.
+// driver.cc has the 'main' function for the test program multi_tu.
 
 #include <iostream>
+#include <dlfcn.h>
+#include <assert.h>
 
-// Again, we use a separate 'driver ' program, where we put 'main'.
-// The definition of class dispatch_base is now in a separate header:
+// The definition of class dispatch_base is in a separate header:
 
 #include "dispatch.h"
 
 namespace project
 {
-  // we use two object files which aren't 'covered' by highway's
+  // we use more object files which aren't 'covered' by highway's
   // foreach_target mechanism. The first one is a 'regular' highway
   // target, but it's not picked by foreach_target automatically.
   // We trigger it's production by inclusion of the EMU128 target
@@ -65,6 +66,24 @@ namespace project
   {
     const dispatch_base * const _get_dispatch() ;
   } ;
+
+  // we also have a payload variant in a shared library. This is a
+  // quick route to plugins. While this simple test program only has
+  // a single payload function (called 'payload') a 'real' program
+  // might have many different payload functions, all declared in
+  // dispatch.h. Since we use VFT dispatching, the library payload
+  // only needs to #include dispatch.h to have all the declarations
+  // for the payload functions 'in view', and it can proceed to
+  // provide implementations. The VFT dispatch mechanism takes care
+  // of all the necessary 'wiring', and the payload code in the
+  // shared library can coexist with statically linked payload code
+  // from payload objects using the same 'handle': a dispatch_base
+  // pointer.
+
+  namespace payload_lib
+  {
+    const dispatch_base * const _get_dispatch() ;
+  }
 } ;
 
 int main ( int argc , char * argv[] )
@@ -92,14 +111,52 @@ int main ( int argc , char * argv[] )
 
   project::get_isa_list ( isa_list ) ;
 
-  // we have added two extra variants - one is a regular highway
-  // target, but not normally added by foreach_target, and one is
-  // made without highway to show that we can add arbitrary variants
+  // we have added several extra variants - one is a regular highway
+  // target, but not normally added by foreach_target, one is made
+  // without highway to show that we can add arbitrary variants
   // as long as they can provide a dispatch_base pointer to give
-  // access to their payload code.
+  // access to their payload code. the third comes as a shared
+  // library.
 
   isa_list.push_back ( project::N_EMU128::_get_dispatch() ) ;
   isa_list.push_back ( project::epl_test::_get_dispatch() ) ;
+  isa_list.push_back ( project::payload_lib::_get_dispatch() ) ;
+
+  // A fourth variant: we're loading a plugin with payload code.
+  // This isn't much different from using a shared library, only
+  // the method of obtaining the dispatch_base pointer is a bit
+  // more complicated. Note that this code will only work on
+  // UNIX-based systems:
+
+  // Quite a mouthful: declare the type of a function pointer to a
+  // function which returns a const dispatch_base* const:
+
+  typedef const dispatch_base* const (*fp_plugin)() ;
+
+  // Open the shared library with the payload code
+
+  void *payload_so = dlopen ( "libpayload_plugin.so", RTLD_NOW ) ;
+  assert ( payload_so != nullptr ) ;
+
+  // extract the symbol '_get_dispatch' from it - note that inside
+  // the plugin's code this is declared as 'extern "C"' to avoid the
+  // 'mangled' name of the actual C++ function it delegates to in turn.
+  // Note also that this "C" function returns a const void* const instead
+  // of a dispatch_base pointer - the "C" function knows nothing of C++
+  // classes. But we'll simply cast the function pointer returned by
+  // dlsym to 'fp_plugin'.
+
+  fp_plugin get_plugin = (fp_plugin) dlsym ( payload_so , "_get_dispatch" ) ;
+  assert ( get_plugin != nullptr ) ;
+
+  // now we can obtain the dispatch_base pointer by calling get_plugin:
+
+  auto dsp_plugin = get_plugin() ;
+  assert ( dsp_plugin != nullptr ) ;
+
+  // and then push it to isa_list:
+
+  isa_list.push_back ( dsp_plugin ) ;
 
   // we try all dispatches. If the 'better' ISAs (better than what's
   // available on the executing CPU) actually had ISA-specific
@@ -133,10 +190,15 @@ int main ( int argc , char * argv[] )
       std::cout << "warning: compiled for an ISA which this CPU can't handle"
                 << std::endl ;
     }
-    std::cout << "testing payload: "
-              << p_dsp->payload() << std::endl ;
+  
+    auto str = p_dsp->payload() ;
+
+    std::cout << "call to payload returns: "
+              << str << std::endl ;
 
     std::cout << std::endl ;
   }
+
+  dlclose ( payload_so ) ;
   return 0 ;
 }

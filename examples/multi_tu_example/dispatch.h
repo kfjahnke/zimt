@@ -55,7 +55,7 @@ struct dispatch_base
 
   virtual std::string payload() const = 0 ;
 
-  // firther members in dispatch_base will be populated in the derived
+  // further members in dispatch_base will be populated in the derived
   // 'dispatch' classes' c'tors to provide metadata: The main program
   // can glean a dispatch_base pointer and then use this information.
   
@@ -63,10 +63,6 @@ struct dispatch_base
   std::string hwy_target_name ;
   std::string hwy_target_str ;
 } ;
-
-// get_dispatch will yield a dispatch_base pointer to the ISA-specific
-// payload code best suited for the CPU currently running the code.
-// The definition of this function is in 'dispatch.cc'.
 
 namespace project
 {
@@ -92,7 +88,7 @@ namespace project
   // dispatch objects - one for each ISA. You can use this information
   // to inspect what's available or use a different ISA to the one which
   // highway would choose - the dispatch_base pointer also points to
-  // 'metadata' like the HEY_TARGET value for the ISA, to help you
+  // 'metadata' like the HWY_TARGET value for the ISA, to help you
   // figure out what it's good for.
 
   extern const dispatch_base * const get_dispatch() ;

@@ -136,9 +136,7 @@ set_source_files_properties ( dispatch.cc PROPERTIES COMPILE_FLAGS "-O3 -I.." )
 foreach ( isa IN LISTS isa_l )
 
     add_library ( ${isa} OBJECT payload.cc )
-
     target_compile_options ( ${isa} PUBLIC -DTG_ISA=HWY_${isa} -O3 )
-
     target_link_libraries(multi_tu $<TARGET_OBJECTS:${isa}>)
 
 endforeach()
@@ -150,7 +148,12 @@ endforeach()
 # highway support.
 
 add_library ( epl_test OBJECT e_payload.cc )
-
 target_compile_options ( epl_test PUBLIC -O3 )
-
 target_link_libraries(multi_tu $<TARGET_OBJECTS:epl_test>)
+
+add_library(payload_lib SHARED l_payload.cc)
+target_compile_options ( payload_lib PUBLIC -O3 )
+target_link_libraries(multi_tu payload_lib)
+
+add_library(payload_plugin SHARED p_payload.cc)
+target_compile_options ( payload_plugin PUBLIC -O3 )

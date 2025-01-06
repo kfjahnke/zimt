@@ -43,19 +43,20 @@
 
 #include <hwy/detect_targets.h>
 
-// glean the target as 'TG_ISA' from outside - this file is intended
-// to produce ISA-specific separate TUs containing only binary for
-// one given ISA, but assuming that other files of similar structure,
-// but for different ISAs will also be made and all linked together
-// with more code which actually makes use of the single-ISA TUs.
-// 'Slotting in' the target ISA from the build system is enough to
-// produce a SIMD-ISA-specific TU - all the needed specifics are
-// derived from this single information. detect_targets.h sets
-// HWY_TARGET to HWY_STATIC_TARGET, so we #undef it and use the
-// target specification from outside instead.
+// This payload object uses highway and the AVX2 ISA. It's to
+// demonstrate that 'pulling in' payload code from a shared library
+// is simple with VFT dispatching - the calling code (see driver.cc)
+// only needs to obtain the dispatch pointer, everything else is just
+// as with linked-in payloads. Here we provide a simple AVX2 payload.
+// The creation of the shared library is handled by CMake and only
+// takes three lines of CMake code. I think this is a good starting
+// point for programming plugins, and this variant is set up to work
+// as a plugin: at the end we define a function with "C" linkage, and
+// driver.cc will use dlopen to access this payload module at run-time.
+// everything else is just like in l_payload.cc.
 
 #undef HWY_TARGET
-#define HWY_TARGET TG_ISA
+#define HWY_TARGET HWY_AVX2
 
 // now we #include highway.h - as we would do after foreach_target.h
 // in a multi-ISA build. With foreach_target.h, the code is re-included
@@ -75,8 +76,10 @@ HWY_BEFORE_NAMESPACE() ;
 
 namespace project
 {
-  namespace HWY_NAMESPACE
+  namespace payload_plugin
   {
+    // we want to use some ISA-specific code:
+
     namespace hn = hwy::HWY_NAMESPACE ;
     typedef hn::ScalableTag < float > D ;
     typedef typename hn::Vec < D > vec_t ;
@@ -91,19 +94,15 @@ namespace project
     {
       std::string payload() const
       {
-
-        // finally, the 'payload code' itself. we echo the name
-        // of the current target ISA:
-
-        std::string echo = "call to payload in " ;
-        echo += hwy::TargetName ( HWY_TARGET ) ;
-
-        // let's try some ISA-specific code: print out a vector of zeros
+         // let's try some ISA-specific code: print out a vector of zeros
         // if HWY_TARGET is 'better' than what the current CPU can handle,
-        // this will produce an illegal instruction error. If you comment
-        // this line out, all dispatch trials succeed.
+        // this will produce an illegal instruction error. On my system,
+        // AVX2 is available - if it isn't on the CPU where this program
+        // is run, you'll see an 'illegal instruction' error.
 
-        // hn::Print ( D() , "test" , hn::Zero ( D() ) , 0 , Lanes ( D() ) ) ;
+        hn::Print ( D() , "plugin test" , hn::Zero ( D() ) , 0 , Lanes ( D() ) ) ;
+
+        std::string echo = "hello from payload in payload_plugin" ;
 
         return echo ;
       }
@@ -141,3 +140,14 @@ namespace project
 } ;
 
 HWY_AFTER_NAMESPACE() ;
+
+// to facilitate use with dlopen/dlsym, we provide a function _get_dispatch
+// with "C" linkage.
+
+extern "C"
+{
+  const void * const _get_dispatch()
+  {
+    return project::payload_plugin::_get_dispatch() ;
+  }
+}

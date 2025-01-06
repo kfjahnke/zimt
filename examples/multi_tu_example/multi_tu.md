@@ -82,7 +82,7 @@ I have stated previously that handling dispatch to separate ISA-specific object 
       return success ;
     }
 
-Neat, isn't it? We don't need any references to highway here - it's all plain old C++ code, in whatever ISA the compiler uses if you don't tell it to use a specific one. Since this part is not performance-critical, that just fine.
+Neat, isn't it? We don't need any references to highway here - it's all plain old C++ code, in whatever ISA the compiler uses if you don't tell it to use a specific one. Since this part is not performance-critical, that's just fine.
 
 ### dispatch.h
 
@@ -132,15 +132,8 @@ Still no surprises, still no highway code. This changes now, and we'll use highw
       namespace HWY_NAMESPACE
       {
         // here, we're inside the ISA-specific nested namespace. We declare
-        // dispatch::payload, but it will be only defined in a separate
-        // ISA-specfic TU. We also declare the 'local' _get_dispatch. The
-        // function definition for that will also be in the ISA-specific TU.  
-
-        struct dispatch
-        : public dispatch_base
-        {
-          int payload ( int argc , char * argv[] ) const ;
-        } ;
+        // _get_dispatch. The function definition for that resides in the
+        // ISA-specific TU.  
 
         const dispatch_base * const _get_dispatch() ;
       } ;
@@ -220,7 +213,7 @@ Finally we need to provide our payload code. We use *one file for all ISAs*, but
             int payload ( int argc , char * argv[] ) const
             {
               // finally, the 'payload code' itself. Just to show that
-              // all our efforst have put us in the right environment,
+              // all our efforts have put us in the right environment,
               // we echo the name of the current target ISA:
 
               std::cout << "paylod: target = "
@@ -229,6 +222,9 @@ Finally we need to provide our payload code. We use *one file for all ISAs*, but
               return 0 ;
             }
           } ;
+
+        // _get_dispatch holds a static object of the derived class
+        // 'dispatch' and returnd a base class pointer to it.
 
         const dispatch_base * const _get_dispatch()
         {
@@ -242,7 +238,24 @@ Finally we need to provide our payload code. We use *one file for all ISAs*, but
 
 ### Putting It All Together
 
-Let's start with a simple way of compiling the code. We need to feed the ISA-specific compilations of payload.cc with the information about the highway target. Let's assume you're coding on/for an x86 environment. Here's a shell script to produce several payload_XXX.o files, covering all ISAs 'XXX':
+How do we know which ISAs highway will produce code for? highway
+provides a small utility 'hwy_list_targets', which emits just the
+information which is needed here. On my system, this utility produces
+this output:
+
+    $ ./hwy_list_targets
+    Config: emu128:0 scalar:0 static:0 all_attain:0 is_test:0
+    Compiled HWY_TARGETS:   AVX3_SPR AVX3_ZEN4 AVX3 AVX2 SSE4 SSSE3 SSE2
+    HWY_ATTAINABLE_TARGETS: AVX3_SPR AVX3_ZEN4 AVX3 AVX2 SSE4 SSSE3 SSE2 EMU128
+    HWY_BASELINE_TARGETS:   SSE2 EMU128
+    HWY_STATIC_TARGET:      SSE2
+    HWY_BROKEN_TARGETS:    
+    HWY_DISABLED_TARGETS:  
+    Current CPU supports:   AVX2 SSE4 SSSE3 SSE2 EMU128 SCALAR
+
+The list of ISA names we need is the first one, 'Compiled HWY_TARGETS'
+
+Let's start with a simple way of compiling the code. We need to feed the ISA-specific compilations of payload.cc with the information about the highway target. Let's assume you're coding on/for an x86 environment. Here's a shell script to produce several payload_XXX.o files, covering all ISAs:
 
     for TARGET in SSE2 SSSE3 SSE4 AVX2 AVX3 AVX3_ZEN4 AVX3_SPR
     do
@@ -300,7 +313,12 @@ Bingo! It works - but what's slightly annoying is the fact that we need to know 
     endif()
 
     # assuming we have correctly detected the architecture, we list ISAs
-    # which can occur on that architecture
+    # which can occur on that architecture. This is the section we need
+    # to maintain and update when highway provides new targets. If
+    # highway were to cooperate, it might provide this section as part
+    # of the cmake code it deploys, which would make the process
+    # automatic. Alternatively, we might use an invocation of the utility
+    # 'hwy_list_targets' and extract the list from it's output.
 
     if ( x86_64 )
       list ( APPEND isa_l SSE2 SSSE3 SSE4 AVX2 AVX3 AVX3_ZEN4 AVX3_SPR )
@@ -398,5 +416,6 @@ I have elaborated the code in this repository and added a few extras:
 - adding 'metadata' to the dispatch objects
 - adding highway-managed objects which foreach_target doesn't usually produce
 - adding 'external' objects which may or may not use highway
+- putting payload code in a shared library to be used as s plugin
 
 You may want to read through the sources to see how it all fits together, I've added ample comments which should help you along.
