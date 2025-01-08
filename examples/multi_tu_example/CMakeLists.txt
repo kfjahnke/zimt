@@ -100,7 +100,7 @@ if ( x86_64 )
 # the NEON_BF16 ISA seems not to be built by default. We've used this
 # code to build envutil on a macBook pro with M1 processor:
 elseif ( arm64 )
-  list ( APPEND isa_l NEON_WITHOUT_AES NEON ) # NEON_BF16
+  list ( APPEND isa_l NEON_WITHOUT_AES NEON NEON_BF16 )
 # tentative, we have no SVE systems
 elseif ( aarch64 )
   list ( APPEND isa_l ALL_SVE SVE SVE2 SVE_256 SVE2_128 )
