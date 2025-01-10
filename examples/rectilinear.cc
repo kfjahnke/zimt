@@ -88,6 +88,8 @@
 
 using namespace OIIO ;
 
+typedef decltype (TextureSystem::create()) ts_ptr ;
+
 typedef zimt::xel_t < float , 2 > v2_t ;
 typedef zimt::xel_t < float , 3 > v3_t ;
 
@@ -121,7 +123,7 @@ T norm ( const C < T , N > & x )
 struct lookup_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  std::shared_ptr<TextureSystem> ts ;
+  ts_ptr ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -153,7 +155,7 @@ struct lookup_t
   // sign changes on the y axis in the code. The image's x axis and
   // the IMath x axis coincide.
 
-  lookup_t ( std::shared_ptr<TextureSystem> _ts ,
+  lookup_t ( ts_ptr _ts ,
              TextureOptBatch & _batch_options ,
              TextureSystem::TextureHandle * _th ,
              const std::array < v3_t , 2 > & _step )
@@ -289,7 +291,7 @@ struct lookup_t
 struct laplace_t
 : public zimt::unary_functor < v3_t , v3_t , 16 >
 {
-  std::shared_ptr<TextureSystem> ts ;
+  ts_ptr ts ;
   TextureOptBatch & batch_options ;
   TextureSystem::TextureHandle * th ;
   const zimt::xel_t < v3_t , 2 > step ;
@@ -297,7 +299,7 @@ struct laplace_t
   const float laplace1 ;
   const float laplace2 ;
 
-  laplace_t ( std::shared_ptr<TextureSystem> _ts ,
+  laplace_t ( ts_ptr _ts ,
               TextureOptBatch & _batch_options ,
               TextureSystem::TextureHandle * _th ,
               const std::array < v3_t , 2 > & _step ,

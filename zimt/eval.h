@@ -134,6 +134,7 @@
 
 #include <array>
 
+#include "common.h"
 #include "basis.h"
 #include "bspline.h"
 #include "unary_functor.h"

@@ -610,7 +610,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
   // axis. That's where the starting points of the 1D subarrays are. Then
   // obtain a MultiCoordinateIterator over the indexes in the slice
   
-  auto sample_slice = source[0].bindAt ( axis , 0 ) ;
+  auto sample_slice = source[0].slice ( axis , 0 ) ;
 
   zimt::mci_t < dimension - 1 > sliter ( sample_slice.shape ) ;
 
@@ -622,7 +622,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
   // set of indexes for one run. Note the initialization with
   // the first index, guarding against 'narrow stripes'.
   
-  zimt::xel_t < shape_type , vsize > indexes { *sliter } ;
+  zimt::xel_t < shape_type , vsize > indexes ( sliter[0] ) ;
   
   // set of offsets into the source slice which will be used for
   // gather/scatter. These will be equivalent to the indexes above,
@@ -662,7 +662,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
     {
       auto source_stride = input.strides [ axis ] ;
       auto part_size = input.shape [ axis ] ;
-      auto slice = input.bindAt ( axis , 0 ) ;
+      auto slice = input.slice ( axis , 0 ) ;
       auto source_base_adress = slice.data() ;
 
       // obtain a set of offsets from the set of indexes by 'condensing'
@@ -670,7 +670,7 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
       
       for ( int e = 0 ; e < vsize ; e++ )   
       {
-        offsets[e] = sum ( slice.strides * indexes[e] ) ;
+        offsets[e] = ( slice.strides * indexes[e] ) . sum() ;
       }
       
       // form a 'bundle' to pass the data to the handler
@@ -705,11 +705,11 @@ void vpresent ( zimt::atomic < std::ptrdiff_t > * p_tickets ,
     {
       auto target_stride = output.strides [ axis ] ;
       auto part_size = output.shape [ axis ] ;
-      auto slice = output.bindAt ( axis , 0 ) ;
+      auto slice = output.slice ( axis , 0 ) ;
       auto target_base_adress = slice.data() ;
 
       for ( int e = 0 ; e < vsize ; e++ )          
-        offsets[e] = sum ( slice.strides * indexes[e] ) ;
+        offsets[e] = ( slice.strides * indexes[e] ) . sum() ;
       
       bundle < ttype , vsize > bo ( target_base_adress ,
                                     offsets.data() ,

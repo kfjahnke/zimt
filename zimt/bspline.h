@@ -723,7 +723,7 @@ public:
   /// deal, since it only results in the initial coefficients being calculated a bit less
   /// quickly. With nD data, tolerance 0 is less of a problem because the operation will
   /// still be multithreaded and vectorized.
-  
+
   bspline ( shape_type _core_shape ,                // shape of knot point data
             int _spline_degree = 3 ,                // spline degree with reasonable default
             bcv_type _bcv = bcv_type ( MIRROR ) ,   // boundary conditions and common default
@@ -787,6 +787,40 @@ public:
     
     core = container.subarray ( left_frame , left_frame + _core_shape ) ;
   } ;
+
+  // set up a spline with two views, one for the 'core' and one for
+  // the 'container. the caller is expected to set these two views
+  // up correctly.
+
+  bspline ( view_type _core ,
+            view_type _space ,
+            int _spline_degree = 3 ,                // spline degree with reasonable default
+            bcv_type _bcv = bcv_type ( MIRROR ) ,   // boundary conditions and common default
+            xlf_type _tolerance = -1.0 ,            // acceptable error (-1: automatic)
+            int headroom = 0                        // additional headroom, for 'shifting'
+          )
+  : base_type ( _core.shape ,
+                _spline_degree ,
+                _bcv ,
+                ( _tolerance < 0.0
+                  ? std::numeric_limits < ele_type > :: epsilon() 
+                  : ( _tolerance == 0 
+                      ? std::numeric_limits < xlf_type > :: epsilon()
+                      : _tolerance
+                    )
+                ) ,
+                4 ) , // << TODO: think about this
+    spline_degree ( _spline_degree ) ,
+    prefiltered ( false )
+  {
+    container = _space ;
+    core = _core ;
+    
+    // _p_coeffs is made to point to a default-constructed MultiArray,
+    // which holds no data.
+    
+    _p_coeffs = std::make_shared < array_type >() ;
+  }
 
   /// overloaded constructor for 1D splines. This is useful because if we don't
   /// provide it, the caller would have to pass TinyVector < T , 1 > instead of T
@@ -914,19 +948,19 @@ public:
     // note how, just as in brace(), the whole frame is filled, which may be more
     // than is strictly needed by the evaluator.
     
-    ZIMT_ENV::prefilter < dimension ,
-                         value_type ,
-                         value_type ,
-                         math_ele_type ,
-                         vsize >
-                        ( core ,
-                          core ,
-                          bcv ,
-                          spline_degree ,
-                          tolerance ,
-                          boost ,
-                          njobs
-                        ) ;
+    zimt::prefilter < dimension ,
+                      value_type ,
+                      value_type ,
+                      math_ele_type ,
+                      vsize >
+                    ( core ,
+                      core ,
+                      bcv ,
+                      spline_degree ,
+                      tolerance ,
+                      boost ,
+                      njobs
+                    ) ;
 
     brace() ;
     prefiltered = true ;
@@ -968,19 +1002,19 @@ public:
     // note how, just as in brace(), the whole frame is filled, which may be more
     // than is strictly needed by the evaluator.
     
-    ZIMT_ENV::prefilter < dimension ,
-                          T ,
-                          value_type ,
-                          math_ele_type ,
-                          vsize >
-                        ( data ,
-                          core ,
-                          bcv ,
-                          spline_degree ,
-                          tolerance ,
-                          boost ,
-                          njobs
-                        ) ;
+    zimt::prefilter < dimension ,
+                      T ,
+                      value_type ,
+                      math_ele_type ,
+                      vsize >
+                    ( data ,
+                      core ,
+                      bcv ,
+                      spline_degree ,
+                      tolerance ,
+                      boost ,
+                      njobs
+                    ) ;
 
     brace() ;
     prefiltered = true ;

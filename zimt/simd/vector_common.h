@@ -286,7 +286,7 @@ friend void sincos ( const XEL & x , XEL & s , XEL & c )
 // need to elaborate
 
 #define INTEGRAL_ONLY \
-  static_assert ( zimt::is_integral < value_type > :: value , \
+  static_assert ( is_integral < value_type > :: value , \
                   "this operation is only allowed for integral types" ) ;
 
 #define BOOL_ONLY \
@@ -357,9 +357,7 @@ OP_FUNC(operator~,~,INTEGRAL_ONLY)
 
 // member functions at_least and at_most. These functions provide the
 // same functionality as max, or min, respectively. Given XEL X
-// and some threshold Y, X.at_least ( Y ) == max ( X , Y ). But the
-// thresholds are template arguments, and they are 'pulled up' to XEL,
-// which results in a broader feeding spectrum.
+// and some threshold Y, X.at_least ( Y ) == max ( X , Y )
 
 template < typename U >
 XEL at_least ( const U & threshold ) const

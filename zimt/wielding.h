@@ -88,9 +88,9 @@
 
 #include <atomic>
 #include <algorithm>
-#include "array.h"
 #include "unary_functor.h"
 #include "bill.h"
+#include "array.h"
 #include "get.h"
 #include "put.h"
 

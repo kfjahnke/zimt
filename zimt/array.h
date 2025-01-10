@@ -78,15 +78,16 @@
     walking a thin line.
 */
 
+#ifndef ZIMT_ARRAY_H
+#define ZIMT_ARRAY_H
+
 #include "xel.h"
 #include <memory>
 #include <cstring>
 
-#ifndef ZIMT_ARRAY_H
-#define ZIMT_ARRAY_H
-
 namespace zimt
 {
+
 // coordinate iterators. For now, we don't implement 'proper'
 // c++ standard iterators, but just two stripped-down ones.
 // zimt views are suitable for random access iteration, but it
@@ -275,6 +276,16 @@ struct view_t
   view_t ( value_type * const _origin ,
            const index_type & _strides ,
            const shape_type & _shape )
+  : origin ( _origin ) ,
+    strides ( _strides ) ,
+    shape ( _shape )
+    { }
+
+  // allow reverse order args for vspline compatibility
+
+  view_t ( const shape_type & _shape ,
+           const index_type & _strides ,
+           value_type * const _origin )
   : origin ( _origin ) ,
     strides ( _strides ) ,
     shape ( _shape )
@@ -843,5 +854,5 @@ array_t < D + 1 , T > get_vector_buffer
 
 } ;
 
-#endif
+#endif // sentinel
 

@@ -473,8 +473,8 @@ struct std_simd_type
 
   #define BROADCAST_STD_FUNC3(FUNC) \
     friend std_simd_type FUNC ( std_simd_type arg1 , \
-                                std_simd_type arg2 , \
-                                std_simd_type arg3 ) \
+                            std_simd_type arg2 , \
+                            std_simd_type arg3 ) \
     { \
       return FUNC ( arg1.to_base() , arg2.to_base() , arg3.to_base() ) ; \
     }

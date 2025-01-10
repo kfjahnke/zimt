@@ -110,9 +110,7 @@ namespace zimt
   // inherit from std::is_integral:
 
   template < typename T >
-  struct is_integral
-  : public std::is_integral < T >
-  { } ;
+  struct is_integral ;
 
   // forward declaration of xel_t
 
@@ -481,6 +479,116 @@ protected:
   }
 } ;
 
+// asset_t 'holds on' to a pointer to an object containing some
+// resource which is meant to persist 'some time'. When the asset_t
+// object destructs, the object which it points to is also destructed
+// in a type safe manner. While the asset_t object persists, user
+// code can query it with an id. If that matches with the 'id' member,
+// The caller receives 'true'. If the caller wants to replace the
+// asset with a newly created one, 'reset' is used, which first
+// clears out the currently held 'cargo'. If the cargo is very large,
+// the user can opt to call 'clear' first, then create a new cargo
+// and call 'reset' with the new cargo. This will avoid having
+// both the old and the new cargo at the same time until the old
+// cargo is destructed.
+
+template < typename id_t = std::string >
+struct asset_t
+{
+  id_t id ;
+  void * p_cargo ;
+
+  // trm removes the cargo in a type-safe manner by calling the
+  // asset's destructor
+
+  std::function < void() > trm ;
+
+  asset_t()
+  : id ( id_t() ) ,
+    p_cargo ( nullptr)
+  { }
+
+  // asset_t is not copyable
+
+  asset_t & operator= ( const asset_t & rhs ) = delete ;
+
+  asset_t ( const asset_t & rhs ) = delete ;
+  
+  // have without arguments returns true if p_cargo is not nullptr
+
+  void * has()
+  {
+    return p_cargo ;
+  }
+
+  // have with an id_t argument returns true if the contained id
+  // is the same as the one passed
+
+  void * has ( const id_t & which )
+  {
+    if ( id == which )
+      return p_cargo ;
+    return nullptr ;
+  }
+
+  // clear calls trm to destruct the cargo and reset the members
+  // to 'blank'
+
+  void clear()
+  {
+    if ( p_cargo != nullptr )
+      trm() ;
+  }
+
+  // set 'imbues' the asset_t object with the values passed in and
+  // creates a new trm function. The function is private, because
+  // it does not destruct the cargo.
+
+private:
+
+  template < typename cargo_t >
+  void set ( const id_t & _id , cargo_t * _p_cargo )
+  {
+    trm = [&]()
+          {
+            auto p_gk = static_cast<cargo_t*> ( p_cargo ) ;
+            delete p_gk ;
+            p_cargo = nullptr ;
+            id = id_t() ;
+          } ;
+    id = _id ;
+    p_cargo = _p_cargo ;
+  }
+
+public:
+
+  // reset first calls 'clear', then set
+
+  template < typename cargo_t >
+  void reset ( const id_t & _id , cargo_t * _p_cargo )
+  {
+    clear() ;
+    set ( _id , _p_cargo ) ;
+  }
+
+  template < typename cargo_t >
+  asset_t ( const id_t & _id , cargo_t * _p_cargo )
+  {
+    set ( _id , _p_cargo ) ;
+  }
+
+  // the d'tor calls clear. This also makes sure that at program
+  // termination the cargo is destructed cleanly. One might think
+  // this futile, but if there is code guarding memory consumption,
+  // that would detect a memory leak if the destruct is omitted.
+
+  ~asset_t()
+  {
+    clear() ;
+  }
+
+} ;
+
 // Inside namespace zimt, we want 'using' declarations for functions
 // from the std namespace which we broadcast to xel_t and simdized
 // types, in order to allow us to formulate the 'roll-out' using the
@@ -594,11 +702,9 @@ using std::max ;
 
 #define END_ZIMT_SIMD_NAMESPACE \
     } ; \
-  } ; \
-namespace zimt { using namespace zimt::zsimd ; } ;
-
+  using namespace ZIMT_SIMD_ISA ; \
+  } ;
 #endif
-
 
 // just a shorthand.
 

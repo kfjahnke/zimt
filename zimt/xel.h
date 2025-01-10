@@ -49,8 +49,8 @@
 // subsequent incarnations use the established definitions whose
 // repeated definition is prevented by the sentinel.
 
-#ifndef ZIMT_XEL_T_H
-#define ZIMT_XEL_T_H
+#ifndef ZIMT_XEL_H
+#define ZIMT_XEL_H
 
 #include <cmath>
 #include <limits>
@@ -72,9 +72,19 @@ struct xel_t ;
 
 // all xel data are deemed integral if their value_type is.
 
-template < typename T , size_t N >
+  // template < typename T >
+  // struct is_integral
+  // : public std::is_integral < T >
+  // { } ;
+
+template < typename T >
+struct is_integral
+: public std::is_integral < T >
+{ } ;
+
+template < typename T , std::size_t N >
 struct is_integral < xel_t < T , N > >
-: public is_integral < T >
+: public std::is_integral < T >
 { } ;
 
 // 'form' is a traits class used to abstract from the concrete
@@ -633,6 +643,12 @@ void scatter ( ET < value_type > * p_trg ,
   }
 }
 
+template < typename = std::enable_if < ( nch == 1 ) > >
+operator value_type()
+{
+  return (*this)[0] ;
+}
+
 } ; // end of struct xel_t
 
 template < typename T , std::size_t D >
@@ -654,5 +670,5 @@ T norm ( const zimt::xel_t < T , D > & v )
 
 #undef XEL
 
-#endif // #define ZIMT_XEL_T_H
+#endif // sentinel
 

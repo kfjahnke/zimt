@@ -140,7 +140,7 @@ struct simd_traits
   template < size_t sz > using type =
     typename std::conditional < sz == 1 ,
                                 T ,
-                                ZIMT_ENV::gen_simd_type < T , sz >
+                                zimt::gen_simd_type < T , sz >
                               > :: type ;
 
   static const size_t hsize = 0 ;

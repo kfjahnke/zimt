@@ -1020,7 +1020,7 @@ public:
 
   ~tile_user_t()
   {
-    if ( set_marker != -1 )
+    if ( set_marker != crd_t(-1) )
     {
       clear_working_set() ;
     }
@@ -1049,7 +1049,7 @@ public:
       // So if it's *not* -1, it's from a previous row and
       // we release all tiles which are held in working_set
 
-      if ( set_marker != -1 )
+      if ( set_marker != crd_t(-1) )
       {
         clear_working_set() ;
       }

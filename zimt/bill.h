@@ -49,6 +49,7 @@
 /// arguments together in this class.
 
 #ifndef ZIMT_BILL_H
+#define ZIMT_BILL_H
 
 #include <vector>
 
@@ -193,5 +194,4 @@ xel_t < long , D > decode_bill_vector
 
 } ;
 
-#define ZIMT_BILL_H
 #endif
