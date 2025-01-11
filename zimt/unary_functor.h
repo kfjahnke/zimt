@@ -504,6 +504,20 @@ operator+ ( const T1 & t1 , const T2 & t2 )
   return chain ( t1 , t2 ) ;
 }
 
+// do_nothing does: nothing.
+
+template < typename T , std::size_t N , typename U , std::size_t M ,
+           std::size_t L = vector_traits < T > :: vsize >
+struct do_nothing
+: public unary_functor < zimt::xel_t < T , N > ,
+                         zimt::xel_t < U , M > ,
+                         L >
+{
+  template < typename I , typename O >
+  void eval ( const I & i , O & o , const std::size_t cap = 0 )
+  { }
+} ;
+
 /// class grok_type is a helper class wrapping a unary_functor
 /// so that it's type becomes opaque - a technique called 'type
 /// erasure', here applied to unary_functors with their specific
@@ -577,6 +591,8 @@ struct grok_type
   using base_type::dim_in ;
   using base_type::dim_out ;
 
+  using typename base_type::in_ele_type ;
+  using typename base_type::out_ele_type ;
   using typename base_type::in_type ;
   using typename base_type::out_type ;
   using typename base_type::in_v ;
@@ -616,10 +632,14 @@ public:
 
   /// we provide a default constructor so we can create an empty
   /// grok_type and assign to it later. Calling the empty grok_type's
-  /// eval will result in an exception, but we want this to set up
-  /// things like arrays of grok_type.
+  /// eval will have no effect (we're using a 'do_nothing' object as
+  /// grokkee) - we need to have a grokkee, or else we can't create
+  /// copies of the empty grok_type
 
-  grok_type() { } ;
+  grok_type()
+  : grok_t ( do_nothing < in_ele_type , dim_in ,
+                          out_ele_type , dim_out , _vsize >() )
+  { } ;
   
   /// constructor from 'grokkee' using lambda expressions
   /// to initialize the std::functions above. we enable this if
