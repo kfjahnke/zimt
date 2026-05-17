@@ -20,7 +20,7 @@ What I really wanted was a method to achieve the dispatch without massive intrus
 
 ## How Does highway Do It?
 
-highway's internal dispatching code is much more sophisticated than one might see at a brief glance. There are several components which work hand in hand, and each of them saves a lot of work. This puts it beyond most SIMD library approaches, which simply offer to create a specific bit of binary for a given target ISA.´
+highway's internal dispatching code is much more sophisticated than one might see at a brief glance. There are several components which work hand in hand, and each of them saves a lot of work. This puts it beyond most SIMD library approaches, which simply offer to create a specific bit of binary for a given target ISA.
 
 The first step is CPU detection. While the CPU family (like x86, ARM, RISC-V) is detected and fixed at compile time, highway can figure out *at runtime* which specific SIMD ISA is available! This is the foundation of successful dispatch, and highway does it reliably.
 
