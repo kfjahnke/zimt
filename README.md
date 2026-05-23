@@ -1,8 +1,8 @@
-# zimt - C++11 template library to process n-dimensional arrays with multi-threaded SIMD code
+# zimt - C++17 template library to process n-dimensional arrays with multi-threaded SIMD code
 
 Zimt is the German word for cinnamon, and it sounds vaguely like SIMD. It should imply something spicy and yummy, and apart from the silly pun there is no deeper meaning.
 
-The code is still evolving, but approaching a first release. Because it's in large parts from an extant library which has seen years of development, the original code was already at a reasonably good level, but I made quite a few design changes.
+The code is still evolving, but the core is stable and in production use. Because it's in large parts from an extant library which has seen years of development, the original code was already at a reasonably good level, but I made quite a few design changes.
 
 The code in this library is based on code from my library [vspline](https://bitbucket.org/kfj/vspline/ "git repository of the vspline library"). I found that the tools I developed there to process n-dimensional arrays with multi-threaded SIMD code would be useful outside of a b-spline library's context, and that I might be better off letting go of the dependency on the [vigra](http://ukoethe.github.io/vigra/ "The VIGRA Computer Vision Library") library, which I use in vspline for data handling and small aggregates.
 
@@ -14,7 +14,7 @@ Installation is simple: soft-link the folder containing the zimt headers to a lo
 
     sudo ln -s path-to-source/zimt/zimt /usr/local/include
 
-Where "path-to-source" is the parent folder of the clone of the zimt repo. With this 'installation' the examples will compile out-of-the-box. If you don't like linking stuff into your /usr/local, you'll have to tell the compiler where the zimt headers are, e.g. with a -I command line argument.
+Where "path-to-source" is the parent folder of the clone of the zimt repo. With this 'installation' the examples will compile out-of-the-box. If you don't like linking stuff into your /usr/local, you'll have to tell the compiler where the zimt headers are, e.g. with a -I command line argument. Where I use zimt myself, I tend to copy the set of zimt headers I need into the project's code base and include the relative path.
 
 The top-level header is called "zimt.h", it includes all of zimt except the code for using tiled storage.
 
