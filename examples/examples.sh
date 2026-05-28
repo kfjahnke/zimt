@@ -2,7 +2,7 @@
 
 # compile examples
 
-# usage: ./compile_examples *.cc
+# usage: ./examples.sh *.cc
 
 # pass all examples you wish to compile on the command line. Some of
 # the examples link to shared libraries, and building them will fail
@@ -57,7 +57,7 @@ do
     echo "will link $basename with $link_libs"
   fi
 
-  for compiler in clang++ g++
+  for compiler in g++ clang++
   do
 
     # for most compilations

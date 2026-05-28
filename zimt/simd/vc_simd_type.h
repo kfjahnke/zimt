@@ -573,10 +573,17 @@ struct vc_simd_type
   BROADCAST_STD_FUNC(sin)
   BROADCAST_STD_FUNC(cos)
   BROADCAST_STD_FUNC(asin)
-  BROADCAST_STD_FUNC(acos)
+  // BROADCAST_STD_FUNC(acos)
   BROADCAST_STD_FUNC(atan)
 
   #undef BROADCAST_STD_FUNC
+
+  // Vc doesn't offer acos(), but this is easy:
+
+  friend vc_simd_type acos ( const vc_simd_type & arg )
+  {
+    return M_PI_2 - asin ( arg ) ;
+  }
 
   // Vc doesn't offer tan(), but it has sincos.
 
@@ -608,6 +615,18 @@ struct vc_simd_type
   BROADCAST_STD_FUNC2(max)
 
   #undef BROADCAST_STD_FUNC2
+
+  #define BROADCAST_STD_FUNC3(FUNC) \
+    friend vc_simd_type FUNC ( const vc_simd_type & arg1 , \
+                               const vc_simd_type & arg2 , \
+                               const vc_simd_type & arg3 ) \
+    { \
+      return FUNC ( arg1.to_base() , arg2.to_base() , arg3.to_base() ) ; \
+    }
+
+  BROADCAST_STD_FUNC3(fma)
+
+  #undef BROADCAST_STD_FUNC3
 
   // Vc has no pow() function
 
@@ -1013,6 +1032,83 @@ namespace zimt
   struct is_integral < ZIMT_ENV::vc_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
+// range mapping for simd_t. We use a functor, most of the variables
+// we need are precomputed. The intended use scenario is to run the
+// same scale/shift/clamp operation on many simd_t. If the size
+// of the ranges differes vastly, the mapping may lose precision
+// towards the upper end, but the clamping makes sure we never
+// produce results outside the target interval. So this is the
+// fast method.
+
+template < typename T , std::size_t vsz >
+struct fast_range_map_t < ZIMT_ENV::vc_simd_type  < T , vsz >  >
+{
+  typedef ZIMT_ENV::vc_simd_type < T , vsz > v_t ;
+
+  const v_t m , a , b , c , d ;
+
+  fast_range_map_t ( double src_lo , double src_hi ,
+                     double trg_lo , double trg_hi )
+  : a ( src_lo ) ,
+    b ( src_hi ) ,
+    c ( trg_lo ) ,
+    d ( trg_hi ) ,
+    m ( ( trg_hi - trg_lo ) / ( src_hi - src_lo ) )
+  { }
+
+  // Precompute	m=(d−c)/(b−a)
+  // Compute	v=fma(u−a,m,c)
+  // Secure	v=clamp(v,c,d)
+
+  void eval ( const v_t & in , v_t & out )
+  {
+    auto x = fma ( in - a , m , c ) ;
+    out = x.clamp ( c , d ) ;
+  }
+
+  v_t operator() ( const v_t & in )
+  {
+    v_t out ;
+    eval ( in, out ) ;
+    return out ;
+  }
+} ;
+
+template < typename T , std::size_t vsz >
+struct precise_range_map_t < ZIMT_ENV::vc_simd_type  < T , vsz >  >
+{
+  typedef ZIMT_ENV::vc_simd_type < T , vsz > v_t ;
+
+  const v_t a , b , c , d , w_src ;
+
+  precise_range_map_t ( double src_lo , double src_hi ,
+                        double trg_lo , double trg_hi )
+  : a ( src_lo ) ,
+    b ( src_hi ) ,
+    c ( trg_lo ) ,
+    d ( trg_hi ) ,
+    w_src ( src_hi - src_lo )
+  { }
+
+  void eval ( const v_t & in , v_t & out )
+  {
+    auto x = ( in - a ) / w_src ;
+    // x = ( 1 - x ) * c + x * d ;
+    // x =   c - c * x + x * d
+    // x = - c * x + c + x * d
+    // x = x * d + ( - c * x + c )
+    x = fma ( x , d , fma ( -c , x , c ) ) ;
+    out = x.clamp ( c , d ) ;
+  }
+
+  v_t operator() ( const v_t & in )
+  {
+    v_t out ;
+    eval ( in, out ) ;
+    return out ;
+  }
+} ;
+
 } ;
 
 #endif // sentinel

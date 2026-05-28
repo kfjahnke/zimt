@@ -141,6 +141,7 @@ struct mci_t
 
   index_type operator[] ( long i )
   {
+    assert ( shape.prod() > 0 ) ;
     index_type result ;
 
     for ( std::size_t d = 0 ; d < dimension ; d++ )
@@ -264,11 +265,32 @@ struct view_t
 
   // compact checks whether the view refers to a contiguous chunk
   // of memory in 'canonical' order, like a view which refers to
-  // an array created with a given shape.
+  // an array created with a given shape - or such a chunk with
+  // the same set of strides in a different order, which is also
+  // compact.
 
   bool compact() const
   {
-    return ( strides == make_strides ( shape ) ) ;
+    auto norm_strides = make_strides ( shape ) ;
+    if ( strides == norm_strides )
+      return true ;
+    for ( std::size_t d1 = 0 ; d1 < dimension ; d1++ )
+    {
+      bool found = false ;
+      for ( std::size_t d2 = 0 ; d2 < dimension ; d2++ )
+      {
+        if ( strides [ d1 ] == norm_strides [ d2 ] )
+        {
+          found = true ;
+          break ;
+        }
+      }
+      if ( ! found )
+      {
+        return false ;
+      }
+    }
+    return true ;
   }
 
   // This c'tor creates a new view from the given arguments.
@@ -323,7 +345,7 @@ struct view_t
   { }
 
   // copy assignment used to be forbidden, but with the switch to
-  // mutabel shape and strides copy assignment is now also allowed.
+  // mutable shape and strides copy assignment is now also allowed.
 
   view_t & operator= ( const view_t & rhs ) = default ;
 
@@ -514,7 +536,7 @@ private:
   // contiguous im memory.
 
   void _copy_data ( const view_t & rhs ,
-                    std::false_type , // may not use memcpy
+                    std::false_type , // may not use memmove
                     std::true_type )  // data are 1D
   {
     // Always uses a loop with individual assignments.
@@ -524,15 +546,15 @@ private:
   }
 
   void _copy_data ( const view_t & rhs ,
-                    std::true_type , // may use memcpy
+                    std::true_type , // may use memmove
                     std::true_type ) // data are 1D
   {
-    // If the data are unstrided, delegate to memcpy. Otherwise,
+    // If the data are unstrided, delegate to memmove. Otherwise,
     // use the loop version (above).
 
     if ( strides[0] == 1 && rhs.strides[0] == 1 )
     {
-      memcpy ( origin , rhs.origin , sizeof ( value_type ) * shape[0] ) ;
+      memmove ( origin , rhs.origin , sizeof ( value_type ) * shape[0] ) ;
     }
     else
     {
@@ -542,11 +564,11 @@ private:
 
   // the nD overload of copy_data looks at the strides of the
   // arrays, and if they indicate that both views are 'compact'
-  // it uses a straight memcpy if the data allow it.
+  // it uses a straight memmove if the data allow it.
 
   void _copy_data ( const view_t & rhs ,
-                    std::false_type , // may not use memcpy
-                    std::false_type ) // dta are > 1D
+                    std::false_type , // may not use memmove
+                    std::false_type ) // data are > 1D
   {
     // for all slices 'along' the last dimension, invoke copy_data
 
@@ -559,10 +581,10 @@ private:
   }
 
   void _copy_data ( const view_t & rhs ,
-                    std::true_type ,  // may use memcpy
+                    std::true_type ,  // may use memmove
                     std::false_type ) // data are > 1D
   {
-    // to check whether we can use a straight memcpy, we need to
+    // to check whether we can use a straight memmove, we need to
     // make sure both views are 'compact'. Their size must agree,
     // because their shape is the same - this is checked in the
     // public overload.
@@ -571,10 +593,10 @@ private:
 
     if ( compatible )
     {
-      // std::cout << "compatible for memcpy" << std::endl ;
+      // std::cout << "compatible for memmove" << std::endl ;
 
-      memcpy ( origin , rhs.origin ,
-               sizeof ( value_type ) * shape.prod() ) ;
+      memmove ( origin , rhs.origin ,
+                sizeof ( value_type ) * shape.prod() ) ;
     }
     else
     {
@@ -621,7 +643,7 @@ private:
 public:
 
   // public overloads of copy_data and set_data, deciding whether
-  // the operation is 1D or nD, and whether memcpy may be used.
+  // the operation is 1D or nD, and whether memmove may be used.
 
   void copy_data ( const view_t & rhs )
   {

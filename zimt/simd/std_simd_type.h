@@ -822,6 +822,84 @@ namespace zimt
   struct is_integral < ZIMT_ENV::std_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
+
+// range mapping for simd_t. We use a functor, most of the variables
+// we need are precomputed. The intended use scenario is to run the
+// same scale/shift/clamp operation on many simd_t. If the size
+// of the ranges differes vastly, the mapping may lose precision
+// towards the upper end, but the clamping makes sure we never
+// produce results outside the target interval. So this is the
+// fast method.
+
+template < typename T , std::size_t vsz >
+struct fast_range_map_t < ZIMT_ENV::std_simd_type  < T , vsz >  >
+{
+  typedef ZIMT_ENV::std_simd_type < T , vsz > v_t ;
+
+  const v_t m , a , b , c , d ;
+
+  fast_range_map_t ( double src_lo , double src_hi ,
+                     double trg_lo , double trg_hi )
+  : a ( src_lo ) ,
+    b ( src_hi ) ,
+    c ( trg_lo ) ,
+    d ( trg_hi ) ,
+    m ( ( trg_hi - trg_lo ) / ( src_hi - src_lo ) )
+  { }
+
+  // Precompute	m=(d−c)/(b−a)
+  // Compute	v=fma(u−a,m,c)
+  // Secure	v=clamp(v,c,d)
+
+  void eval ( const v_t & in , v_t & out )
+  {
+    auto x = fma ( in - a , m , c ) ;
+    out = x.clamp ( c , d ) ;
+  }
+
+  v_t operator() ( const v_t & in )
+  {
+    v_t out ;
+    eval ( in, out ) ;
+    return out ;
+  }
+} ;
+
+template < typename T , std::size_t vsz >
+struct precise_range_map_t < ZIMT_ENV::std_simd_type  < T , vsz >  >
+{
+  typedef ZIMT_ENV::std_simd_type < T , vsz > v_t ;
+
+  const v_t a , b , c , d , w_src ;
+
+  precise_range_map_t ( double src_lo , double src_hi ,
+                        double trg_lo , double trg_hi )
+  : a ( src_lo ) ,
+    b ( src_hi ) ,
+    c ( trg_lo ) ,
+    d ( trg_hi ) ,
+    w_src ( src_hi - src_lo )
+  { }
+
+  void eval ( const v_t & in , v_t & out )
+  {
+    auto x = ( in - a ) / w_src ;
+    // x = ( 1 - x ) * c + x * d ;
+    // x =   c - c * x + x * d
+    // x = - c * x + c + x * d
+    // x = x * d + ( - c * x + c )
+    x = fma ( x , d , fma ( -c , x , c ) ) ;
+    out = x.clamp ( c , d ) ;
+  }
+
+  v_t operator() ( const v_t & in )
+  {
+    v_t out ;
+    eval ( in, out ) ;
+    return out ;
+  }
+} ;
+
 } ;
 
 #endif // sentinel

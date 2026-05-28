@@ -152,6 +152,36 @@ BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 template < size_t _vsize >
 struct unary_functor_tag { } ;
 
+// sometimes we need to determine whether a unary functor has
+// a capped eval overload. This construct is quite a mouthful and
+// requires c++17, but it has pleasantly wide scope. It's used in
+// uf_adapter and vs_adpater, see there. Most unary functors do
+// not need a capped eval overload: it's only needed for reductions.
+
+template < typename UF , typename = std::void_t<> >
+struct test_capped_eval
+: std::false_type
+{ } ;
+
+// Specialization that matches only if the 3-argument call is valid:
+
+template< typename UF >
+struct test_capped_eval
+< UF ,
+  std::void_t
+  < decltype
+    ( std::declval < UF & > () . eval
+      (
+        std::declval< const typename UF::in_v & >(),
+        std::declval< typename UF::out_v & >(),
+        std::declval< std::size_t >()
+      )
+    )
+  >
+>
+: std::true_type
+{ } ;
+
 /// class unary_functor provides a functor base class which offers a
 /// system of types for concrete unary functors derived from it.
 /// If vectorization isn't used, this is trivial, but with
@@ -180,8 +210,6 @@ template < typename IN ,       // argument or input type
 struct unary_functor
 : public unary_functor_tag < _vsize >
 {
-  static const bool has_capped_eval = false ;
-
   // number of fundamentals in simdized data.
 
   static const std::size_t vsize = _vsize ;
@@ -316,6 +344,12 @@ struct vs_adapter
   : inner_type ( _inner )
   { } ;
 
+  // we're also passing through the inner type's eval function(s).
+  // what we're aiming at is not to enforce the signature of 'eval'
+  // below, but to provide it if inner_type doesn't.
+
+  using inner_type::eval ;
+
   void eval ( const in_v & in ,
                    out_v & out )
   {
@@ -338,30 +372,7 @@ struct vs_adapter
   // to handle the masked/capped vectors, and I much prefer to keep
   // the code as simple and straightforward as I can.
 
-  static const bool has_capped_eval = inner_type::has_capped_eval ;
-
-  void _eval ( std::true_type ,
-               const in_v & in ,
-                    out_v & out ,
-               const std::size_t & cap )
-  {
-    inner_type::eval
-      ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
-        reinterpret_cast < typename inner_type::out_v & > ( out ) ,
-        cap ) ;
-  }
-
-  void _eval ( std::false_type ,
-               const in_v & in ,
-                    out_v & out ,
-               const std::size_t & cap )
-  {
-    inner_type::eval
-      ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
-        reinterpret_cast < typename inner_type::out_v & > ( out ) ) ;
-  }
-
-public:
+  static const bool has_capped_eval = test_capped_eval < inner_type > () ;
 
   // the adapter's capped eval will invoke inner_type's capped eval
   // if it's present, and 'normal' uncapped eval otherwise.
@@ -370,8 +381,19 @@ public:
                    out_v & out ,
               const std::size_t & cap )
   {
-    _eval ( std::integral_constant < bool , has_capped_eval >() ,
-            in , out , cap ) ;
+    if constexpr ( has_capped_eval )
+    {
+      inner_type::eval
+        ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
+          reinterpret_cast < typename inner_type::out_v & > ( out ) ,
+          cap ) ;
+    }
+    else
+    {
+      inner_type::eval
+        ( reinterpret_cast < const typename inner_type::in_v & > ( in ) ,
+          reinterpret_cast < typename inner_type::out_v & > ( out ) ) ;
+    }
   }
 
 } ;
@@ -504,9 +526,12 @@ operator+ ( const T1 & t1 , const T2 & t2 )
   return chain ( t1 , t2 ) ;
 }
 
-// do_nothing does: nothing.
+// do_nothing does: nothing. Note that this leaves the output
+// in an undefined state, this functor really does nothing at all.
+// If you want to pass the input through to the output unchanged,
+// use a pass_through object instead!
 
-template < typename T , std::size_t N , typename U , std::size_t M ,
+template < typename T , std::size_t N , typename U = T , std::size_t M = N ,
            std::size_t L = vector_traits < T > :: vsize >
 struct do_nothing
 : public unary_functor < zimt::xel_t < T , N > ,
@@ -761,6 +786,173 @@ grok ( grokkee_type grokkee )
                            grokkee_type::vsize >
                   ( grokkee ) ;
 }
+
+// same, but for const grokkees
+
+template < typename IN ,       // argument or input type
+           typename OUT = IN , // result type
+           size_t _vsize = vector_traits < IN > :: size
+         >
+struct cgrok_type
+: private grok_t ,
+  public unary_functor < IN , OUT , _vsize >
+{
+  typedef unary_functor < IN , OUT , _vsize > base_type ;
+
+  using base_type::vsize ;
+  using base_type::dim_in ;
+  using base_type::dim_out ;
+
+  using typename base_type::in_ele_type ;
+  using typename base_type::out_ele_type ;
+  using typename base_type::in_type ;
+  using typename base_type::out_type ;
+  using typename base_type::in_v ;
+  using typename base_type::out_v ;
+
+private:
+
+  // 'inner workings' of cgrok_type, which we keep private
+
+  // define the types for the std::function we will use to
+  // wrap the grokkee's evaluation code in. First the eval
+  // function for full vectors:
+
+  typedef std::function
+    < void ( void * & , const in_v & , out_v & )
+    > v_eval_type ;
+
+  // capped evaluation has an additional 'cap' argument, giving the
+  // number of 'genuine' lanes, while the rest are duplicates of
+  // other lanes to provide valid input and full vectors. The 'cap'
+  // value is rarely relevant: only reductions depend on it for
+  // correct output, because they need to keepe the duplicated
+  // lanes used to fill up the vectors from entring their results.
+
+  typedef std::function
+    < void ( void * & , const in_v & , out_v & ,
+             const std::size_t & cap )
+    > c_eval_type ;
+
+  // these are the class members holding the std::functions:
+
+  v_eval_type _v_ev ;
+  c_eval_type _c_ev ;
+
+
+public:
+
+  /// we provide a default constructor so we can create an empty
+  /// cgrok_type and assign to it later. Calling the empty cgrok_type's
+  /// eval will have no effect (we're using a 'do_nothing' object as
+  /// grokkee) - we need to have a grokkee, or else we can't create
+  /// copies of the empty cgrok_type
+
+  cgrok_type()
+  : grok_t ( do_nothing < in_ele_type , dim_in ,
+                          out_ele_type , dim_out , _vsize >() )
+  { } ;
+  
+  /// constructor from 'grokkee' using lambda expressions
+  /// to initialize the std::functions above. we enable this if
+  /// grokkee_type is a unary_functor. We may relax the
+  /// requirement and accept anything that 'fits'.
+
+  template < class grokkee_type ,
+             typename std::enable_if
+              < std::is_base_of
+                < unary_functor_tag < vsize > ,
+                  grokkee_type
+                > :: value ,
+                int
+              > :: type = 0
+            >
+  cgrok_type ( grokkee_type grokkee )
+  : grok_t ( grokkee )
+  {
+    // use vs_adapter to create a functor with an uncapped and
+    // a capped eval function, even if 'grokkee_type' does not
+    // have a capped variant: in this case, the uncapped variant
+    // will be invoked and the cap value is ignored. Most of the
+    // time, 'act' functors don't need a separate 'capped' eval
+    // overload - the exception being reductions. With the code
+    // to route the call to the capped overload to the uncapped
+    // overload if the capped overload is missing, we gain ease
+    // of use, but we need to be aware of the fact that reductions
+    // must provide a capped overload.
+    // The 'context' is stored as a void pointer, and this void
+    // pointer, which will be distinct for every copy of the
+    // grokked functor, is passed to the lambdas when they are
+    // invoked. This ensures the individuality of each copy of
+    // a cgrok_type object, and at the same time it ensures that
+    // within a specific cgrok_type object, all member functions
+    // work with the same grokkee. If we were to put p_context
+    // 'into' the lambdas right here, all copies would instead
+    // refer to the same grokkee - the one we generate here.
+
+    typedef vs_adapter < grokkee_type > g_t ;
+
+    // now initialize the class members holding std::functions
+    // with lambdas taking first the context, then more arguments.
+    // This is how we delegate to the grokkee: the lambdas
+    // static_cast the context pointer to the grokkee's type
+    // (which is known in this contructor because the argument
+    // is typed so), and then they proceed to delegate the
+    // call to the grokkee. Replication and termination use
+    // the same pattern. Once the lambdas are stored in the
+    // std::functions _e_ev, _c_ev etc. the 'knowledge' of
+    // how to delegate is removed from view: the grokkee's type
+    // is no longer visible or accessible, hence the term 'type
+    // erasure'. Of course the *compiler* can still track what
+    // is going on, and if the grokkee's class definition is
+    // accessible during compilation of the grok, it can
+    // optimize it just as if the grokkee had been used
+    // instead, and there is no overhead. On the other hand,
+    // if the grokkee's class definition is elsewhere, the
+    // mechanism still works, but the context pointer and the
+    // delegation won't be optimized away during compilation.
+    // Even such constructs may be optimized away during
+    // run-time when the code is JITed or submitted to similar
+    // tuning mechanisms.
+
+    _v_ev = [] ( void * p_ctx , const in_v & in , out_v & out )
+            {
+              static_cast<const g_t*> ( p_ctx ) -> eval ( in , out ) ;
+            } ;
+
+    _c_ev = [] ( void * p_ctx , const in_v & in , out_v & out ,
+                 const std::size_t & cap )
+            {
+              static_cast<const g_t*> ( p_ctx ) -> eval ( in , out , cap ) ;
+            } ;
+  } ;
+
+  // the eval member functions pass the cgrok_type object's 'own'
+  // p_context to the lambdas which are captured in the members
+  // _v_ev etc., stored as std::functions.
+
+  // uncapped evaluation member function
+
+  void eval ( const in_v & i , out_v & o ) const
+  {
+    _v_ev ( p_context , i , o ) ;
+  }
+
+  void eval ( const in_type & i , out_type & o ) const
+  {
+    in_v iv ( i ) ;
+    out_v ov ;
+    eval ( iv , ov ) ;
+    o = ov[0] ;
+  }
+
+  // capped evaluation function template
+
+  void eval ( const in_v & i , out_v & o , const std::size_t & cap ) const
+  {
+    _c_ev ( p_context , i , o , cap ) ;
+  }
+} ;
 
 /// amplify_type amplifies it's input with a factor. If the data are
 /// multi-channel, the factor is multi-channel as well and the channels
@@ -1188,6 +1380,8 @@ public:
 template < typename W >
 struct uf_adapter
 {
+  typedef W inner_type ;
+
   // set up the type system zimt expects in a unary_functor
 
   static const int vsize = W::vsize ;
@@ -1240,6 +1434,8 @@ struct uf_adapter
   : inner ( _inner )
   { }
 
+  static const bool has_capped_eval = test_capped_eval < W > () ;
+
   // two eval overloads - we might look at the wrappee and only
   // produce the scalar variant if the wrappee contains one, but
   // for now - wrapping vspline code - the scalar variant is taken
@@ -1253,65 +1449,7 @@ struct uf_adapter
         reinterpret_cast < typename W::out_type & > ( out ) ) ;
   }
 
-// private:
-
-  // // To detect if a unary functor has a capped eval overload, I use code
-  // // adapted from from Valentin Milea's anser to
-  // // https://stackoverflow.com/questions/87372/check-if-a-class-has-a-member-function-of-a-given-signature
-  // // when providing a capped eval overload of your eval function, please
-  // // note that it will only be recognized if one of the three signatures
-  // // tested below is matched precisely. Providing a template which would
-  // // match the signature does *not* work.
-  //
-  // template < class C >
-  // class has_capped_eval_t
-  // {
-  //     typedef typename C::in_v in_v ;
-  //     typedef typename C::out_v out_v ;
-  //
-  //     // we allow the cap to be passed as const&, &, and by value,
-  //     // the remainder of the signature is 'as usual'
-  //
-  //     template < class T , class cap_t >
-  //     static std::true_type testSignature
-  //       (void (T::*)(const in_v&, out_v&, const cap_t&));
-  //
-  //     template < class T , class cap_t >
-  //     static std::true_type testSignature
-  //       (void (T::*)(const in_v&, out_v&, cap_t&));
-  //
-  //     template < class T , class cap_t >
-  //     static std::true_type testSignature
-  //       (void (T::*)(const in_v&, out_v&, cap_t));
-  //
-  //     template <class T>
-  //     static decltype(testSignature(&T::eval)) test(std::nullptr_t);
-  //
-  //     template <class T>
-  //     static std::false_type test(...);
-  //
-  // public:
-  //     using type = decltype(test<C>(nullptr));
-  //     static const bool value = type::value;
-  // };
-  //
-  // does inner_type have a capped eval function? If so, the adapter
-  // will dispatch to it, otherwise it will call eval without cap.
-  // Most of the time, inner_type won't have a capped variant - this
-  // is only useful for reductions, all evaluations inside the
-  // wiedling code are coded so that all vectors passed to eval are
-  // padded if necessary and therefore 'technically' full and safe
-  // to process. The cap is only a hint that some of the lanes were
-  // generated by padding wih the last 'genuine' lane, but a reduction
-  // needs to be aware of the fact and ignore the lanes filled with
-  // padding. An alternative to this method would be the use of
-  // masked code, but this would require additional coding effort
-  // to handle the masked/capped vectors, and I much prefer to keep
-  // the code as simple and straightforward as I can.
-
-  typedef W inner_type ;
-
-  static const bool has_capped_eval = inner_type::has_capped_eval ;
+private:
 
   void _eval ( std::true_type ,
                const in_v & in ,

@@ -115,12 +115,6 @@ struct amp13_t
 template < typename dtype > struct sum_up
 : public zimt::unary_functor < dtype , dtype >
 {
-  // we need to set this flag to communicate the presence
-  // of a capped eval overload - the test for it's presence
-  // which I used doesn't really work for me.
-
-  static const bool has_capped_eval = true ;
-
   typedef zimt::unary_functor < dtype > base_type ;
   using typename base_type::in_type ;
   using typename base_type::in_v ;
@@ -167,7 +161,7 @@ template < typename dtype > struct sum_up
   }
 
   // because we're performing a reduction, we need a destructor:
-  // The values cumulated in the tread-local copy of this functor
+  // The values cumulated in the thread-local copy of this functor
   // have to be communicated to the pooled result in 'collector'.
 
   ~sum_up()
@@ -182,17 +176,12 @@ template < typename dtype > struct sum_up
 template < typename T , std::size_t N > struct sum_up_fcpy
 : public zimt::unary_functor < zimt::xel_t < T , N > >
 {
-  // we need to set this flag to communicate the presence
-  // of a capped eval overload - the test for it's presence
-  // which I used doesn't really work for me.
-
-  static const bool has_capped_eval = true ;
-
   typedef zimt::xel_t < T , N > dtype ;
 
   typedef zimt::unary_functor < dtype > base_type ;
   using typename base_type::in_type ;
   using typename base_type::in_v ;
+  using typename base_type::out_v ;
   using base_type::vsize ;
 
   // reference to a thread-safe function which will serve to
@@ -238,8 +227,8 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   // to get a correct result.
 
   void eval ( const in_v & v ,
-              in_v &  ,
-              std::size_t cap )
+              out_v &  ,
+              const std::size_t & cap )
   {
     for ( int ch = 0 ; ch < N ; ch++ )
     {
@@ -249,7 +238,7 @@ template < typename T , std::size_t N > struct sum_up_fcpy
   }
 
   void eval ( const in_v & v ,
-              in_v & )
+              out_v & )
   {
     for ( int ch = 0 ; ch < N ; ch++ )
       score [ ch ] += v [ ch ] . sum () ;
@@ -420,14 +409,23 @@ void test ( zimt::bill_t bill )
 
   assert ( collector.load() == long ( 2 * a3l.shape.prod() ) ) ;
 
-  // reduction which sums up multichannel data, adding 'personal
-  // scores' to the final reduction target with a 'yield' function.
+  // reduction which sums up multichannel data, adding per-thread
+  // scores to the final reduction target with a 'yield' function.
   // The reduction code is multithreaded, and each thread 'scores'
   // to it's own copy of the 'reductor'. When the thread is done,
   // the reductor is destructed, and the d'tor calls 'yield' to
-  // add the 'individual score' to the total score. copies of the
+  // add the per-thread score to the total score. copies of the
   // 'reductor' which were never used to perform an 'eval' will
   // also yield to 'collect', but their contribution will be zero.
+  // The two-stage approach of reduction peforms well: while the
+  // bulk of thedata is processed, each thread works independently
+  // and there is no need for synchronization - except for the
+  // synchronization determining which data packages which thread
+  // gets to process - but that is part of the wielding code, so
+  // it's boilerplate and doesn't need extra coding effort. Only
+  // when the per-thread results are combined into the final result
+  // some synchronization is needed - above, we were using an atomic,
+  // here, we use a mutex-protected function.
 
   // infrastructure to allow thread-safe access to 'collect'. If
   // ZIMT_SINGLETHREAD is defined, the mutex protection becomes
@@ -438,11 +436,17 @@ void test ( zimt::bill_t bill )
 #ifndef ZIMT_SINGLETHREAD
   std::mutex m ;
 #endif
-  f3_t collect ( 0 ) ;
 
-  // lambda used to 'yield' the personal score to 'collect'
+  typedef zimt::xel_t < int , 3 > i3_t ;
 
-  auto yield = [&] ( const f3_t & v )
+  // this is the variable which will contain the final result:
+
+  i3_t collect ( { 0 , 0 , 0 } ) ;
+  i3_t factor ( { 1 , 2 , 3 } ) ;
+
+  // lambda used to 'yield' the per-thread score to 'collect'
+
+  auto yield = [&] ( const i3_t & v )
   {
 #ifndef ZIMT_SINGLETHREAD
     std::lock_guard < std::mutex > lk ( m ) ;
@@ -450,11 +454,11 @@ void test ( zimt::bill_t bill )
     collect += v ;
   } ;
 
-  // odd-shaped array of long as input, initialized to {2.0, 2.0, 2.0}
+  // odd-shaped array of int as input, initialized to { 1, 2, 3 }
 
-  zimt::array_t < 3 , f3_t > a3f3 ( { 17 , 5 , 31 } ) ;
-  a3f3.set_data ( 2 ) ;
-  sum_up_fcpy < float , 3 > clf ( yield ) ;
+  zimt::array_t < 3 , i3_t > a3f3 ( { 17 , 5 , 31 } ) ;
+  a3f3.set_data ( factor ) ;
+  sum_up_fcpy < int , 3 > clf ( yield ) ;
 
   // pass sink functor and array to 'apply' - sum_up_fcpy has built-in
   // reduction code, the array won't be affected.
@@ -465,7 +469,8 @@ void test ( zimt::bill_t bill )
 
   // check up on the result, again we know the outcome:
 
-  f3_t expected ( 2.0 * a3f3.shape.prod() ) ;
+  i3_t expected ( a3f3.shape.prod() * factor ) ;
+
   assert ( collect == expected ) ;
 }
 

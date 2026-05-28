@@ -66,7 +66,7 @@ BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 // common data acquisition strategies, and to serve as templates
 // for your own creations. Note how all of these classes use the
 // same set of template arguments (even if at times not all of
-// them are actually used - this is for syntactic uniformity.
+// them are actually used) - this is for syntactic uniformity.
 /// class get_crd is an implementation of a 'get_t' class which the
 /// rolling-out code uses to produce input values to the functor 'act'.
 /// This specific class provides discrete nD coordinates. The c'tor
@@ -88,7 +88,7 @@ struct get_crd
 
   // get_crd's c'tor receives the processing axis
 
-  get_crd ( const zimt::bill_t & bill )
+  get_crd ( const zimt::bill_t & bill = zimt::bill_t() )
   : d ( bill.axis )
   { }
 
@@ -204,7 +204,7 @@ struct loader
   // 'hot' axis. It extracts the strides from the source view.
 
   loader ( const zimt::view_t < D , value_t > & _src ,
-           const zimt::bill_t & bill )
+           const zimt::bill_t & bill = zimt::bill_t() )
   : src ( _src ) ,
     d ( bill.axis ) ,
     stride ( _src.strides [ bill.axis ] )
@@ -216,7 +216,7 @@ struct loader
 
   template < typename = std::enable_if < N == 1 > >
   loader ( const zimt::view_t < D , T > & _src ,
-           const zimt::bill_t & bill  )
+           const zimt::bill_t & bill = zimt::bill_t() )
   : src ( reinterpret_cast
            < const zimt::view_t < D , value_t > & > ( _src ) ) ,
     d ( bill.axis ) ,
@@ -825,7 +825,7 @@ struct gridspace_t
   // start is a single N-dimensional value, whereas step has one
   // value for the increase for a step in each of the canonical
   // directions. This way, it can produce grids which are not
-  // perpendicular to the cononical directions.
+  // perpendicular to the canonical directions.
 
   gridspace_t ( const value_t & _start ,
                 const std::array < value_t , D > & _step ,
@@ -934,7 +934,7 @@ struct no_input
 // do still use the 'grokked' object, but it's type is hidden from
 // view - it's been 'erased'.
 // For a get_t, we need an object providing two init and two increase
-// overloads - both for the 'normal' and the capped variants if init
+// overloads - both for the 'normal' and the capped variants of init
 // and increase. Here's the class definition - it's quite a mouthful,
 // but further down there's a factory function to perform the 'grok'
 // which uses ATD, making the process simple.
@@ -1064,6 +1064,58 @@ grok_get_t < T , N , D , L > grok_get
   return grok_get_t < T , N , D , L > ( grokkee ) ;
 }
 
+// 'suffixed' is a composite of a get_t and an act-like functor
+// post-processing the output of the get_t. The resulting object
+// behaves as a get_t.
+
+template < typename T ,     // fundamental type
+           std::size_t N ,  // channel count
+           std::size_t D ,  // dimensions
+           std::size_t L >  // lane count
+struct suffixed_t
+{
+  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef simdized_type < value_t , L > value_v ;
+
+  grok_get_t < T , N , D , L > head ;
+  grok_type < value_t , value_t , L > tail ;
+
+  suffixed_t ( const grok_get_t < T , N , D , L > & _head ,
+               const grok_type < value_t , value_t , L > & _tail )
+  : head ( _head ) ,
+    tail ( _tail )
+  { }
+
+  void init ( value_v & trg , const crd_t & crd )
+  {
+    head.init ( trg , crd ) ;
+    tail.eval ( trg , trg ) ;
+  }
+
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              const std::size_t & cap )
+  {
+    head.init ( trg , crd , cap ) ;
+    tail.eval ( trg , trg ) ;
+  }
+
+  void increase ( value_v & trg )
+  {
+    head.increase ( trg ) ;
+    tail.eval ( trg , trg ) ;
+  }
+
+  void increase ( value_v & trg ,
+                  const std::size_t & cap ,
+                  const bool & _stuff = true )
+  {
+    head.increase ( trg , cap , _stuff ) ;
+    tail.eval ( trg , trg ) ;
+  }
+} ;
+
 // overload which takes grokkee type with different type signature.
 // to use this overload, you'll have to pass template arguments
 // T, N, D and L.
@@ -1077,6 +1129,211 @@ grok_get_t < T , N , D , L > grok_get ( G grokkee )
 {
   return grok_get_t < T , N , D , L > ( grokkee ) ;
 }
+
+// fusion_t is used to form a synopsis of the values produced by
+// several get_t objects. The get_t objects are passed to fusion_t's
+// c'tor as a std::vector of grok_get_t, so the get_t objects which are
+// put to use can be of different types, but their argument types have
+// to agree, so that they can be held by the same type of grok_get_t.
+// fusion_t itself acts as a get_t. All of it's member functions
+// invoke the grok_get_t's corresponding member functions, and the
+// results are stored in a std::vector of the grok_get_t's result type
+// (a simdized datum, here called 'partial_v'). Once all the grok_get_t
+// have been invoked and src_v - the std::vector of partial_v - is filled,
+// the 'synopsis' callback is called. It receives a const& to src_v,
+// and a reference to the final result of the fusion_t's operation -
+// the datum which is passed on to the 'act' functor in the zimt::process
+// invocation. The synopsis callback handles the reduction from the set
+// of results of the 'inner' grok_get_t objects into the 'outer' result.
+// An example: if the grok_get_t objects in 'get_v' produce coordinates,
+// the synopsis function might have a set of interpolators to produce
+// pixel values from coordinates. It might feed each interpolator with
+// a corresponding coordinate and form a weighted sum of the results,
+// which it writes to the final result - the synopsis. This is received
+// by the act functor and processing continues as usual. An alternative
+// modus operandi for the synopsis function would be a 'winner takes all'
+// scheme, where the synopsis function picks the 'best' one from the
+// set of values produced by the grok_get_t and only evaluates the
+// single corresponding interpolator to produce a pixel output.
+// Note how - in this example of fusing interpolated values - the value_v
+// held in zimt::process is not of the type of the coordinates (that's
+// partial_t/partial_v) but instead value_t/value_v which is the result
+// of the synopsis function, so when this is part of a pixel pipeline,
+// the act functor in zimt::process needs to be set up to accept a
+// pixel value rather than a coordinate value - it may be sufficient to
+// use a pass_through, if the pixel is already 'ready' at this stage.
+// The SYN-type object is the synopsis-formin agent. Initially I coded
+// this functionality as a callback function, but I think its' better
+// to set this up as part of this object. The SYN-type object must
+// provide operator() overloads for each type of partial_v which it
+// can handle, with this signature:
+// void operator() ( const std::vector < partial_v > & ,
+//                   value_v & trg ,
+//                   const std::size_t & )
+
+template < typename T ,     // fundamental type of result (value_t)
+           std::size_t N ,  // channel count of result
+           std::size_t D ,  // dimensions
+           std::size_t L ,  // lane count
+           typename U ,     // fundamental type of partial_t
+           std::size_t M ,  // channel count of partial_t
+           typename SYN >   // class of synopsis-forming object
+struct fusion_t
+{
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef simdized_type < value_t , L > value_v ;
+  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < U , M > partial_t ;
+  typedef simdized_type < partial_t , L > partial_v ;
+  typedef grok_get_t < U , M , D , L > gg_t ;
+  SYN synopsis ;
+
+  std::vector < gg_t > get_v ;
+  std::vector < partial_v > src_v ;
+  const std::size_t sz ;
+
+  fusion_t ( const std::vector < gg_t > & _get_v ,
+             const SYN & _synopsis )
+  : src_v ( _get_v.size() ) ,
+    get_v ( _get_v ) ,
+    sz ( _get_v.size() ) ,
+    synopsis ( _synopsis )
+  { }
+
+  void init ( value_v & trg , const crd_t & crd )
+  {
+    for ( std::size_t i = 0 ; i < sz ; i++ )
+    {
+      get_v[i].init ( src_v[i] , crd ) ;
+    }
+    synopsis ( src_v , trg , L ) ;
+  }
+
+  void init ( value_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
+  {
+    for ( std::size_t i = 0 ; i < sz ; i++ )
+    {
+      get_v[i].init ( src_v[i] , crd , cap ) ;
+    }
+    synopsis ( src_v , trg , cap ) ;
+  }
+
+  void increase ( value_v & trg )
+  {
+    for ( std::size_t i = 0 ; i < sz ; i++ )
+    {
+      get_v[i].increase ( src_v[i] ) ;
+    }
+    synopsis ( src_v , trg , L ) ;
+  }
+
+  void increase ( value_v & trg ,
+                  std::size_t cap ,
+                  bool _stuff = true )
+  {
+    for ( std::size_t i = 0 ; i < sz ; i++ )
+    {
+      get_v[i].increase ( src_v[i] , cap , _stuff ) ;
+    }
+    synopsis ( src_v , trg , cap ) ;
+  }
+} ;
+
+// class zip_t 'harnesses' two get_t in sync to produce their
+// respective results. These results are passed to the synopsis
+// functor, which in turn produces a result which constitutes
+// the output of the zip_t object. Thy synopsis functor only
+// needs to provide a single (vector) function - a specific
+// type is not enforced, and a good choice is a lambda. An
+// alternative would be to use a std::function which would
+// allow for more restrictive parameterization.
+// The first four template arguments are 'standard fare',
+// followed by the synopsis object's type (use decltype to
+// specify a lambda's type). The remaining template arguments
+// fix fundamental type and channel count of the second get_t
+// and result, in case they differ.
+// Note that the SYN object should provide a call signature
+// with a trailing 'cap' argument with a default value, like:
+//   auto syn = [] ( const x_v & v1 , const y_v & v2 ,
+//                   z_v & v3 , std::size_t cap = LANES )
+
+template < typename T1 ,    // fundamental type of first get_t
+           std::size_t N1 , // channel count of of first get_t
+           std::size_t D ,  // dimensions
+           std::size_t L ,  // lane count
+           typename SYN ,   // class of synopsis-forming object
+           typename T2 = T1 , // fundamental type of second get_t
+           std::size_t N2 = N1 , // channel count of second get_t
+           typename T3 = T1 , // fundamental type of result
+           std::size_t N3 = N1 > // channel count of result
+struct zip_t
+{
+  typedef zimt::xel_t < T1 , N1 > value1_t ;
+  typedef simdized_type < value1_t , L > value1_v ;
+  typedef zimt::xel_t < T2 , N2 > value2_t ;
+  typedef simdized_type < value2_t , L > value2_v ;
+  typedef zimt::xel_t < T3 , N3 > value3_t ;
+  typedef simdized_type < value3_t , L > value3_v ;
+
+  typedef zimt::xel_t < long , D > crd_t ;
+
+  typedef grok_get_t < T1 , N1 , D , L > gg1_t ;
+  typedef grok_get_t < T2 , N2 , D , L > gg2_t ;
+  
+  gg1_t get1 ;
+  gg2_t get2 ;
+  SYN synopsis ;
+
+  zip_t ( const gg1_t & _get1 ,
+          const gg2_t & _get2 ,
+          const SYN & _synopsis )
+  : get1 ( _get1 ) ,
+    get2 ( _get2 ) ,
+    synopsis ( _synopsis )
+  { }
+
+  void init ( value3_v & trg , const crd_t & crd )
+  {
+    value1_v v1 ;
+    value2_v v2 ;
+    get1.init ( v1 , crd ) ;
+    get2.init ( v2 , crd ) ;
+    synopsis ( v1 , v2 , trg ) ;
+  }
+
+  void init ( value3_v & trg ,
+              const crd_t & crd ,
+              std::size_t cap )
+  {
+    value1_v v1 ;
+    value2_v v2 ;
+    get1.init ( v1 , crd , cap ) ;
+    get2.init ( v2 , crd , cap ) ;
+    synopsis ( v1 , v2 , trg , cap ) ;
+  }
+
+  void increase ( value3_v & trg )
+  {
+    value1_v v1 ;
+    value2_v v2 ;
+    get1.increase ( v1 ) ;
+    get2.increase ( v2 ) ;
+    synopsis ( v1 , v2 , trg ) ;
+  }
+
+  void increase ( value3_v & trg ,
+                  std::size_t cap ,
+                  bool _stuff = true )
+  {
+    value1_v v1 ;
+    value2_v v2 ;
+    get1.increase ( v1 , cap , _stuff ) ;
+    get2.increase ( v2 , cap , _stuff ) ;
+    synopsis ( v1 , v2 , trg , cap ) ;
+  }
+} ;
 
 END_ZIMT_SIMD_NAMESPACE
 HWY_AFTER_NAMESPACE() ;

@@ -44,7 +44,7 @@
 /// this header is to fill in the class definition of a fixed-size
 /// container type with arithmetic capability. In zimt, there are
 /// currently two classes using this header: class xel_t and class
-/// simd_type. The inner workings of the generated types are the
+/// gen_simd_type. The inner workings of the generated types are the
 /// same, but they are used in different semantic slots: class xel_t
 /// is used as a container to hold 'xel' data and their SIMDized
 /// equivalents - data which have several channels - like the
@@ -59,7 +59,11 @@
 // and the only access to it is via member functions. Using a plain
 // C array will not overalign the data, even though this may be
 // desirable, especially on older hardware. We rely on the
-// compiler to handle this as efficiently as possible.
+// compiler to handle this as efficiently as possible. Of course,
+// the class definition 'pulling in' this code may code alignment
+// requirements.
+
+private:
 
 value_type _store [ N ] ;
 
@@ -112,6 +116,22 @@ XEL & operator= ( const value_type & rhs )
   return *this ;
 }
 
+// assignment from equally-sized container.
+// Note that the rhs can use any elementary type which can be legally
+// assigned to value_type. This allows transport of information from
+// differently typed objects, but there are no further constraints on
+// the types involved, which may degrade precision. It's the user's
+// responsibility to make sure such assignments have the desired effect
+// and overload them if necessary.
+
+template < typename U , template < typename , std::size_t > class V >
+XEL & operator= ( const V < U , N > & rhs )
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    (*this) [ i ] = rhs [ i ] ;
+  return *this ;
+}
+
 // c'tor from value_type. We use the assignment operator for
 // initialization.
 
@@ -134,6 +154,30 @@ XEL ( const std::initializer_list < TI > & rhs )
   value_type * trg = _store ;
   for ( const auto & src : rhs )
     *trg++ = value_type ( src ) ;
+}
+
+template < typename U ,
+           template < typename , std::size_t > class X >
+XEL ( const X < U , N > & rhs )
+{
+  for ( size_type i = 0 ; i < N ; i++ )
+    (*this) [ i ] = T ( rhs [ i ] ) ;
+}
+
+// 'projection' to some other fixed-size aggregate via a templated
+// conversion operator: converts a xel_t to an object of class C
+// which holds nch value_type. We want to use xel_t as all-purpose
+// fixed-size aggregate and still allow user code which assigns
+// xel_t values to, say, std::arrays when they are returned by
+// functions.
+
+template < template < typename , std::size_t > class C >
+operator C < value_type , N > ()
+{
+  C < value_type , N > result ;
+  for ( size_type i = 0 ; i < N ; i++ )
+    result [ i ] = _store [ i ] ;
+  return result ;
 }
 
 static const XEL iota()

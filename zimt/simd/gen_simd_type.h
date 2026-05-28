@@ -44,7 +44,7 @@
     this writing, this is usually the best option. But highway is not
     available everywhere, or it's use may be unwanted. To help with such
     situations, zimt defines it's own 'SIMD' type, which is implemented
-    as a simple    C vector and small loops operating on it. If these
+    as a simple C vector and small loops operating on it. If these
     constructs are compiled with compilers capable of autovectorization
     (and with the relevant flags activating use of SIMD instruction sets
     like AVX2) the resulting code will oftentimes be 'proper' SIMD code,
@@ -147,8 +147,8 @@
     of the given value_type which a register of the intended vector ISA
     will contain.
 
-    zimt uses zimt::vec_t of SIMD data types, but their operations are
-    coded with loops over the vec_t's elements throughout zimt's
+    zimt uses zimt::xel_t of SIMD data types, but their operations are
+    coded with loops over the xel_t's elements throughout zimt's
     code base. In zimt's opt directory, you can find 'xel_of_vector.h',
     which can provide overloads for all operator functions involving
     xel_t of zimt::gen_simd_type - or, more generally, small
@@ -161,6 +161,15 @@
     Note also that throughout zimt, there is almost no explicit use of
     zimt::gen_simd_type. zimt picks appropriate SIMD data types with
     mechanisms 'one level up', coded in vector.h.
+
+    Recently I've come to see the possibility of a different use for
+    gen_simd_type. It is, in a way, archetypal and uses SIMD-free
+    code to implement SIMD operation. Therefore, the types and their
+    interaction and capability spectrum could be used as a reference
+    for the 'true' simd implementations - to test e.g. whether these
+    do produce the same results, are capable of filling the same
+    semantic slots etc. - one might even build an API or a set of
+    cencepts.
 */
 
 // in a hwy context, what's the point of providing gen_simd_type?
@@ -242,18 +251,177 @@ using typename tag_t::value_type ;
 using tag_t::vsize ;
 using tag_t::backend ;
 
+// #define XEL for use in the two #includes below.
+
 #define XEL gen_simd_type
 
-#include "vector_mask.h"
-#include "vector_common.h"
+// #include "vector_mask.h" // now inlined here:
 
-template < typename U ,
-           template < typename , std::size_t > class X >
-gen_simd_type ( const X < U , N > & rhs )
-{
-  for ( size_type i = 0 ; i < N ; i++ )
-    (*this) [ i ] = T ( rhs [ i ] ) ;
+typedef XEL < bool , vsize > MaskType ;
+typedef XEL < bool , vsize > mask_type ;
+
+// provide methods to produce a mask on comparing a vector
+// with another vector or a value_type.
+
+#define COMPARE_FUNC(OP,OPFUNC) \
+friend mask_type OPFUNC ( XEL lhs , \
+                          XEL rhs ) \
+{ \
+  mask_type m ; \
+  for ( size_type i = 0 ; i < vsize ; i++ ) \
+    m [ i ] = ( lhs [ i ] OP rhs [ i ] ) ; \
+  return m ; \
+} \
+friend mask_type OPFUNC ( XEL lhs , \
+                          value_type rhs ) \
+{ \
+  mask_type m ; \
+  for ( size_type i = 0 ; i < vsize ; i++ ) \
+    m [ i ] = ( lhs [ i ] OP rhs ) ; \
+  return m ; \
+} \
+friend mask_type OPFUNC ( value_type lhs , \
+                          XEL rhs ) \
+{ \
+  mask_type m ; \
+  for ( size_type i = 0 ; i < vsize ; i++ ) \
+    m [ i ] = ( lhs OP rhs [ i ] ) ; \
+  return m ; \
 }
+
+COMPARE_FUNC(<,operator<) ;
+COMPARE_FUNC(<=,operator<=) ;
+COMPARE_FUNC(>,operator>) ;
+COMPARE_FUNC(>=,operator>=) ;
+COMPARE_FUNC(==,operator==) ;
+COMPARE_FUNC(!=,operator!=) ;
+
+#undef COMPARE_FUNC
+
+// next we define a masked vector as an object holding two pieces of
+// information: one mask, determining which of the vector's elements
+// will be 'open' to an effect, and one reference to a vector, which
+// will be affected by an assignment or augmented assignment to the
+// masked_type object. The mask is not held by reference - it is
+// typically created right inside an invocation of the V(M) = ...
+// idiom and will only persist when copied to the masked_type object.
+// The compiler will take care of the masks's lifetime and storage and
+// make sure the process is efficient and avoids unnecessary copying.
+// The resulting object will only be viable as long as the referred-to
+// vector is kept 'alive' - it's meant as a construct to be processed
+// in the same scope, as the lhs of an assignment, typically using
+// notation introduced by Vc: a vector's operator() is overloaded to
+// to produce a masked_type when called with a mask_type object, and
+// the resulting masked_type object is then assigned to - the V(M)=...
+// idiom mentioned above.
+// Note that this does not have any effect on those values in 'whither'
+// for which the mask is false. They remain unchanged.
+
+#define INTEGRAL_ONLY \
+  static_assert ( std::is_integral < value_type > :: value , \
+                  "this operation is only allowed for integral types" ) ;
+
+#define BOOL_ONLY \
+  static_assert ( std::is_same < value_type , bool > :: value , \
+                  "this operation is only allowed for booleans" ) ;
+
+struct masked_type
+{
+  mask_type whether ;   // if the mask is true at whether[i]
+  XEL & whither ;       // whither[i] will be assigned to
+
+  masked_type ( mask_type _whether ,
+                XEL & _whither )
+  : whether ( _whether ) ,
+    whither ( _whither )
+    { }
+
+  // for the masked vector, we define the complete set of assignments:
+
+  #define OPEQ_FUNC(OPFUNC,OPEQ,CONSTRAINT) \
+    XEL OPFUNC ( value_type rhs ) \
+    { \
+      CONSTRAINT \
+      for ( size_type i = 0 ; i < vsize ; i++ ) \
+      { \
+        if ( whether [ i ] ) \
+          whither [ i ] OPEQ rhs ; \
+      } \
+      return whither ; \
+    } \
+    XEL OPFUNC ( XEL rhs ) \
+    { \
+      CONSTRAINT \
+      for ( size_type i = 0 ; i < vsize ; i++ ) \
+      { \
+        if ( whether [ i ] ) \
+          whither [ i ] OPEQ rhs [ i ] ; \
+      } \
+      return whither ; \
+    }
+
+  OPEQ_FUNC(operator=,=,)
+  OPEQ_FUNC(operator+=,+=,)
+  OPEQ_FUNC(operator-=,-=,)
+  OPEQ_FUNC(operator*=,*=,)
+  OPEQ_FUNC(operator/=,/=,)
+  OPEQ_FUNC(operator%=,%=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator&=,&=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator|=,|=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator^=,^=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator<<=,<<=,INTEGRAL_ONLY)
+  OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
+
+#undef OPEQ_FUNC
+
+#undef INTEGRAL_ONLY
+#undef BOOL_ONLY
+
+} ;
+
+// mimicking Vc, we define operator() with a mask_type argument
+// to produce a masked_type object, which can be used later on to
+// masked-assign to the referred-to vector. With this definition
+// we can use the same syntax Vc uses, e.g. v1 ( v1 > v2 ) = v3
+// This helps write code which compiles with Vc and without,
+// because this idiom is 'very Vc'.
+
+masked_type operator() ( mask_type mask )
+{
+  return masked_type ( mask , *this ) ;
+}
+
+// next we have a few functions creating masks - mainly for Vc
+// compatibility.
+
+static mask_type isnegative ( const XEL & rhs )
+{
+  return ( rhs < value_type(0) ) ;
+}
+
+static mask_type isfinite ( const XEL & rhs )
+{
+  mask_type result ( true ) ;
+  for ( std::size_t i = 0 ; i < vsize ; i++ )
+  {
+    if ( isInf ( rhs[i] ) )
+      result [ i ] = false ;
+  }
+  return result ;
+}
+
+static mask_type isnan ( const XEL & rhs )
+{
+  mask_type result ( false ) ;
+  for ( std::size_t i = 0 ; i < vsize ; i++ )
+  {
+    if ( isNan ( rhs[i] ) )
+      result [ i ] = true ;
+  }
+  return result ;
+}
+
+#include "vector_common.h"
 
 // binary operators (used to be in xel_inner.h)
 
@@ -599,6 +767,84 @@ namespace zimt
   struct is_integral < ZIMT_ENV::gen_simd_type < T , N > >
   : public std::is_integral < T >
   { } ;
+
+// range mapping for simd_t. We use a functor, most of the variables
+// we need are precomputed. The intended use scenario is to run the
+// same scale/shift/clamp operation on many simd_t. If the size
+// of the ranges differes vastly, the mapping may lose precision
+// towards the upper end, but the clamping makes sure we never
+// produce results outside the target interval. So this is the
+// fast method.
+
+template < typename T , std::size_t vsz >
+struct fast_range_map_t < ZIMT_ENV::gen_simd_type  < T , vsz >  >
+{
+  typedef ZIMT_ENV::gen_simd_type < T , vsz > v_t ;
+
+  const v_t m , a , b , c , d ;
+
+  fast_range_map_t ( double src_lo , double src_hi ,
+                     double trg_lo , double trg_hi )
+  : a ( src_lo ) ,
+    b ( src_hi ) ,
+    c ( trg_lo ) ,
+    d ( trg_hi ) ,
+    m ( ( trg_hi - trg_lo ) / ( src_hi - src_lo ) )
+  { }
+
+  // Precompute	m=(d−c)/(b−a)
+  // Compute	v=fma(u−a,m,c)
+  // Secure	v=clamp(v,c,d)
+
+  void eval ( const v_t & in , v_t & out )
+  {
+    auto x = fma ( in - a , m , c ) ;
+    out = x.clamp ( c , d ) ;
+  }
+
+  v_t operator() ( const v_t & in )
+  {
+    v_t out ;
+    eval ( in, out ) ;
+    return out ;
+  }
+} ;
+
+template < typename T , std::size_t vsz >
+struct precise_range_map_t < ZIMT_ENV::gen_simd_type  < T , vsz >  >
+{
+  typedef ZIMT_ENV::gen_simd_type < T , vsz > v_t ;
+
+  const v_t a , b , c , d , w_src ;
+
+  precise_range_map_t ( double src_lo , double src_hi ,
+                        double trg_lo , double trg_hi )
+  : a ( src_lo ) ,
+    b ( src_hi ) ,
+    c ( trg_lo ) ,
+    d ( trg_hi ) ,
+    w_src ( src_hi - src_lo )
+  { }
+
+  void eval ( const v_t & in , v_t & out )
+  {
+    auto x = ( in - a ) / w_src ;
+    // x = ( 1 - x ) * c + x * d ;
+    // x =   c - c * x + x * d
+    // x = - c * x + c + x * d
+    // x = x * d + ( - c * x + c )
+    x = fma ( x , d , fma ( -c , x , c ) ) ;
+    out = x.clamp ( c , d ) ;
+  }
+
+  v_t operator() ( const v_t & in )
+  {
+    v_t out ;
+    eval ( in, out ) ;
+    return out ;
+  }
+} ;
+
 } ;
 
 #endif // #define GEN_SIMD_TYPE_H

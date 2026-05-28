@@ -206,6 +206,71 @@ struct split_t
   }
 } ;
 
+// similar, but store only the first channel to vector of T
+
+template < typename T ,    // elementary/fundamental type
+           std::size_t N , // number of channels
+           std::size_t D , // dimension of the view/array
+           std::size_t L = vector_traits < T > :: vsize >
+struct mono_t
+{
+  typedef zimt::xel_t < T , N > value_t ;
+  typedef simdized_type < value_t , L > value_v ;
+  typedef zimt::xel_t < long , D > crd_t ;
+
+  typedef zimt::view_t < D , T > trg_t ;
+  typedef zimt::view_t < D , xel_t < T , 1 > > trg1_t ;
+  trg_t & trg ;
+  T* p_trg ;            // target pointer
+  long stride ;         // stride of target array
+  const std::size_t d ; // 'hot' axis
+
+  // the c'tor receives the set of target arrays and the 'hot' axis
+
+  mono_t ( trg_t & _trg ,
+           const bill_t & bill = bill_t() )
+  : trg ( _trg ) ,
+    d ( bill.axis )
+  {
+    // copy stride of the target array
+    stride = trg.strides [ d ] ;
+  }
+
+  mono_t ( trg1_t & _trg ,
+           const bill_t & bill = bill_t() )
+  : trg ( reinterpret_cast < trg_t & > ( _trg ) ) ,
+    d ( bill.axis )
+  {
+    // copy stride of the target array
+    stride = trg.strides [ d ] ;
+  }
+
+  // init is used to initialize the target pointers
+
+  void init ( const crd_t & crd )
+  {
+    p_trg = & ( trg [ crd ] ) ;
+  }
+
+  // save writes to the current taget pointers and increases the
+  // pointers by the amount of value_t written
+
+  void save ( const value_v & v )
+  {
+    v [ 0 ] . rscatter ( p_trg , stride ) ;
+    p_trg += L * stride ;
+  }
+
+  // capped save, used for the final batch of data which did not
+  // fill out an entire value_v
+
+  void save ( const value_v & v , const std::size_t & cap )
+  {
+    for ( std::size_t e = 0 ; e < cap ; e++ )
+      p_trg [ e * stride ] = v [ 0 ] [ e ] ;
+  }
+} ;
+
 // vstorer stores vectorized data to a zimt::view_t of fundamental
 // values (T). This is a good option for storing intermediate results,
 // because it can use efficient SIMD store operations rather than

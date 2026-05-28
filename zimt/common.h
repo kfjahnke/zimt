@@ -71,6 +71,7 @@
 #include <cmath>
 #include <utility>
 #include <stdexcept>
+#include <algorithm>
 
 namespace zimt
 {
@@ -492,6 +493,14 @@ protected:
 // both the old and the new cargo at the same time until the old
 // cargo is destructed.
 
+// TODO: I think using the object as-is is cumbersome due to
+// the no-copy policy. But if one were to create a shared_ptr to
+// the asset, it could be used and passed around and would still
+// be unique - and if the last copy of the shared_ptr goes out of
+// scope, the asset would also be destructed. The shared_ptr(s)
+// can be used in containers, whereas asset_t cannot (due to the
+// no-copy policy).
+
 template < typename id_t = std::string >
 struct asset_t
 {
@@ -514,14 +523,14 @@ struct asset_t
 
   asset_t ( const asset_t & rhs ) = delete ;
   
-  // have without arguments returns true if p_cargo is not nullptr
+  // have without arguments returns p_cargo
 
   void * has()
   {
     return p_cargo ;
   }
 
-  // have with an id_t argument returns true if the contained id
+  // have with an id_t argument returns p_cargo if the contained id
   // is the same as the one passed
 
   void * has ( const id_t & which )
@@ -587,6 +596,56 @@ public:
     clear() ;
   }
 
+} ;
+
+template < typename T >
+struct fast_range_map_t
+{
+  const T m , a , b , c , d ;
+
+  fast_range_map_t ( double src_lo , double src_hi ,
+                     double trg_lo , double trg_hi )
+  : a ( T ( src_lo ) ) ,
+    b ( T ( src_hi ) ) ,
+    c ( T ( trg_lo ) ) ,
+    d ( T ( trg_hi ) ) ,
+    m ( T ( ( trg_hi - trg_lo ) / ( src_hi - src_lo ) ) )
+  { }
+
+  // Precompute	m=(d−c)/(b−a)
+  // Compute	v=fma(u−a,m,c)
+  // Secure	v=clamp(v,c,d)
+
+  void eval ( const T & in , T & out )
+  {
+    out = std::clamp ( std::fma ( in - a , m , c ) , c , d ) ;
+  }
+} ;
+
+template < typename T >
+struct precise_range_map_t
+{
+  const T a , b , c , d , w_src ;
+
+  precise_range_map_t ( double src_lo , double src_hi ,
+                        double trg_lo , double trg_hi )
+  : a ( T ( src_lo ) ) ,
+    b ( T ( src_hi ) ) ,
+    c ( T ( trg_lo ) ) ,
+    d ( T ( trg_hi ) ) ,
+    w_src ( T ( b - a ) )
+  { }
+
+  void eval ( const T & in , T & out )
+  {
+    auto x = ( in - a ) / w_src ;
+    // x = ( 1 - x ) * c + x * d ;
+    // x =   c - c * x + x * d
+    // x = - c * x + c + x * d
+    // x = x * d + ( - c * x + c )
+    x = std::fma ( x , d , std::fma ( c , - x , c ) ) ;
+    out = std::clamp ( x , c , d ) ;
+  }
 } ;
 
 // Inside namespace zimt, we want 'using' declarations for functions

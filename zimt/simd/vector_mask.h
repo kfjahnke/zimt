@@ -36,9 +36,9 @@
 /*                                                                      */
 /************************************************************************/
 
-/*! \file xel_mask.h
+/*! \file vector_mask.h
 
-    \brief adds masks to xel_t used as SIMD type
+    \brief adds masks to gen_simd_type
 */
 
 typedef XEL < bool , vsize > MaskType ;
@@ -112,7 +112,7 @@ COMPARE_FUNC(!=,operator!=) ;
 struct masked_type
 {
   mask_type whether ;   // if the mask is true at whether[i]
-  XEL & whither ; // whither[i] will be assigned to
+  XEL & whither ;       // whither[i] will be assigned to
 
   masked_type ( mask_type _whether ,
                 XEL & _whither )
@@ -123,7 +123,7 @@ struct masked_type
   // for the masked vector, we define the complete set of assignments:
 
   #define OPEQ_FUNC(OPFUNC,OPEQ,CONSTRAINT) \
-    XEL & OPFUNC ( value_type rhs ) \
+    XEL OPFUNC ( value_type rhs ) \
     { \
       CONSTRAINT \
       for ( size_type i = 0 ; i < vsize ; i++ ) \
@@ -133,7 +133,7 @@ struct masked_type
       } \
       return whither ; \
     } \
-    XEL & OPFUNC ( XEL rhs ) \
+    XEL OPFUNC ( XEL rhs ) \
     { \
       CONSTRAINT \
       for ( size_type i = 0 ; i < vsize ; i++ ) \
@@ -185,20 +185,22 @@ static mask_type isnegative ( const XEL & rhs )
 
 static mask_type isfinite ( const XEL & rhs )
 {
+  mask_type result ( true ) ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
   {
     if ( isInf ( rhs[i] ) )
-      return false ;
+      result [ i ] = false ;
   }
-  return true ;
+  return result ;
 }
 
 static mask_type isnan ( const XEL & rhs )
 {
+  mask_type result ( false ) ;
   for ( std::size_t i = 0 ; i < vsize ; i++ )
   {
     if ( isNan ( rhs[i] ) )
-      return true ;
+      result [ i ] = true ;
   }
-  return false ;
+  return result ;
 }

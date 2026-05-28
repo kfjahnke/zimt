@@ -134,7 +134,6 @@
 
 #include <array>
 
-#include "common.h"
 #include "basis.h"
 #include "bspline.h"
 #include "unary_functor.h"
@@ -328,12 +327,16 @@ struct multi_bf_type
 
   private:
   
+  // note the cast of 'indices' to void. this is to avoid a
+  // warning about an unused term. we only need 'indices'
+  // for syntactic reasons here
+
   template < std::size_t ... indices , typename ... targs >
   multi_bf_type ( std14::index_sequence < indices ... > ,
                   int _degree ,
                   targs ... args )
   : std::array < bf_type , ndim >
-      { ( indices , bf_type ( _degree , args ... ) ) ... } ,
+      { ( ( void ) indices , bf_type ( _degree , args ... ) ) ... } ,
     degree ( _degree )
   { }
 
@@ -1794,7 +1797,8 @@ public:
   template < typename = std::enable_if < ( vsize > 1 ) > >
   inline
   void eval ( const typename base_type::in_v & _coordinate ,
-              typename base_type::out_v & _result ) const
+              typename base_type::out_v & _result ,
+              const std::size_t & cap = vsize ) const
   {
     feed < xel_t , simdized_type , vsize >
       ( _coordinate , _result ) ;
@@ -1885,7 +1889,7 @@ public:
               int shift = 0
             )
   : evaluator ( (cf_ele_type*) ( bspl.core.data() ) ,
-                channels * bspl.core.stride() ,
+                channels * bspl.core.strides ,
                 bspl.spline_degree + shift ,
                 mbf
               )

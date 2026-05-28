@@ -495,6 +495,24 @@ struct bspline_base
               )
     { }
 
+  // tentative:
+  // c'tor overload for splines with externally managed coefficient
+  // array. here, both views have the same size and there is no frame.
+
+  bspline_base ( shape_type _core_shape , // shape of knot point data
+                 bcv_type _bcv ,          // boundary condition
+                 xlf_type _tolerance )    // acceptable error
+  : core_shape ( _core_shape ) ,
+    container_shape ( _core_shape ) ,
+    left_frame ( 0 ) ,
+    right_frame ( 0 ) ,
+    bcv ( _bcv ) ,
+    tolerance ( _tolerance <= 0.0
+                ? std::numeric_limits < xlf_type > :: epsilon()
+                : _tolerance
+              )
+    { }
+
 } ;
 
 /// class bspline now builds on class bspline_base, adding coefficient storage,
@@ -510,6 +528,8 @@ struct bspline_base
 /// zimt uses vigra's ExpandElementResult mechanism to inquire for a value
 /// type's elementary type and size, which makes it easy to adapt to new value
 /// types because the mechanism is traits-based.
+
+struct externally_managed { } ; // tag used for externally managed coefficients
 
 template < class _value_type , std::size_t _dimension >
 struct bspline
@@ -580,6 +600,20 @@ private:
   std::shared_ptr < array_type > _p_coeffs ;
   
 public:
+
+  // tentative, but maybe not such a good idea since it leaves the
+  // spline inoperable.
+
+  // 'disown' the data. return the shared_ptr to the coefficients.
+  // if the spline did not own the data in the first place, the
+  // returned shared_ptr will hold a default-constructed array.
+
+  std::shared_ptr < array_type > disown()
+  {
+    auto help = std::make_shared < array_type >() ;
+    help.swap ( _p_coeffs ) ;
+    return help ;
+  }
 
   view_type container ; // view to coefficient container array (incl. frame)
   view_type core ;      // view to the core part of the coefficient array
@@ -790,7 +824,9 @@ public:
 
   // set up a spline with two views, one for the 'core' and one for
   // the 'container. the caller is expected to set these two views
-  // up correctly.
+  // up correctly. The resulting bspline object does not own any of
+  // the coefficient data, it's up to the caller to keep the data
+  // which the views refer to alive as long as necessary.
 
   bspline ( view_type _core ,
             view_type _space ,
@@ -820,6 +856,47 @@ public:
     // which holds no data.
     
     _p_coeffs = std::make_shared < array_type >() ;
+  }
+
+  // c'tor variant for externally managed coefficients, which are
+  // nevertheless contained and owned by the spline, so the c'tor
+  // allocates space for the coefficients. 'container' and 'core'
+  // are equally sized and both refer to the coefficient array,
+  // and there is no frame, so prefiltering is possible, but the
+  // spline won't be braced - the management of the coefficients
+  // is up to the user. A spline like this is useful to hold
+  // coefficient arrays with bracing that does not follow the
+  // standard pattern.
+
+  // using this bspline_base c'tor:
+  // bspline_base ( shape_type _core_shape , // shape of knot point data
+  //                bcv_type _bcv ,          // boundary condition
+  //                xlf_type _tolerance )    // acceptable error
+
+  bspline ( shape_type _core_shape ,                // shape of knot point data
+            externally_managed _emflag ,            // just for signature
+            int _spline_degree = 3 ,                // spline degree with reasonable default
+            bcv_type _bcv = bcv_type ( MIRROR ) ,   // boundary conditions and common default
+            xlf_type _tolerance = -1.0
+          )
+  : base_type ( _core_shape ,
+                _bcv ,
+                ( _tolerance < 0.0
+                  ? std::numeric_limits < ele_type > :: epsilon() 
+                  : ( _tolerance == 0 
+                      ? std::numeric_limits < xlf_type > :: epsilon()
+                      : _tolerance
+                    )
+                ) ) ,
+    spline_degree ( _spline_degree ) ,
+    prefiltered ( false )
+  {
+    _p_coeffs = std::make_shared < array_type > ( core_shape ) ;
+    
+    // 'container' and 'core' are made to refer to a view to this array.
+    
+    container = *_p_coeffs ;
+    core = * _p_coeffs ;
   }
 
   /// overloaded constructor for 1D splines. This is useful because if we don't
@@ -864,7 +941,7 @@ public:
     stride *= channels ;
     
     view_t < dimension , ele_type >
-      channel_container ( container.shape() , stride , base ) ;
+      channel_container ( container.shape , stride , base ) ;
 
     // KFJ 2022-01-14 the channel view was created with headroom = 0, which
     // is only correct if the 'mother' spline has headroom == 0. Now the
@@ -875,7 +952,7 @@ public:
     auto std_left_frame_size = get_left_brace_size ( spline_degree , bcv ) ;
     auto headroom = left_frame[0] - std_left_frame_size[0] ;
 
-    return channel_view_type ( core.shape() , 
+    return channel_view_type ( core.shape , 
                                spline_degree ,
                                bcv ,
                                tolerance ,
@@ -1049,6 +1126,19 @@ public:
   
   bool shiftable ( int d ) const
   {
+    // 'no shift' should always be considered possible.
+
+    if ( d == 0 )
+      return true ;
+
+    // special case where the coefficient array is managed externally.
+    // In this case, there is 'nominally' no frame at all, but if we were
+    // to return false, creation of an evaluator with shift would not be
+    // possible. So:
+
+    if ( container.shape == core.shape )
+      return true ;
+
     int new_degree = spline_degree + d ;
     if ( new_degree < 0 ) // || new_degree > zimt_constants::max_degree )
       return false ;
@@ -1059,17 +1149,19 @@ public:
     {
       if (    new_left_brace[i] > left_frame[i]
            || new_right_brace[i] > right_frame[i] )
+      {
         return false ;
+      }
     }
-    // if (    allLessEqual ( new_left_brace , left_frame )
-    //      && allLessEqual ( new_right_brace , right_frame ) )
-    // {
-    //   return true ;
-    // }
-
     return true ;
   }
   
+  bool shiftable_to ( int d ) const
+  {
+    d -= spline_degree ;
+    return shiftable ( d ) ;
+  }
+
   /// shift() actually changes the interpretation of the data. The data
   /// will be taken to be coefficients of a spline with degree
   /// spline_degree + d, and the original degree is lost. This operation
@@ -1082,6 +1174,19 @@ public:
 
   bool shift ( int d )
   {
+    if ( shiftable ( d ) )
+    {
+      spline_degree += d ;
+      return true ;
+    }
+    return false ;
+  }
+
+  // variant shifting to some specific new spline degree
+
+  bool shift_to ( int d )
+  {
+    d -= spline_degree ;
     if ( shiftable ( d ) )
     {
       spline_degree += d ;
@@ -1110,6 +1215,10 @@ public:
              : "data are owned externally" ) << std::endl ;
     osr << "container base adress:....... " << bsp.container.data() << std::endl ;
     osr << "core base adress:............ " << bsp.core.data() << std::endl ;
+    osr << "lower limit:................. "
+        << bsp.lower_limit() << std::endl ;
+    osr << "upper limit:................. "
+        << bsp.upper_limit() << std::endl ;
     osr << "prefiltered:................. "
         << ( bsp.prefiltered ? "yes" : "no" ) << std::endl ;
     return osr ;
