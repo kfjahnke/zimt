@@ -1,0 +1,41 @@
+[workspace]
+name = "zimt-examples"
+version = "0.1.0"
+description = "Build orchestration for zimt examples"
+channels = ["conda-forge"]
+# platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+platforms = ["linux-64", "osx-64", "osx-arm64"]
+
+[dependencies]
+# Build tools
+cmake = ">=3.16"
+ninja = "*"
+
+# Library dependencies required by zimt examples
+fmt = "*"
+openimageio = "*"
+vigra = "*"
+vector-classes = "*"
+libhwy = "*"
+
+# Clang compiler toolchain
+clangxx = "*"
+
+# GCC is provided natively on some platforms, but we ensure it's
+# explicitly pulled from conda-forge for Linux targets.
+[target.linux-64.dependencies]
+gcc_linux-64 = "*"
+gxx_linux-64 = "*"
+
+[tasks]
+# Task to configure and build using GCC and Ninja
+build-gnu = { cmd = "cmake -B build-gnu -G Ninja -DCMAKE_CXX_COMPILER=g++ . && cmake --build build-gnu", description = "Build examples with GCC" }
+
+# Task to configure and build using Clang and Ninja
+build-clang = { cmd = "cmake -B build-clang -G Ninja -DCMAKE_CXX_COMPILER=clang++ . && cmake --build build-clang", description = "Build examples with Clang" }
+
+# Meta-task to run both builds sequentially
+build-all = { depends-on = ["build-gnu", "build-clang"], description = "Run all compiler builds" }
+
+# Cleanup task
+clean = { cmd = "rm -rf build-gnu build-clang", description = "Remove all build directories" }

@@ -373,12 +373,6 @@ OPEQ_FUNC(operator>>=,>>=,INTEGRAL_ONLY)
 
 #undef OPEQ_FUNC
 
-// initially I had coded the binary operators here, sharing code between
-// xel.h and simd_type.h. But with the the introduction of type promotion
-// I found this was no longer feasible, and I moved copies of the binary
-// operator code to the two headers using xel_inner.h and modified them
-// separately.
-
 // left and right scalar operations with value_type,
 // unary operators -, ! and ~
 
@@ -422,24 +416,28 @@ XEL clamp ( const U & lower , const V & upper ) const
 }
 
 // sum of vector elements. Note that there is no type promotion; the
-// summation is done to value_type. Caller must make sure that overflow
-// is not a problem.
+// summation is done to value_type by default. Caller must make sure
+// that overflow is not a problem and specialize accordingly.
 
-value_type sum() const
+template < typename RT = value_type >
+RT sum() const
 {
-  value_type s ( _store[0] ) ;
+  RT s ( _store[0] ) ;
   for ( std::size_t e = 1 ; e < N ; e++ )
-    s += (*this) [ e ] ;
+    s += RT ( (*this) [ e ] ) ;
   return s ;
 }
 
+template < typename RT = value_type >
 value_type prod() const
 {
-  value_type s ( _store[0] ) ;
+  RT s ( _store[0] ) ;
   for ( std::size_t e = 1 ; e < N ; e++ )
-    s *= (*this) [ e ] ;
+    s *= RT ( (*this) [ e ] ) ;
   return s ;
 }
+
+// horizontal min and max - the minimal or maximal value of all lanes.
 
 value_type hmax() const
 {

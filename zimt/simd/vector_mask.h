@@ -39,6 +39,11 @@
 /*! \file vector_mask.h
 
     \brief adds masks to gen_simd_type
+
+    this header is no longer used and will be removed - the code was
+    only included in gen_simd_type.h, so I copied it in there - xel_t
+    in xel.h also has masking code, but it's slightly different because
+    it also specializes for xel_t of SIMD data.
 */
 
 typedef XEL < bool , vsize > MaskType ;
