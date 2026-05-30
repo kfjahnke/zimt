@@ -101,8 +101,14 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
   endif()
 
   # 2. Check if the std::simd backend should be skipped.
-  set(BUILD_STD_SIMD TRUE)
-  # set(BUILD_STD_SIMD FALSE)
+  # getting std::simd requires the use of the gnu c++ library, which would
+  # have to be enforced explicitly on macOS. It can be done, but I omit
+  # it for now.
+  if(APPLE)
+    set(BUILD_STD_SIMD FALSE)
+  else()
+    set(BUILD_STD_SIMD TRUE)
+  endif()
   if(FILE_CONTENT MATCHES "no-std-simd")
     set(BUILD_STD_SIMD FALSE)
   endif()
