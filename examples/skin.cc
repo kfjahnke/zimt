@@ -126,7 +126,7 @@ struct rect3d_t
   typedef zimt::xel_t < T , 3 > value_t ;
   typedef zimt::simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , 2 > crd_t ;
+  typedef zimt::xel_t < int64_t , 2 > crd_t ;
   typedef zimt::simdized_type < crd_t , L > crd_v ;
   typedef typename crd_v::value_type crd_ele_v ;
   typedef zimt::xel_t < value_t , 2 > step_t ;

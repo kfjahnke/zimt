@@ -456,9 +456,9 @@ struct bspline_base
   /// rather than requiring a TinyVector of one long.
 
   template < typename = std::enable_if < _dimension == 1 > >
-  static long get_container_shape ( int spline_degree ,
+  static int64_t get_container_shape ( int spline_degree ,
                                     bc_code bc ,
-                                    long core_shape ,
+                                    int64_t core_shape ,
                                     int headroom
                                   )
   {
@@ -910,14 +910,14 @@ public:
   // with the enable_if, if dimension != 1, the code is not considered.
 
   template < typename = std::enable_if < _dimension == 1 > >
-  bspline ( long _core_shape ,                      // shape of knot point data
+  bspline ( int64_t _core_shape ,                      // shape of knot point data
             int _spline_degree = 3 ,                // spline degree with reasonable default
             bc_code _bc = MIRROR ,                  // boundary conditions and common default
             xlf_type _tolerance = -1.0 ,            // acceptable error (relative to unit pulse)
             int headroom = 0 ,                      // additional headroom, for 'shifting'
             view_type _space = view_type()          // coefficient storage to 'adopt'
           )
-  : bspline ( xel_t < long , 1 > ( _core_shape ) ,
+  : bspline ( xel_t < int64_t , 1 > ( _core_shape ) ,
               _spline_degree ,
               bcv_type ( _bc ) ,
               _tolerance ,

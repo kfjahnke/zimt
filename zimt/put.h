@@ -77,7 +77,7 @@ struct storer
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   const std::size_t d ;
   zimt::view_t < D , value_t > & trg ;
@@ -147,13 +147,13 @@ struct split_t
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   typedef std::array < zimt::view_t < D , T > , N > trg_t ;
   trg_t & trg ;
 
   zimt::xel_t < T* , N > p_trg ;   // target pointers
-  zimt::xel_t < long , N > stride ; // strides of target arrays
+  zimt::xel_t < int64_t , N > stride ; // strides of target arrays
   const std::size_t d ;             // 'hot' axis
 
   // the c'tor receives the set of target arrays and the 'hot' axis
@@ -216,13 +216,13 @@ struct mono_t
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   typedef zimt::view_t < D , T > trg_t ;
   typedef zimt::view_t < D , xel_t < T , 1 > > trg1_t ;
   trg_t & trg ;
   T* p_trg ;            // target pointer
-  long stride ;         // stride of target array
+  int64_t stride ;         // stride of target array
   const std::size_t d ; // 'hot' axis
 
   // the c'tor receives the set of target arrays and the 'hot' axis
@@ -290,7 +290,7 @@ struct vstorer
 
   // type of coordinate passed by the caller (zimt::process)
 
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   // axis of the storage array which corresponds to the 'hot' axis
   // of the 'notional' array (so, d + 1 ), we'll refer to this axis
@@ -414,7 +414,7 @@ class grok_put_t
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   // grok_put_t holds three std::functions:
 

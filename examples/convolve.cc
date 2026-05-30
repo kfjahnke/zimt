@@ -151,7 +151,7 @@ struct dispatch_base
   // the given nested namespace.
 
   int backend = -1 ;
-  unsigned long hwy_isa = 0 ;
+  uint64_t hwy_isa = 0 ;
 
   // next we have pure virtual member function definitions for
   // payload code. In this example, we only have one payload

@@ -125,8 +125,8 @@ view_type sort_strides ( const view_type & rhs , bool ascending = true )
   // values. If no swaps were performed, the order is correct already.
 
   auto cmp =   ascending
-             ? [] ( long a , long b ) { return a > b ; }
-             : [] ( long a , long b ) { return a < b ; } ;
+             ? [] ( int64_t a , int64_t b ) { return a > b ; }
+             : [] ( int64_t a , int64_t b ) { return a < b ; } ;
 
   for ( std::size_t dmax = dimension ; dmax > 1 ; dmax-- )
   {
@@ -364,7 +364,7 @@ void transform ( const act_t & act ,
 template < class act_t >
 void transform ( const act_t & act ,
                  typename act_t::out_type * trg ,
-                 long stride ,
+                 int64_t stride ,
                  std::size_t length ,
                  bill_t bill = bill_t() )
 {

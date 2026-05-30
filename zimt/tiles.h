@@ -157,8 +157,8 @@ BEGIN_ZIMT_SIMD_NAMESPACE(zimt)
 #ifndef ZIMT_SINGLETHREAD
 std::mutex stdout_mutex ;
 #endif
-std::atomic < long > load_count ( 0 ) ;
-std::atomic < long > store_count ( 0 ) ;
+std::atomic < int64_t > load_count ( 0 ) ;
+std::atomic < int64_t > store_count ( 0 ) ;
 
 // tile_t acts as conduit to a tile's data and encodes it's
 // interaction with files. The struct itself is lightweight,
@@ -173,7 +173,7 @@ struct tile_t
   typedef xel_t < T , N > value_t ;
   typedef array_t < D , value_t > storage_t ;
   typedef xel_t < std::size_t , D > shape_type ;
-  typedef xel_t < long , D > index_type ;
+  typedef xel_t < int64_t , D > index_type ;
 
   const shape_type shape ;
   storage_t * p_data = nullptr ;
@@ -356,7 +356,7 @@ struct tile_store_t
   typedef tile_t < T , N , D > tile_type ;
   typedef xel_t < T , N > value_t ;
   typedef xel_t < std::size_t , D > shape_type ;
-  typedef xel_t < long , D > index_type ;
+  typedef xel_t < int64_t , D > index_type ;
   typedef tether_t < tile_type > tether_type ;
 
   const shape_type array_shape ; // 'notional' shape
@@ -692,7 +692,7 @@ public:
   // to the current run.
 
   void release ( const index_type & tile_index ,
-                 const long & done )
+                 const int64_t & done )
   {
     {
       auto & tether ( store [ tile_index ] ) ; // shorthand
@@ -873,12 +873,12 @@ template < typename T ,
            std::size_t L = zimt::vector_traits < T > :: vsize >
 struct tile_user_t
 {
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
   typedef tile_store_t < T , N , D > tile_store_type ;
   typedef typename tile_store_type::tile_type tile_type ;
 
   const std::size_t d ;
-  const long stride ;
+  const int64_t stride ;
   const std::size_t segment_size ;
 
   tile_store_type & tile_store ;
@@ -888,7 +888,7 @@ struct tile_user_t
   crd_t in_tile_crd ;
 
   std::vector < tile_type * > working_set ;
-  std::vector < long > done ;
+  std::vector < int64_t > done ;
   crd_t set_marker ;
 
 private:
@@ -955,7 +955,7 @@ public:
   // attempt to gain access, but they will gain access as soon
   // as they can acquire the lock on the tile's mutex.
 
-  tile_type * get_tile ( const zimt::xel_t < long , D > & index )
+  tile_type * get_tile ( const zimt::xel_t < int64_t , D > & index )
   {
     // access the working set
 

@@ -144,8 +144,8 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
 
       // set up the limits in 'bill'
 
-      bill.lower_limit = { long(u) , long(v) } ;
-      bill.upper_limit = { long(ue) , long(ve) } ;
+      bill.lower_limit = { int64_t(u) , int64_t(v) } ;
+      bill.upper_limit = { int64_t(ue) , int64_t(ve) } ;
 
       // print out the limits
 

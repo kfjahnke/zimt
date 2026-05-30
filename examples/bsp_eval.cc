@@ -111,6 +111,8 @@
 #undef MULTI_SIMD_ISA
 #endif
 
+#include <cstdint>
+
 // we define a dispatch base class. All the 'payload' code is called
 // through virtual member functions of this class. In this example,
 // we only have a single payload function. We have to enclose this
@@ -134,7 +136,7 @@ struct dispatch_base
   // the given nested namespace.
 
   int backend = -1 ;
-  unsigned long hwy_isa = 0 ;
+  uint64_t hwy_isa = 0 ;
 
   // next we have pure virtual member function definitions for
   // payload code. In this example, we only have one payload
@@ -240,7 +242,7 @@ struct dispatch
 
     #endif
 
-    long TIMES = 1 ;
+    int64_t TIMES = 1 ;
     if ( argc > 1 )
       TIMES = std::atoi ( argv[1] ) ;
     else

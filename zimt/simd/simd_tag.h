@@ -53,6 +53,7 @@
 #define SIMD_TAG_H
 
 #include <string>
+#include <cstdint>
 
 namespace zimt
 {

@@ -110,11 +110,11 @@ namespace zimt
 
 template  < std::size_t D >
 struct mci_t
-: public xel_t < long , D >
+: public xel_t < int64_t , D >
 {
   static const std::size_t dimension = D ;
 
-  typedef xel_t < long , D > index_type ;
+  typedef xel_t < int64_t , D > index_type ;
   const index_type & shape ;
 
   template < typename T >
@@ -139,7 +139,7 @@ struct mci_t
     shape ( *this )
   { }
 
-  index_type operator[] ( long i )
+  index_type operator[] ( int64_t i )
   {
     assert ( shape.prod() > 0 ) ;
     index_type result ;
@@ -201,7 +201,7 @@ struct view_t
   typedef T value_type ;
   static const std::size_t dimension = D ;
   typedef xel_t < std::size_t , dimension > shape_type ;
-  typedef xel_t < long , dimension > index_type ;
+  typedef xel_t < int64_t , dimension > index_type ;
 
   // strides and shape used to be const members, but this has been
   // relaxed because it made some operations difficult. I think that
@@ -227,8 +227,8 @@ struct view_t
 
   typedef typename
     std::conditional < dimension == 1 ,
-                       xel_t < long , dimension > ,
-                       xel_t < long , dimension - 1 >
+                       xel_t < int64_t , dimension > ,
+                       xel_t < int64_t , dimension - 1 >
                       > :: type six_t ;
 
   typedef typename
@@ -252,7 +252,7 @@ struct view_t
   static index_type make_strides ( const shape_type & shape )
   {
     index_type strides ;
-    long stride = 1 ;
+    int64_t stride = 1 ;
     strides [ 0 ] = stride ;
 
     for ( std::size_t d = 1 ; d < D ; d++ )
@@ -351,14 +351,14 @@ struct view_t
 
   // get the number of value_type the view refers to.
 
-  long size() const
+  int64_t size() const
   {
     return shape.prod() ;
   }
 
   // convert an index to an offset from origin.
 
-  long offset ( const index_type & crd ) const
+  int64_t offset ( const index_type & crd ) const
   {
     return ( crd * strides ) . sum() ;
   }
@@ -491,7 +491,7 @@ private:
   // dimension 0. The returned slice is a 1D view with only one
   // element - the one at position k.
 
-  slice_t _slice ( std::size_t d , long k , std::false_type ) const
+  slice_t _slice ( std::size_t d , int64_t k , std::false_type ) const
   {
     six_t sl_strides ;
     sixsz_t sl_shape ;
@@ -508,14 +508,14 @@ private:
     return slice_t ( origin + k * strides [ d ] , sl_strides , sl_shape ) ;
   }
 
-  slice_t _slice ( std::size_t d , long k , std::true_type ) const
+  slice_t _slice ( std::size_t d , int64_t k , std::true_type ) const
   {
     return slice_t ( origin + k * strides [ 0 ] , 1 , 1 ) ;
   }
 
 public:
 
-  slice_t slice ( std::size_t d , long i ) const
+  slice_t slice ( std::size_t d , int64_t i ) const
   {
     static const bool is_1d = ( dimension == 1 ) ;
     return _slice ( d , i , std::integral_constant < bool , is_1d >() ) ;
@@ -541,7 +541,7 @@ private:
   {
     // Always uses a loop with individual assignments.
 
-    for ( long i = 0 ; i < shape[0] ; i++ )
+    for ( int64_t i = 0 ; i < shape[0] ; i++ )
       origin [ i * strides[0] ] = rhs.origin [ i * rhs.strides [ 0 ] ] ;
   }
 
@@ -572,7 +572,7 @@ private:
   {
     // for all slices 'along' the last dimension, invoke copy_data
 
-    for ( long i = 0 ; i < shape [ dimension - 1 ] ; i++ )
+    for ( int64_t i = 0 ; i < shape [ dimension - 1 ] ; i++ )
     {
       auto slhs = slice ( dimension - 1 , i ) ;
       auto srhs = rhs.slice ( dimension - 1 , i ) ;
@@ -612,13 +612,13 @@ private:
 
     if ( strides [ 0 ] == 1 )
     {
-      for ( long i = 0 ; i < shape[0] ; i++ )
+      for ( int64_t i = 0 ; i < shape[0] ; i++ )
         origin [ i ] = rhs ;
     }
     else
     {
-      long end = shape [ 0 ] * strides [ 0 ] ;
-      for ( long i = 0 ; i < end ; i += strides [ 0 ] )
+      int64_t end = shape [ 0 ] * strides [ 0 ] ;
+      for ( int64_t i = 0 ; i < end ; i += strides [ 0 ] )
         origin [ i ] = rhs ;
     }
   }
@@ -627,12 +627,12 @@ private:
   {
     if ( compact() )
     {
-      for ( long i = 0 ; i < size() ; i++ )
+      for ( int64_t i = 0 ; i < size() ; i++ )
         origin [ i ] = rhs ;
     }
     else
     {
-      for ( long i = 0 ; i < shape [ dimension - 1 ] ; i++ )
+      for ( int64_t i = 0 ; i < shape [ dimension - 1 ] ; i++ )
       {
         auto sl = slice ( dimension - 1 , i ) ;
         sl.set_data ( rhs ) ;
@@ -833,7 +833,7 @@ public:
                        array_t < dimension - 1 , value_type >
                      > :: type slice_t ;
 
-  slice_t slice ( std::size_t d , long i ) const
+  slice_t slice ( std::size_t d , int64_t i ) const
   {
     base_t const & v ( *this ) ;
     auto slc = v.slice ( d , i ) ;

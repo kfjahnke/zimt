@@ -51,7 +51,7 @@
     arbitrarily, whereas a b-spline prefilter picks precomputed poles
     for a given spline degree.
 
-    The code is quite old; it's been in use in vspline for a long
+    The code is quite old; it's been in use in vspline for a int64_t
     time and I see little need to renovate it - it does the trick.
     At the end of the file is a function template meant to be called
     by user code - for b-spline prefiltering, use the more specific

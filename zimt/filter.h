@@ -133,12 +133,12 @@ struct bundle
   dtype * data ;                // data base address
   const std::ptrdiff_t * idx ;  // pointer to gather/scatter indexes
   std::ptrdiff_t stride ;       // stride in units of dtype
-  unsigned long z ;             // number of repetitions
+  uint64_t z ;                  // number of repetitions
 
   bundle ( dtype * _data ,
            const std::ptrdiff_t * _idx ,
            std::ptrdiff_t _stride ,
-           unsigned long _z )
+           uint64_t _z )
   : data ( _data ) ,
     idx ( _idx ) ,
     stride ( _stride ) ,

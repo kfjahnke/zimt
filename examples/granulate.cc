@@ -113,7 +113,7 @@ struct join_t
     // new view
 
     zimt::xel_t < std::size_t , D > _shape ;
-    zimt::xel_t < long , D > _strides ;
+    zimt::xel_t < int64_t , D > _strides ;
     for ( std::size_t i = 0 ; i < D ; i++ )
     {
       _shape [ i ] = src.shape [ i + 1 ] ;

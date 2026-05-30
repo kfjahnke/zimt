@@ -137,7 +137,7 @@ struct rotate_rgb_t
   }
 } ;
 
-void dump_tile ( std::string base_name , long x , long y ,
+void dump_tile ( std::string base_name , int64_t x , int64_t y ,
                  const unsigned char *pixels )
 {
   base_name += std::to_string ( x ) + "_" + std::to_string ( y ) + ".jpg" ;

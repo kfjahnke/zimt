@@ -218,8 +218,8 @@ template<> struct simd_traits<T> \
 
 HWY_SIMD(float)
 HWY_SIMD(double)
-HWY_SIMD(long)
-HWY_SIMD(unsigned long)
+HWY_SIMD(int64_t)
+HWY_SIMD(uint64_t)
 HWY_SIMD(int)
 HWY_SIMD(unsigned int)
 HWY_SIMD(short)

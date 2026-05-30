@@ -444,7 +444,7 @@ int main ( int argc , char * argv[] )
   float v = M_PI_2 ;
 
   zimt::xel_t < std::size_t , 2 > shape { w , w } ;
-  zimt::xel_t < long , 2 > strides { 1 , w } ;
+  zimt::xel_t < int64_t , 2 > strides { 1 , w } ;
 
   zimt::array_t < 2 , v3_t > stripe ( { w , w * 6 } ) ;
 

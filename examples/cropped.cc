@@ -88,7 +88,7 @@ void test ( std::size_t a , std::size_t x , std::size_t y )
   // only a patch-sized window of the large array
 
   bill.lower_limit = { 23 , 17 } ;
-  bill.upper_limit = { 23 + long(x) , 17 + long(y) } ;
+  bill.upper_limit = { 23 + int64_t(x) , 17 + int64_t(y) } ;
 
   // and we also set up the offsets passed to the get and put
   // objects - here we pass precisely the negative of the window's

@@ -82,7 +82,7 @@ struct get_crd
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   const std::size_t d ;
 
@@ -192,8 +192,8 @@ struct loader
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
-  typedef simdized_type < long , L > crd_v ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
+  typedef simdized_type < int64_t , L > crd_v ;
 
   const std::size_t d ;
   const zimt::view_t < D , value_t > src ;
@@ -371,7 +371,7 @@ struct vloader
 
   // type of coordinate passed by the caller (zimt::process)
 
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   // axis of the storage array which corresponds to the 'hot' axis
   // of the 'notional' array (so, d + 1 ), we'll refer to this axis
@@ -476,8 +476,8 @@ struct permute
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , N > crd_t ;
-  typedef simdized_type < long , L > crd_v ;
+  typedef zimt::xel_t < int64_t , N > crd_t ;
+  typedef simdized_type < int64_t , L > crd_v ;
 
   const std::size_t d ;
   const std::array < zimt::view_t < 1 , T > , N > src ;
@@ -590,7 +590,7 @@ struct join_t
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   // const std::size_t d ; // processing axis - 0 or 1 for a 2D array
 
@@ -600,7 +600,7 @@ struct join_t
   src_t src ;
 
   zimt::xel_t < const T * , N > pickup ; // source pointers
-  zimt::xel_t < long , N > stride ;      // strides of source arrays
+  zimt::xel_t < int64_t , N > stride ;      // strides of source arrays
   const std::size_t d ;
 
   join_t ( const src_t & _src ,
@@ -813,7 +813,7 @@ struct gridspace_t
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
   typedef typename value_v::value_type value_ele_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
   typedef simdized_type < crd_t , L > crd_v ;
   typedef typename crd_v::value_type crd_ele_v ;
 
@@ -950,7 +950,7 @@ class grok_get_t
 
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   // grok_get_t holds four std::functions:
 
@@ -1074,7 +1074,7 @@ template < typename T ,     // fundamental type
            std::size_t L >  // lane count
 struct suffixed_t
 {
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
 
@@ -1182,7 +1182,7 @@ struct fusion_t
 {
   typedef zimt::xel_t < T , N > value_t ;
   typedef simdized_type < value_t , L > value_v ;
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
   typedef zimt::xel_t < U , M > partial_t ;
   typedef simdized_type < partial_t , L > partial_v ;
   typedef grok_get_t < U , M , D , L > gg_t ;
@@ -1277,7 +1277,7 @@ struct zip_t
   typedef zimt::xel_t < T3 , N3 > value3_t ;
   typedef simdized_type < value3_t , L > value3_v ;
 
-  typedef zimt::xel_t < long , D > crd_t ;
+  typedef zimt::xel_t < int64_t , D > crd_t ;
 
   typedef grok_get_t < T1 , N1 , D , L > gg1_t ;
   typedef grok_get_t < T2 , N2 , D , L > gg2_t ;

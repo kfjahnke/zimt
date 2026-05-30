@@ -379,7 +379,7 @@ void test ( zimt::bill_t bill )
   // let's try amp13_t
 
   zimt::array_t < 1 , f3_t > a1l ( 10000 ) ;
-  amp13_t < long > amp13 ( 2.0 ) ;
+  amp13_t < int64_t > amp13 ( 2.0 ) ;
   zimt::transform ( amp13 , a1l ) ;
 
   // for 1D transforms, there's an overload taking a plain pointer
@@ -390,16 +390,16 @@ void test ( zimt::bill_t bill )
   // next we try a reduction over an entire view, first using
   // an atomic as the final reduction target:
 
-  zimt::atomic < long > collector ( 0 ) ;
+  zimt::atomic < int64_t > collector ( 0 ) ;
 
   // odd-shaped array of long as input, initialized to 2.0
 
-  zimt::array_t < 3 , long > a3l ( { 17 , 5 , 31 } ) ;
+  zimt::array_t < 3 , int64_t > a3l ( { 17 , 5 , 31 } ) ;
   a3l.set_data ( 2 ) ;
 
   // create the sink functor, in this case a 'sum_up' object
 
-  sum_up < long > ci ( collector ) ;
+  sum_up < int64_t > ci ( collector ) ;
 
   // pass sink functor and array to 'apply'
 
@@ -407,7 +407,7 @@ void test ( zimt::bill_t bill )
 
   // we know what the result should be, so we can test:
 
-  assert ( collector.load() == long ( 2 * a3l.shape.prod() ) ) ;
+  assert ( collector.load() == int64_t ( 2 * a3l.shape.prod() ) ) ;
 
   // reduction which sums up multichannel data, adding per-thread
   // scores to the final reduction target with a 'yield' function.

@@ -67,7 +67,7 @@
     
     Note: I have calculated the basis function values and prefilter poles
     using arbitrary-precision library GNU GMP. The precision of these values
-    is way beyond long double and well sufficient to initialize quad floats
+    is way beyond int64_t double and well sufficient to initialize quad floats
     (__float128) up to their precision, which is only 80bit mantissa or so.
     So now I express the literals below with a macro which adds a suffix to them
     so they can be interpreted as literals of the precision wanted for the

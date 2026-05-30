@@ -58,15 +58,15 @@ int main ( int argc , char * argv[] )
 {
   // without arguments, use default values.
 
-  long width = 64 ;
-  long height = 64 ;
-  long depth = 16 ;
-  long tile_width = 16 ;
-  long tile_height = 16 ;
-  long tile_depth = 4 ;
-  long segment_size = 32 ;
-  long njobs = 8 ;
-  long axis = 0 ;
+  int64_t width = 64 ;
+  int64_t height = 64 ;
+  int64_t depth = 16 ;
+  int64_t tile_width = 16 ;
+  int64_t tile_height = 16 ;
+  int64_t tile_depth = 4 ;
+  int64_t segment_size = 32 ;
+  int64_t njobs = 8 ;
+  int64_t axis = 0 ;
 
   // I use this program for testing, so I like to have a way to
   // pass in arguments.

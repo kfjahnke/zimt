@@ -54,13 +54,13 @@ int main ( int argc , char * argv[] )
   // without arguments, use default values. This also produces the
   // ouptput which tiles3.cc requires as input.
 
-  long width = 2048 ;
-  long height = 2048 ;
-  long tile_width = 256 ;
-  long tile_height = 256 ;
-  long segment_size = 512 ;
-  long njobs = 8 ;
-  long axis = 0 ;
+  int64_t width = 2048 ;
+  int64_t height = 2048 ;
+  int64_t tile_width = 256 ;
+  int64_t tile_height = 256 ;
+  int64_t segment_size = 512 ;
+  int64_t njobs = 8 ;
+  int64_t axis = 0 ;
 
   // I use this program for testing, so I like to have a way to
   // pass in arguments.

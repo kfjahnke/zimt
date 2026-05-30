@@ -188,7 +188,7 @@ void process ( const xel_t < std::size_t , D > & shape ,
   const auto & axis ( bill.axis ) ; // short notation
   const auto & segment_size ( bill.segment_size ) ; // ditto
 
-  typedef xel_t < long , D > crd_t ;
+  typedef xel_t < int64_t , D > crd_t ;
 
   // set up the lower and upper limit of the operation. This is used
   // if only a window of the 'notional' shape is to be processed. The
@@ -241,7 +241,7 @@ void process ( const xel_t < std::size_t , D > & shape ,
 
   // get the line length and the number of lines
 
-  long length = window_shape [ axis ] ;
+  int64_t length = window_shape [ axis ] ;
   auto nr_lines = head_area_shape.prod() ;
 
   // get the number of line segments
@@ -355,7 +355,7 @@ void process ( const xel_t < std::size_t , D > & shape ,
 
       // for segments after the first one, we'll add an offset
 
-      long ofs = segment * segment_size ;
+      int64_t ofs = segment * segment_size ;
 
       // The coordinate iterator over the 'head' area gives start
       // coordinates pertaining to the chosen window

@@ -138,16 +138,16 @@ struct bill_t
   // values as there are dimensions. Empty vectors signify a lower
   // limit of zero - or of the 'notional' shape's extents, respectively.
 
-  std::vector < long > lower_limit ;
-  std::vector < long > upper_limit ;
+  std::vector < int64_t > lower_limit ;
+  std::vector < int64_t > upper_limit ;
 
   // these two vectors specify offsets which are to be added to the
   // discrete coordinate passed to the get_t or put_t object when
   // their respective init functions are called. Processing is the
   // same as with the two vectors above.
 
-  std::vector < long > get_offset ;
-  std::vector < long > put_offset ;
+  std::vector < int64_t > get_offset ;
+  std::vector < int64_t > put_offset ;
 } ;
 
 // this helper function 'translates' the std::vectors in the bill
@@ -155,10 +155,10 @@ struct bill_t
 // for all the vectors in the bill.
 
 template < std::size_t D >
-xel_t < long , D > decode_bill_vector
-  ( const std::vector < long > & v )
+xel_t < int64_t , D > decode_bill_vector
+  ( const std::vector < int64_t > & v )
 {
-  zimt::xel_t < long , D > result ;
+  zimt::xel_t < int64_t , D > result ;
 
   // an empty vector counts as 'all zero'
 

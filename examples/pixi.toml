@@ -20,6 +20,8 @@ libhwy = "*"
 
 # Clang compiler toolchain
 clangxx = "*"
+openexr = ">=3.4.12,<4"
+zlib = ">=1.3.2,<2"
 
 # GCC is provided natively on some platforms, but we ensure it's
 # explicitly pulled from conda-forge for Linux targets.
