@@ -8,20 +8,49 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 
+# --- Pixi / Conda Environment Integration ---
+# When building inside a Pixi/Conda shell, we want to prioritize libraries 
+# located within the environment prefix over system-wide installations.
+# --- Pixi / Conda Environment Integration ---
+if(DEFINED ENV{CONDA_PREFIX})
+    message(STATUS "Pixi/Conda environment detected: $ENV{CONDA_PREFIX}")
+    
+    set(CMAKE_FIND_ROOT_PATH $ENV{CONDA_PREFIX})
+    
+    # Change 'ONLY' to 'BOTH' to allow fallback to macOS System Frameworks
+    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+    
+    if(APPLE)
+        # Prioritize Frameworks so it finds the native OpenGL 
+        set(CMAKE_FIND_FRAMEWORK FIRST)
+    endif()
+endif()
+
 # Add the parent directory to the include search path
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 # Look for packages natively supported by modern CMake targets
 find_package(Threads REQUIRED)
-find_package(OpenImageIO QUIET)
-find_package(Vc QUIET)
+find_package(OpenImageIO CONFIG REQUIRED)
+find_package(Vc REQUIRED)
+find_package(HWY CONFIG REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(OpenEXR CONFIG REQUIRED)
+find_package(Vigra CONFIG REQUIRED)
+if(HWY_FOUND)
+  message(STATUS "Highway found: HWY_FOUND=TRUE")
+else()
+  message(STATUS "Highway not found")
+endif()
 
 # Hard-force -pthread compiler flag on Unix-like systems.
 # This bypasses the fragile CMake thread-detection which often fails 
 # with Clang inside Conda environments.
 if(UNIX)
   add_compile_options(-pthread)
-  # add_link_options(-pthread)
+  add_link_options(-pthread) # can be omitted on macOS
 endif()
 
 # Define the common SIMD flags
@@ -49,15 +78,14 @@ file(GLOB EXAMPLES "*.cc")
 
 foreach(SOURCE_FILE IN LISTS EXAMPLES)
   # Initialize link libraries with the abstract Threads target
-  # This ensures -pthread is correctly appended for both compiler
-  # and linker stages
+  # This ensures -pthread is correctly appended for both compiler and linker stages
   set(LINK_LIBS Threads::Threads)
 
   get_filename_component(BASE_NAME "${SOURCE_FILE}" NAME_WE)
   file(READ "${SOURCE_FILE}" FILE_CONTENT)
 
   # 1. Determine linking requirements based on file content.
-  # set(LINK_LIBS "")
+  set(LINK_LIBS "")
   if(FILE_CONTENT MATCHES "OpenImageIO")
     if(OpenImageIO_FOUND)
       # Modern CMake target: automatically handles dependencies like internal fmt paths
@@ -73,7 +101,14 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
   endif()
 
   # 2. Check if the std::simd backend should be skipped.
-  set(BUILD_STD_SIMD TRUE)
+  # getting std::simd requires the use of the gnu c++ library, which would
+  # have to be enforced explicitly on macOS. It can be done, but I omit
+  # it for now.
+  if(APPLE)
+    set(BUILD_STD_SIMD FALSE)
+  else()
+    set(BUILD_STD_SIMD TRUE)
+  endif()
   if(FILE_CONTENT MATCHES "no-std-simd")
     set(BUILD_STD_SIMD FALSE)
   endif()
@@ -90,10 +125,12 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
 
   # --- Target: Goading (gd_) ---
   set(TARGET_GD "gd_${BASE_NAME}")
-  add_executable("${TARGET_GD}" "${SOURCE_FILE}")
-  target_compile_options("${TARGET_GD}" PRIVATE ${COMMON_SIMD_FLAGS})
-  if(LINK_LIBS)
-    target_link_libraries("${TARGET_GD}" PRIVATE ${LINK_LIBS})
+  if(NOT FILE_CONTENT MATCHES "vigra")
+    add_executable("${TARGET_GD}" "${SOURCE_FILE}")
+    target_compile_options("${TARGET_GD}" PRIVATE ${COMMON_SIMD_FLAGS})
+    if(LINK_LIBS)
+      target_link_libraries("${TARGET_GD}" PRIVATE ${LINK_LIBS})
+    endif()
   endif()
 
   # --- Target: Vc (vc_) ---
@@ -102,15 +139,18 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
     add_executable("${TARGET_VC}" "${SOURCE_FILE}")
     target_compile_definitions("${TARGET_VC}" PRIVATE USE_VC)
     target_compile_options("${TARGET_VC}" PRIVATE ${COMMON_SIMD_FLAGS})
-    target_link_libraries("${TARGET_VC}" PRIVATE Vc)
+    target_link_libraries("${TARGET_VC}" PRIVATE Vc::Vc)
     if(LINK_LIBS)
       target_link_libraries("${TARGET_VC}" PRIVATE ${LINK_LIBS})
     endif()
+    target_include_directories("${TARGET_VC}" PRIVATE ${Vc_INCLUDE_DIR})
   endif()
 
   # --- Target: Highway (hwy_) ---
   set(TARGET_HWY "hwy_${BASE_NAME}")
   add_executable("${TARGET_HWY}" "${SOURCE_FILE}")
+  target_link_libraries("${TARGET_HWY}" PRIVATE hwy::hwy)
+  target_include_directories("${TARGET_HWY}" PRIVATE ${hwy_INCLUDE_DIR})
   target_compile_definitions("${TARGET_HWY}" PRIVATE USE_HWY)
   target_compile_options("${TARGET_HWY}" PRIVATE ${COMMON_SIMD_FLAGS})
   if(LINK_LIBS)
@@ -130,24 +170,27 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
 
   # --- Targets: Multi-SIMD-ISA (hwy_msa_ and gd_msa_) ---
   if(BUILD_MULTI_SIMD)
+
     set(TARGET_HWY_MSA "hwy_msa_${BASE_NAME}")
     add_executable("${TARGET_HWY_MSA}" "${SOURCE_FILE}")
     target_compile_definitions("${TARGET_HWY_MSA}" PRIVATE USE_HWY MULTI_SIMD_ISA)
     target_compile_options("${TARGET_HWY_MSA}" PRIVATE ${MSA_FLAGS})
     target_include_directories("${TARGET_HWY_MSA}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries("${TARGET_HWY_MSA}" PRIVATE hwy)
+    target_link_libraries("${TARGET_HWY_MSA}" PRIVATE hwy::hwy)
     if(LINK_LIBS)
       target_link_libraries("${TARGET_HWY_MSA}" PRIVATE ${LINK_LIBS})
     endif()
 
-    set(TARGET_STDS_MSA "stds_msa_${BASE_NAME}")
-    add_executable("${TARGET_STDS_MSA}" "${SOURCE_FILE}")
-    target_compile_definitions("${TARGET_STDS_MSA}" PRIVATE USE_STDSIMD MULTI_SIMD_ISA)
-    target_compile_options("${TARGET_STDS_MSA}" PRIVATE ${MSA_FLAGS})
-    target_include_directories("${TARGET_STDS_MSA}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries("${TARGET_STDS_MSA}" PRIVATE hwy)
-    if(LINK_LIBS)
-      target_link_libraries("${TARGET_STDS_MSA}" PRIVATE ${LINK_LIBS})
+    if(BUILD_STD_SIMD) 
+      set(TARGET_STDS_MSA "stds_msa_${BASE_NAME}")
+      add_executable("${TARGET_STDS_MSA}" "${SOURCE_FILE}")
+      target_compile_definitions("${TARGET_STDS_MSA}" PRIVATE USE_STDSIMD MULTI_SIMD_ISA)
+      target_compile_options("${TARGET_STDS_MSA}" PRIVATE ${MSA_FLAGS})
+      target_include_directories("${TARGET_STDS_MSA}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+      target_link_libraries("${TARGET_STDS_MSA}" PRIVATE hwy::hwy)
+      if(LINK_LIBS)
+        target_link_libraries("${TARGET_STDS_MSA}" PRIVATE ${LINK_LIBS})
+      endif()
     endif()
 
     set(TARGET_VC_MSA "vc_msa_${BASE_NAME}")
@@ -155,7 +198,7 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
     target_compile_definitions("${TARGET_VC_MSA}" PRIVATE USE_VC MULTI_SIMD_ISA)
     target_compile_options("${TARGET_VC_MSA}" PRIVATE ${MSA_FLAGS})
     target_include_directories("${TARGET_VC_MSA}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries("${TARGET_VC_MSA}" PRIVATE hwy Vc)
+    target_link_libraries("${TARGET_VC_MSA}" PRIVATE hwy::hwy Vc::Vc)
     if(LINK_LIBS)
       target_link_libraries("${TARGET_VC_MSA}" PRIVATE ${LINK_LIBS})
     endif()
@@ -165,10 +208,9 @@ foreach(SOURCE_FILE IN LISTS EXAMPLES)
     target_compile_definitions("${TARGET_GD_MSA}" PRIVATE MULTI_SIMD_ISA)
     target_compile_options("${TARGET_GD_MSA}" PRIVATE ${MSA_FLAGS})
     target_include_directories("${TARGET_GD_MSA}" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries("${TARGET_GD_MSA}" PRIVATE hwy)
+    target_link_libraries("${TARGET_GD_MSA}" PRIVATE hwy::hwy)
     if(LINK_LIBS)
       target_link_libraries("${TARGET_GD_MSA}" PRIVATE ${LINK_LIBS})
     endif()
   endif()
-
 endforeach()

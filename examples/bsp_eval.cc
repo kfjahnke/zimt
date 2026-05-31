@@ -292,7 +292,7 @@ struct dispatch
     typedef zimt::bspline < px_t , 2 > spline_type ;
     zimt::xel_t < std::size_t , 2 > shape { 1024 , 1024 } ;
 
-    spline_type bsp ( shape , spline_degree , bc ) ;
+    static spline_type bsp ( shape , spline_degree , bc ) ;
 
     // and an array of random values with equal extents
 
@@ -307,7 +307,8 @@ struct dispatch
 
     // prefilter overload which 'pulls in' knot point data from an array
 
-    bsp.prefilter ( a ) ;
+    if ( ! bsp.prefiltered )
+      bsp.prefilter ( a ) ;
 
     // std::cout << "created bspline object:" << std::endl
     //           << bsp << std::endl ;
