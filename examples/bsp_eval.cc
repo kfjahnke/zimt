@@ -102,15 +102,6 @@
 // change stuff to set up your own program, and all the additions
 // are simple (except for your 'client code', which may be complex).
 
-// if the code is compiled to use the Vc or std::simd back-ends, we
-// can't (yet) use highway's foreach_target mechanism, so we #undef
-// MULTI_SIMD_ISA, which is zimt's way of activating that mechanism.
-
-#if defined MULTI_SIMD_ISA && ( defined USE_VC || defined USE_STDSIMD )
-#warning "un-defining MULTI_SIMD_ISA due to use of Vc or std::simd"
-#undef MULTI_SIMD_ISA
-#endif
-
 #include <cstdint>
 
 // we define a dispatch base class. All the 'payload' code is called

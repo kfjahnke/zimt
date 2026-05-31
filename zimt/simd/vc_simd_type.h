@@ -138,7 +138,7 @@ struct vc_simd_type
 
   typedef Vc::SimdArray < _value_type , _vsize > base_t ;
 
-  // we need to alow access to new and delete of the base class
+  // we need to allow access to new and delete of the base class
 
   using base_t::operator new ;
   using base_t::operator new[] ;
@@ -202,6 +202,7 @@ struct vc_simd_type
     to_base() = rhs ;
     return *this ;
   }
+
   vc_simd_type & operator= ( const value_type && rhs )
   {
     to_base() = rhs ;
@@ -213,6 +214,7 @@ struct vc_simd_type
     to_base() = ini ;
     return *this ;
   }
+
   vc_simd_type & operator= ( const base_t && ini )
   {
     to_base() = ini ;
@@ -228,6 +230,7 @@ struct vc_simd_type
   vc_simd_type ( const value_type & ini )
   : base_t ( ini )
   { }
+
   vc_simd_type ( const value_type && ini )
   : base_t ( ini )
   { }
@@ -240,7 +243,7 @@ struct vc_simd_type
   : base_t ( ini )
   { }
 
-  // these two c'tors are left in default mode
+  // these three c'tors are left in default mode
 
   vc_simd_type() = default ;
   vc_simd_type ( const vc_simd_type & ) = default ;
@@ -447,10 +450,11 @@ struct vc_simd_type
 
   // broadcasting functions processing single value_type
 
-  typedef std::function < value_type ( const std::size_t & ) > idx_f ;
   typedef std::function < value_type() > gen_f ;
+  typedef std::function < value_type ( const std::size_t & ) > idx_f ;
   typedef std::function < value_type ( const value_type & ) > mod_f ;
-  typedef std::function < value_type ( const value_type & , const value_type & ) > bin_f ;
+  typedef std::function < value_type ( const value_type & ,
+                                       const value_type & ) > bin_f ;
 
   vc_simd_type & broadcast ( gen_f f )
   {
@@ -516,7 +520,7 @@ struct vc_simd_type
   {
     alignas ( sizeof ( vec_t ) ) value_type buffer [ vsize ] ;
     for ( std::size_t i = 0 , ofs = 0 ; i < nvec ; i++ , ofs += hsize )
-      f().store ( buffer + ofs ) ;
+      f() . store ( buffer + ofs ) ;
     load ( buffer ) ;
     return *this ;
   }
@@ -529,7 +533,7 @@ struct vc_simd_type
     alignas ( sizeof ( vec_t ) ) value_type buffer [ vsize ] ;
     store ( buffer ) ;
     for ( std::size_t i = 0 , ofs = 0 ; i < nvec ; i++ , ofs += hsize )
-      f ( vec_t ( buffer + ofs ) ).store ( buffer + ofs ) ;
+      f ( vec_t ( buffer + ofs ) ) . store ( buffer + ofs ) ;
     load ( buffer ) ;
     return *this ;
   }

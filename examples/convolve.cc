@@ -86,16 +86,6 @@
 // payload function took 100 ms
 // storing the target image as 'convolved.tif'
 
-
-// if the code is compiled to use the Vc or std::simd back-ends, we
-// can't (yet) use highway's foreach_target mechanism, so we #undef
-// MULTI_SIMD_ISA, which is zimt's way of activating that mechanism.
-
-#if defined MULTI_SIMD_ISA && ( defined USE_VC || defined USE_STDSIMD )
-#warning "un-defining MULTI_SIMD_ISA due to use of Vc or std::simd"
-#undef MULTI_SIMD_ISA
-#endif
-
 // I'll mark code sections which will differ from one example to the
 // next, prefixing with ////////... and postfixing with //-------...
 // You'll notice that there are only few places where you have to
